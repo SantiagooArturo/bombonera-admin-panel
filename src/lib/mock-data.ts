@@ -1,0 +1,181 @@
+import { Reservation, BlockedSlot, AutomatedNumber } from "./types";
+
+const today = new Date().toISOString().split("T")[0];
+const tomorrow = new Date(Date.now() + 86400000).toISOString().split("T")[0];
+const yesterday = new Date(Date.now() - 86400000).toISOString().split("T")[0];
+
+export const MOCK_RESERVATIONS: Reservation[] = [
+  {
+    id: "res-001",
+    chat_id: "51987654321@c.us",
+    court_type: "voley_maple",
+    field: 1,
+    date: today,
+    time_slots: ["9:00", "10:00"],
+    time_ranges: [
+      { start: "9:00", end: "10:00", slot: "9:00" },
+      { start: "10:00", end: "11:00", slot: "10:00" },
+    ],
+    slot_keys: ["lun-9:00", "lun-10:00"],
+    created_at: new Date(Date.now() - 3600000).toISOString(),
+    status: "paid",
+    total_price: 140,
+    phone_number: "987654321",
+  },
+  {
+    id: "res-002",
+    chat_id: "51912345678@c.us",
+    court_type: "voley_piso",
+    field: 4,
+    date: today,
+    time_slots: ["14:00", "15:00"],
+    time_ranges: [
+      { start: "14:00", end: "15:00", slot: "14:00" },
+      { start: "15:00", end: "16:00", slot: "15:00" },
+    ],
+    slot_keys: ["lun-14:00", "lun-15:00"],
+    created_at: new Date(Date.now() - 7200000).toISOString(),
+    status: "pending",
+    total_price: 120,
+    phone_number: "912345678",
+  },
+  {
+    id: "res-003",
+    chat_id: "51911223344@c.us",
+    court_type: "reducido",
+    field: 7,
+    date: today,
+    time_slots: ["18:00", "19:00"],
+    time_ranges: [
+      { start: "18:00", end: "19:00", slot: "18:00" },
+      { start: "19:00", end: "20:00", slot: "19:00" },
+    ],
+    slot_keys: ["lun-18:00", "lun-19:00"],
+    created_at: new Date(Date.now() - 1800000).toISOString(),
+    status: "pending",
+    total_price: 120,
+    phone_number: "911223344",
+  },
+  {
+    id: "res-004",
+    chat_id: "51999887766@c.us",
+    court_type: "voley_maple",
+    field: 2,
+    date: today,
+    time_slots: ["19:00", "20:00"],
+    time_ranges: [
+      { start: "19:00", end: "20:00", slot: "19:00" },
+      { start: "20:00", end: "21:00", slot: "20:00" },
+    ],
+    slot_keys: ["lun-19:00", "lun-20:00"],
+    created_at: new Date(Date.now() - 5400000).toISOString(),
+    status: "paid",
+    total_price: 200,
+    phone_number: "999887766",
+  },
+  {
+    id: "res-005",
+    chat_id: "51955443322@c.us",
+    court_type: "voley_piso",
+    field: 5,
+    date: tomorrow,
+    time_slots: ["10:00", "11:00", "12:00"],
+    time_ranges: [
+      { start: "10:00", end: "11:00", slot: "10:00" },
+      { start: "11:00", end: "12:00", slot: "11:00" },
+      { start: "12:00", end: "13:00", slot: "12:00" },
+    ],
+    slot_keys: ["mar-10:00", "mar-11:00", "mar-12:00"],
+    created_at: new Date(Date.now() - 600000).toISOString(),
+    status: "pending",
+    total_price: 180,
+    phone_number: "955443322",
+  },
+  {
+    id: "res-006",
+    chat_id: "51987654321@c.us",
+    court_type: "reducido",
+    field: 8,
+    date: yesterday,
+    time_slots: ["15:00", "16:00"],
+    time_ranges: [
+      { start: "15:00", end: "16:00", slot: "15:00" },
+      { start: "16:00", end: "17:00", slot: "16:00" },
+    ],
+    slot_keys: ["dom-15:00", "dom-16:00"],
+    created_at: new Date(Date.now() - 86400000).toISOString(),
+    status: "paid",
+    total_price: 80,
+    phone_number: "987654321",
+  },
+  {
+    id: "res-007",
+    chat_id: "51966778899@c.us",
+    court_type: "voley_maple",
+    field: 3,
+    date: today,
+    time_slots: ["7:00", "8:00"],
+    time_ranges: [
+      { start: "7:00", end: "8:00", slot: "7:00" },
+      { start: "8:00", end: "9:00", slot: "8:00" },
+    ],
+    slot_keys: ["lun-7:00", "lun-8:00"],
+    created_at: new Date(Date.now() - 10800000).toISOString(),
+    status: "paid",
+    total_price: 140,
+    phone_number: "966778899",
+  },
+];
+
+export const MOCK_BLOCKED_SLOTS: BlockedSlot[] = [
+  {
+    id: "block-001",
+    court_type: "voley_maple",
+    field: 1,
+    date: today,
+    time_slot: "13:00",
+    reason: "Mantenimiento",
+    created_at: new Date(Date.now() - 86400000).toISOString(),
+  },
+  {
+    id: "block-002",
+    court_type: "voley_maple",
+    field: 1,
+    date: today,
+    time_slot: "14:00",
+    reason: "Mantenimiento",
+    created_at: new Date(Date.now() - 86400000).toISOString(),
+  },
+];
+
+export const MOCK_AUTOMATED_NUMBERS: AutomatedNumber[] = [
+  {
+    chat_id: "51987654321@c.us",
+    phone_number: "987654321",
+    isAutomated: true,
+    name: "Carlos Mendoza",
+  },
+  {
+    chat_id: "51912345678@c.us",
+    phone_number: "912345678",
+    isAutomated: true,
+    name: "María López",
+  },
+  {
+    chat_id: "51911223344@c.us",
+    phone_number: "911223344",
+    isAutomated: false,
+    name: "Juan Pérez",
+  },
+  {
+    chat_id: "51999887766@c.us",
+    phone_number: "999887766",
+    isAutomated: true,
+  },
+  {
+    chat_id: "51955443322@c.us",
+    phone_number: "955443322",
+    isAutomated: true,
+    name: "Ana García",
+  },
+];
