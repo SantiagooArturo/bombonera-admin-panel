@@ -16,7 +16,7 @@ export default function ConfiguracionPage() {
 
   useEffect(() => {
     store.fetchAutomatedNumbers();
-  }, []);
+  }, [store]);
 
   async function handleToggle() {
     if (!toggleTarget) return;

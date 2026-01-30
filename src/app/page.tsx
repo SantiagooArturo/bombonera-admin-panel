@@ -22,7 +22,7 @@ export default function DashboardPage() {
 
   useEffect(() => {
     store.fetchReservations();
-  }, []);
+  }, [store]);
 
   const todayReservations = reservations.filter(
     (r) => r.date === today && r.status !== "cancelled"

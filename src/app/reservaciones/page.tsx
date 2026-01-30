@@ -28,7 +28,7 @@ export default function ReservacionesPage() {
 
   useEffect(() => {
     store.fetchReservations();
-  }, []);
+  }, [store]);
 
   const filtered = reservations
     .filter((r) => {
