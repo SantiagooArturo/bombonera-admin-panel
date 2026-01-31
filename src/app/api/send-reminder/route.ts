@@ -4,9 +4,10 @@ const WAHA_URL = "https://waha-live-wahaa.dmncie.easypanel.host";
 const WAHA_API_KEY = "MiClaveSegura123";
 
 const COURT_LABELS: Record<string, string> = {
-  voley_maple: "Voley Maple PVC",
-  voley_piso: "Voley Piso / Basket",
-  reducido: "Campo Reducido",
+  voley_6v6: "Campo 6 vs 6 voley",
+  voley_basket_6v6: "Campo 6 vs 6 voley-basket",
+  voley_5v5: "Campo 5 vs 5 voley maple",
+  voley_basket_5v5: "Campo 5 vs 5 voley-basket",
 };
 
 async function sendWhatsAppMessage(chatId: string, text: string) {

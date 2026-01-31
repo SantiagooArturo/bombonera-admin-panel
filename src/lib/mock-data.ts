@@ -8,7 +8,7 @@ export const MOCK_RESERVATIONS: Reservation[] = [
   {
     id: "res-001",
     chat_id: "51987654321@c.us",
-    court_type: "voley_maple",
+    court_type: "voley_6v6",
     field: 1,
     date: today,
     time_slots: ["9:00", "10:00"],
@@ -25,8 +25,8 @@ export const MOCK_RESERVATIONS: Reservation[] = [
   {
     id: "res-002",
     chat_id: "51912345678@c.us",
-    court_type: "voley_piso",
-    field: 4,
+    court_type: "voley_5v5",
+    field: 5,
     date: today,
     time_slots: ["14:00", "15:00"],
     time_ranges: [
@@ -42,8 +42,8 @@ export const MOCK_RESERVATIONS: Reservation[] = [
   {
     id: "res-003",
     chat_id: "51911223344@c.us",
-    court_type: "reducido",
-    field: 7,
+    court_type: "voley_basket_5v5",
+    field: 9,
     date: today,
     time_slots: ["18:00", "19:00"],
     time_ranges: [
@@ -59,7 +59,7 @@ export const MOCK_RESERVATIONS: Reservation[] = [
   {
     id: "res-004",
     chat_id: "51999887766@c.us",
-    court_type: "voley_maple",
+    court_type: "voley_6v6",
     field: 2,
     date: today,
     time_slots: ["19:00", "20:00"],
@@ -76,7 +76,7 @@ export const MOCK_RESERVATIONS: Reservation[] = [
   {
     id: "res-005",
     chat_id: "51955443322@c.us",
-    court_type: "voley_piso",
+    court_type: "voley_5v5",
     field: 5,
     date: tomorrow,
     time_slots: ["10:00", "11:00", "12:00"],
@@ -94,8 +94,8 @@ export const MOCK_RESERVATIONS: Reservation[] = [
   {
     id: "res-006",
     chat_id: "51987654321@c.us",
-    court_type: "reducido",
-    field: 8,
+    court_type: "voley_basket_5v5",
+    field: 9,
     date: yesterday,
     time_slots: ["15:00", "16:00"],
     time_ranges: [
@@ -111,7 +111,7 @@ export const MOCK_RESERVATIONS: Reservation[] = [
   {
     id: "res-007",
     chat_id: "51966778899@c.us",
-    court_type: "voley_maple",
+    court_type: "voley_6v6",
     field: 3,
     date: today,
     time_slots: ["7:00", "8:00"],
@@ -130,7 +130,7 @@ export const MOCK_RESERVATIONS: Reservation[] = [
 export const MOCK_BLOCKED_SLOTS: BlockedSlot[] = [
   {
     id: "block-001",
-    court_type: "voley_maple",
+    court_type: "voley_6v6",
     field: 1,
     date: today,
     time_slot: "13:00",
@@ -139,7 +139,7 @@ export const MOCK_BLOCKED_SLOTS: BlockedSlot[] = [
   },
   {
     id: "block-002",
-    court_type: "voley_maple",
+    court_type: "voley_6v6",
     field: 1,
     date: today,
     time_slot: "14:00",

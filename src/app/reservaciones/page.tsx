@@ -108,9 +108,9 @@ export default function ReservacionesPage() {
                 className="w-full px-5 py-4 text-body rounded-xl border-2 border-gray-200 focus:border-bombonera-500 focus:outline-none bg-gray-50"
               >
                 <option value="">Todas</option>
-                <option value="voley_maple">Voley Maple PVC</option>
-                <option value="voley_piso">Voley Piso / Basket</option>
-                <option value="reducido">Campo Reducido</option>
+                {Object.entries(COURT_LABELS).map(([key, label]) => (
+                  <option key={key} value={key}>{label}</option>
+                ))}
               </select>
             </div>
             <div className="flex-1">

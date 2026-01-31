@@ -1,4 +1,4 @@
-export type CourtType = "voley_maple" | "voley_piso" | "reducido";
+export type CourtType = "voley_6v6" | "voley_basket_6v6" | "voley_5v5" | "voley_basket_5v5";
 
 export type ReservationStatus = "pending" | "paid" | "cancelled";
 
@@ -35,15 +35,17 @@ export interface AutomatedNumber {
 }
 
 export const COURT_LABELS: Record<CourtType, string> = {
-  voley_maple: "Voley Maple PVC",
-  voley_piso: "Voley Piso / Basket",
-  reducido: "Campo Reducido",
+  voley_6v6: "Campo 6 vs 6 voley (campos 1, 2, 3, 8, 10, 11, 12)",
+  voley_basket_6v6: "Campo 6 vs 6 voley-basket (campo 4)",
+  voley_5v5: "Campo 5 vs 5 voley maple (campos 5, 6, 7)",
+  voley_basket_5v5: "Campo 5 vs 5 voley-basket (campo 9)",
 };
 
 export const COURT_FIELDS: Record<CourtType, number[]> = {
-  voley_maple: [1, 2, 3],
-  voley_piso: [4, 5, 6],
-  reducido: [7, 8, 9],
+  voley_6v6: [1, 2, 3, 8, 10, 11, 12],
+  voley_basket_6v6: [4],
+  voley_5v5: [5, 6, 7],
+  voley_basket_5v5: [9],
 };
 
 export const TIME_SLOTS = [

@@ -92,7 +92,7 @@ export default function CanchasPage() {
   const reservations = store.getReservations();
   const blockedSlots = store.getBlockedSlots();
 
-  const [selectedCourt, setSelectedCourt] = useState<CourtType>("voley_maple");
+  const [selectedCourt, setSelectedCourt] = useState<CourtType>("voley_6v6");
   const [weekOffset, setWeekOffset] = useState(0);
   const [loadingCourt, setLoadingCourt] = useState(false);
   const [blockDialog, setBlockDialog] = useState<{ fullDate: string; dayId: string; timeSlot: string } | null>(null);
