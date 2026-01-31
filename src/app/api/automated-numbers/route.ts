@@ -1,8 +1,9 @@
 import { NextRequest, NextResponse } from "next/server";
-import { db } from "@/lib/firebase-admin";
+import { getDb } from "@/lib/firebase-admin";
 
 export async function GET() {
   try {
+    const db = getDb();
     const snapshot = await db.collection("automated-numbers").get();
     const numbers = snapshot.docs.map((doc) => ({
       chat_id: doc.id,
@@ -22,6 +23,7 @@ export async function GET() {
 
 export async function PATCH(request: NextRequest) {
   try {
+    const db = getDb();
     const body = await request.json();
     const { chat_id, isAutomated } = body;
 
