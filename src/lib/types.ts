@@ -14,6 +14,7 @@ export interface Reservation {
   created_at: string;
   status: ReservationStatus;
   total_price: number;
+  reservation_price?: number;
   phone_number: string;
 }
 
