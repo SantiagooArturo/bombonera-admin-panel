@@ -14,6 +14,7 @@ export interface Reservation {
   created_at: string;
   status: ReservationStatus;
   total_price: number;
+  reservation_price?: number;
   phone_number: string;
 }
 
@@ -58,4 +59,25 @@ export const STATUS_LABELS: Record<ReservationStatus, string> = {
   pending: "Pendiente",
   paid: "Pagado",
   cancelled: "Cancelado",
+};
+
+// Usuarios: colección users. Atributos denormalizados para evitar queries anidadas.
+export type ClientType = "indeciso" | "buen_cliente" | "cliente_problematico" | null;
+
+export interface User {
+  id: string; // document id = chat_id normalizado (número WA)
+  chat_id: string;
+  phone_number?: string;
+  /** Número de veces que ha reservado (denormalizado en users para query eficiente). */
+  reservation_count: number;
+  /** Saldo: negativo = debe dinero; positivo = canceló a tiempo (crédito). */
+  balance: number;
+  /** Tipo de cliente (lógica por implementar). */
+  client_type: ClientType;
+}
+
+export const CLIENT_TYPE_LABELS: Record<NonNullable<ClientType>, string> = {
+  indeciso: "Indeciso",
+  buen_cliente: "Buen cliente",
+  cliente_problematico: "Cliente problemático",
 };

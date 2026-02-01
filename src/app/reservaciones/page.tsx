@@ -197,6 +197,9 @@ export default function ReservacionesPage() {
                             <span className="text-body font-bold text-bombonera-700">
                               S/ {(res.total_price || 0).toFixed(2)}
                             </span>
+                            <span className="text-xs text-gray-500 ml-1">
+                              (reserva: S/ {(res.reservation_price ?? (res.total_price || 0) / 2).toFixed(2)})
+                            </span>
                           </div>
                         </div>
                       </div>

@@ -190,9 +190,14 @@ export default function DashboardPage() {
                           </div>
                         </div>
                         <div className="flex items-center gap-3 sm:gap-4">
-                          <span className="text-body-lg font-bold text-gray-900">
-                            S/ {(res.total_price || 0).toFixed(2)}
-                          </span>
+                          <div className="text-right">
+                            <span className="text-body-lg font-bold text-gray-900">
+                              S/ {(res.total_price || 0).toFixed(2)}
+                            </span>
+                            <p className="text-xs text-gray-500">
+                              Reserva: S/ {(res.reservation_price ?? (res.total_price || 0) / 2).toFixed(2)}
+                            </p>
+                          </div>
                           <span
                             className={`px-4 py-2 rounded-full text-sm font-bold ${
                               res.status === "paid"

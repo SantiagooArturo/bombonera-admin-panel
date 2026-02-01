@@ -25,6 +25,15 @@ const NAV_ITEMS = [
     ),
   },
   {
+    href: "/usuarios",
+    label: "Usuarios",
+    icon: (
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" className="w-7 h-7">
+        <path fillRule="evenodd" d="M8.25 6.75a3.75 3.75 0 1 1 7.5 0 3.75 3.75 0 0 1-7.5 0ZM15.75 9.75a3 3 0 1 1 6 0 3 3 0 0 1-6 0ZM2.25 9.75a3 3 0 1 1 6 0 3 3 0 0 1-6 0ZM6.31 15.117A6.745 6.745 0 0 1 12 12a6.745 6.745 0 0 1 6.709 3.998.75.75 0 0 1-.372 1.002A6.745 6.745 0 0 1 12 13.5a6.745 6.745 0 0 1-6.127-3.381.75.75 0 0 1-.372-1.002ZM2.25 18a.75.75 0 1 0 0-1.5.75.75 0 0 0 0 1.5Z" clipRule="evenodd" />
+      </svg>
+    ),
+  },
+  {
     href: "/canchas",
     label: "Canchas",
     icon: (

@@ -1,4 +1,4 @@
-import { Reservation, BlockedSlot, AutomatedNumber } from "./types";
+import { Reservation, BlockedSlot, AutomatedNumber, User } from "./types";
 
 // API-backed store that syncs with Firebase via Next.js API routes
 type Listener = () => void;
@@ -7,8 +7,9 @@ class Store {
   private reservations: Reservation[] = [];
   private blockedSlots: BlockedSlot[] = [];
   private automatedNumbers: AutomatedNumber[] = [];
+  private users: User[] = [];
   private listeners: Set<Listener> = new Set();
-  private loaded = { reservations: false, blockedSlots: false, automatedNumbers: false };
+  private loaded = { reservations: false, blockedSlots: false, automatedNumbers: false, users: false };
 
   subscribe(listener: Listener) {
     this.listeners.add(listener);
@@ -149,6 +150,23 @@ class Store {
     } catch (error) {
       console.error("Error removing blocked slot:", error);
       return false;
+    }
+  }
+
+  // Users
+  getUsers() {
+    return this.users;
+  }
+
+  async fetchUsers() {
+    try {
+      const res = await fetch("/api/users");
+      if (!res.ok) throw new Error("Failed to fetch");
+      this.users = await res.json();
+      this.loaded.users = true;
+      this.notify();
+    } catch (error) {
+      console.error("Error fetching users:", error);
     }
   }
 

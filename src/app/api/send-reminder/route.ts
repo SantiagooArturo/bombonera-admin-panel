@@ -72,7 +72,7 @@ export async function POST(request: NextRequest) {
       `⚽ Cancha: ${courtName}${field ? ` - Campo ${field}` : ""}`,
       `📅 Fecha: ${dateFormatted}`,
       `🕐 Horario: ${startTime} a ${endTime}`,
-      `💰 Total: S/ ${(total_price || 0).toFixed(2)}`,
+      `💰 Total: S/ ${(total_price || 0).toFixed(2)} (reserva: S/ ${((total_price || 0) / 2).toFixed(2)})`,
     ].join("\n");
 
     await sendWhatsAppMessage(chat_id, detalles);
