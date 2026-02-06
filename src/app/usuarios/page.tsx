@@ -8,7 +8,7 @@ import { CLIENT_TYPE_LABELS, type ClientType } from "@/lib/types";
 type SortKey = "reservation_count" | "balance" | "client_type";
 type SortDir = "asc" | "desc";
 
-const CLIENT_TYPE_ORDER: (ClientType | "null")[] = ["buen_cliente", "indeciso", "cliente_problematico", "null"];
+const CLIENT_TYPE_ORDER: (ClientType | "null")[] = ["buen_cliente", "indeciso", "cliente_problematico", "sospechoso_fraude", "null"];
 function clientTypeSortValue(ct: ClientType): number {
   const idx = CLIENT_TYPE_ORDER.indexOf(ct ?? "null");
   return idx >= 0 ? idx : CLIENT_TYPE_ORDER.length;
@@ -171,7 +171,19 @@ export default function UsuariosPage() {
                             </span>
                           </td>
                           <td className="px-6 py-4">
-                            <span className="text-body text-gray-700">
+                            <span
+                              className={`inline-flex px-3 py-1.5 rounded-lg text-body font-medium ${
+                                user.client_type === "sospechoso_fraude"
+                                  ? "bg-red-100 text-red-700"
+                                  : user.client_type === "cliente_problematico"
+                                  ? "bg-orange-100 text-orange-700"
+                                  : user.client_type === "buen_cliente"
+                                  ? "bg-green-100 text-green-700"
+                                  : user.client_type === "indeciso"
+                                  ? "bg-yellow-100 text-yellow-700"
+                                  : "text-gray-500"
+                              }`}
+                            >
                               {clientTypeLabel(user.client_type)}
                             </span>
                           </td>

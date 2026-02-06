@@ -188,7 +188,7 @@ export default function ReservacionesPage() {
                               : "?"}
                             :00
                           </p>
-                          <div className="flex items-center gap-4 mt-2">
+                          <div className="flex items-center gap-4 mt-2 flex-wrap">
                             {res.phone_number && (
                               <span className="text-body text-gray-500">
                                 Tel: <span className="font-semibold text-gray-700">{res.phone_number}</span>
@@ -197,9 +197,22 @@ export default function ReservacionesPage() {
                             <span className="text-body font-bold text-bombonera-700">
                               S/ {(res.total_price || 0).toFixed(2)}
                             </span>
-                            <span className="text-xs text-gray-500 ml-1">
-                              (reserva: S/ {(res.reservation_price ?? (res.total_price || 0) / 2).toFixed(2)})
-                            </span>
+                            {res.amount_paid !== undefined && res.amount_paid > 0 && (
+                              <span className={`text-body font-semibold px-2 py-0.5 rounded ${
+                                res.amount_paid >= (res.total_price || 0)
+                                  ? "bg-green-100 text-green-700"
+                                  : res.amount_paid >= (res.reservation_price ?? (res.total_price || 0) / 2)
+                                  ? "bg-blue-100 text-blue-700"
+                                  : "bg-amber-100 text-amber-700"
+                              }`}>
+                                Pagado: S/ {res.amount_paid.toFixed(2)}
+                              </span>
+                            )}
+                            {res.confirmed && (
+                              <span className="text-body font-semibold px-2 py-0.5 rounded bg-green-600 text-white">
+                                ✓ Confirmado
+                              </span>
+                            )}
                           </div>
                         </div>
                       </div>

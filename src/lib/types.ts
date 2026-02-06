@@ -16,6 +16,12 @@ export interface Reservation {
   total_price: number;
   reservation_price?: number;
   phone_number: string;
+  /** Cuánto ha pagado el usuario hasta ahora. */
+  amount_paid?: number;
+  /** Si la reserva está confirmada (pagó al menos el mínimo). */
+  confirmed?: boolean;
+  /** Cuándo se confirmó la reserva. */
+  confirmed_at?: string;
 }
 
 export interface BlockedSlot {
@@ -62,7 +68,7 @@ export const STATUS_LABELS: Record<ReservationStatus, string> = {
 };
 
 // Usuarios: colección users. Atributos denormalizados para evitar queries anidadas.
-export type ClientType = "indeciso" | "buen_cliente" | "cliente_problematico" | null;
+export type ClientType = "indeciso" | "buen_cliente" | "cliente_problematico" | "sospechoso_fraude" | null;
 
 export interface User {
   id: string; // document id = chat_id normalizado (número WA)
@@ -80,4 +86,34 @@ export const CLIENT_TYPE_LABELS: Record<NonNullable<ClientType>, string> = {
   indeciso: "Indeciso",
   buen_cliente: "Buen cliente",
   cliente_problematico: "Cliente problemático",
+  sospechoso_fraude: "Sospechoso de fraude",
+};
+
+// Transferencias: colección transfers. Registro de todos los pagos procesados.
+export type TransferStatus = "applied" | "rejected_duplicate" | "partial";
+
+export interface Transfer {
+  id: string;
+  /** Número de WhatsApp del usuario que hizo la transferencia. */
+  phone_number: string;
+  /** Nombre del destinatario extraído del comprobante. */
+  recipient_name: string | null;
+  /** Monto transferido. */
+  amount: number | null;
+  /** Fecha de la transacción extraída del comprobante (YYYY-MM-DD). */
+  transaction_date: string | null;
+  /** Número de operación único del comprobante. */
+  operation_id: string | null;
+  /** ID de la reserva a la que se aplicó el pago. */
+  reservation_id: string | null;
+  /** Estado: applied (aplicado), rejected_duplicate (duplicado), partial (pago parcial). */
+  status: TransferStatus;
+  /** Fecha de creación del registro. */
+  created_at: string;
+}
+
+export const TRANSFER_STATUS_LABELS: Record<TransferStatus, string> = {
+  applied: "Aplicado",
+  rejected_duplicate: "Duplicado rechazado",
+  partial: "Pago parcial",
 };
