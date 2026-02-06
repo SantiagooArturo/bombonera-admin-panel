@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState, useMemo } from "react";
-import ClientLayout from "@/components/ClientLayout";
+import ClientLayout, { useToastContext } from "@/components/ClientLayout";
 import { useStore } from "@/lib/hooks";
 import { CLIENT_TYPE_LABELS, type ClientType } from "@/lib/types";
 
@@ -64,10 +64,12 @@ function SortHeader({
 
 export default function UsuariosPage() {
   const store = useStore();
+  const toast = useToastContext();
   const users = store.getUsers();
   const loaded = store.isLoaded("users");
   const [sortBy, setSortBy] = useState<SortKey | null>(null);
   const [sortDir, setSortDir] = useState<SortDir>("asc");
+  const [togglingId, setTogglingId] = useState<string | null>(null);
 
   useEffect(() => {
     store.fetchUsers();
@@ -81,6 +83,20 @@ export default function UsuariosPage() {
       setSortDir("asc");
     }
   };
+
+  async function handleToggleAutomation(userId: string, currentValue: boolean) {
+    setTogglingId(userId);
+    const success = await store.toggleUserAutomation(userId);
+    if (success) {
+      toast(
+        currentValue ? "Bot desactivado" : "Bot activado",
+        currentValue ? "info" : "success"
+      );
+    } else {
+      toast("Error al cambiar estado", "error");
+    }
+    setTogglingId(null);
+  }
 
   const sortedUsers = useMemo(() => {
     if (!sortBy) return users;
@@ -127,12 +143,13 @@ export default function UsuariosPage() {
                     <SortHeader label="Reservas" sortKey="reservation_count" onSort={handleSort} />
                     <SortHeader label="Saldo" sortKey="balance" onSort={handleSort} />
                     <SortHeader label="Tipo de cliente" sortKey="client_type" onSort={handleSort} />
+                    <th className="px-6 py-4 text-body font-bold text-gray-700">Bot</th>
                   </tr>
                 </thead>
                 <tbody>
                   {sortedUsers.length === 0 ? (
                     <tr>
-                      <td colSpan={4} className="px-6 py-12 text-center text-body-lg text-gray-400">
+                      <td colSpan={5} className="px-6 py-12 text-center text-body-lg text-gray-400">
                         No hay usuarios en la colección
                       </td>
                     </tr>
@@ -186,6 +203,23 @@ export default function UsuariosPage() {
                             >
                               {clientTypeLabel(user.client_type)}
                             </span>
+                          </td>
+                          <td className="px-6 py-4">
+                            <button
+                              onClick={() => handleToggleAutomation(user.id, user.is_automated ?? true)}
+                              disabled={togglingId === user.id}
+                              className={`px-4 py-2 rounded-lg text-body font-semibold transition-colors ${
+                                (user.is_automated ?? true)
+                                  ? "bg-green-100 text-green-700 hover:bg-green-200"
+                                  : "bg-gray-200 text-gray-600 hover:bg-gray-300"
+                              } disabled:opacity-50`}
+                            >
+                              {togglingId === user.id
+                                ? "..."
+                                : (user.is_automated ?? true)
+                                ? "Activado"
+                                : "Desactivado"}
+                            </button>
                           </td>
                         </tr>
                       );

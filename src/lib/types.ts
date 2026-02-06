@@ -80,6 +80,8 @@ export interface User {
   balance: number;
   /** Tipo de cliente (lógica por implementar). */
   client_type: ClientType;
+  /** Si el bot responde automáticamente (true) o un humano debe responder (false). Default: true */
+  is_automated?: boolean;
 }
 
 export const CLIENT_TYPE_LABELS: Record<NonNullable<ClientType>, string> = {

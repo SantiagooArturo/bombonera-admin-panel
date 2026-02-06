@@ -170,6 +170,30 @@ class Store {
     }
   }
 
+  async toggleUserAutomation(userId: string) {
+    const user = this.users.find((u) => u.id === userId);
+    if (!user) return false;
+
+    const newValue = !(user.is_automated ?? true);
+    try {
+      const res = await fetch("/api/users", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ id: userId, is_automated: newValue }),
+      });
+      if (!res.ok) throw new Error("Failed to update");
+
+      this.users = this.users.map((u) =>
+        u.id === userId ? { ...u, is_automated: newValue } : u
+      );
+      this.notify();
+      return true;
+    } catch (error) {
+      console.error("Error toggling user automation:", error);
+      return false;
+    }
+  }
+
   // Automated Numbers
   getAutomatedNumbers() {
     return this.automatedNumbers;

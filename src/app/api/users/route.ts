@@ -1,11 +1,11 @@
-import { NextResponse } from "next/server";
+import { NextRequest, NextResponse } from "next/server";
 import { getDb } from "@/lib/firebase-admin";
 import type { User, ClientType } from "@/lib/types";
 
 /**
  * GET /api/users
  * Lista usuarios desde la colección `users`.
- * Atributos denormalizados: reservation_count, saldo (balance), client_type.
+ * Atributos denormalizados: reservation_count, balance, client_type, is_automated.
  * Una sola query a users, sin queries anidadas.
  */
 export async function GET() {
@@ -16,19 +16,21 @@ export async function GET() {
     const list: User[] = snapshot.docs.map((doc) => {
       const data = doc.data();
       const id = doc.id;
-      const saldo = data.saldo;
+      const balance = data.balance;
       const reservationCount = data.reservation_count;
       const clientType = data.client_type;
+      const isAutomated = data.is_automated;
 
       return {
         id,
         chat_id: data.chat_id ?? id,
         phone_number: data.phone_number ?? undefined,
         reservation_count: typeof reservationCount === "number" ? reservationCount : 0,
-        balance: typeof saldo === "number" ? saldo : 0,
-        client_type: (clientType === "indeciso" || clientType === "buen_cliente" || clientType === "cliente_problematico"
+        balance: typeof balance === "number" ? balance : 0,
+        client_type: (clientType === "indeciso" || clientType === "buen_cliente" || clientType === "cliente_problematico" || clientType === "sospechoso_fraude"
           ? clientType
           : null) as ClientType,
+        is_automated: typeof isAutomated === "boolean" ? isAutomated : true,
       };
     });
 
@@ -37,6 +39,47 @@ export async function GET() {
     console.error("Error fetching users:", error);
     return NextResponse.json(
       { error: "Error al obtener usuarios" },
+      { status: 500 }
+    );
+  }
+}
+
+/**
+ * PATCH /api/users
+ * Actualiza campos de un usuario (ej: is_automated).
+ */
+export async function PATCH(request: NextRequest) {
+  try {
+    const db = getDb();
+    const body = await request.json();
+    const { id, is_automated } = body;
+
+    if (!id) {
+      return NextResponse.json(
+        { error: "Se requiere id del usuario" },
+        { status: 400 }
+      );
+    }
+
+    const updateData: Record<string, unknown> = {};
+    if (typeof is_automated === "boolean") {
+      updateData.is_automated = is_automated;
+    }
+
+    if (Object.keys(updateData).length === 0) {
+      return NextResponse.json(
+        { error: "No hay campos para actualizar" },
+        { status: 400 }
+      );
+    }
+
+    await db.collection("users").doc(id).update(updateData);
+
+    return NextResponse.json({ success: true });
+  } catch (error) {
+    console.error("Error updating user:", error);
+    return NextResponse.json(
+      { error: "Error al actualizar usuario" },
       { status: 500 }
     );
   }
