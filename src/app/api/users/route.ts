@@ -20,6 +20,8 @@ export async function GET() {
       const reservationCount = data.reservation_count;
       const clientType = data.client_type;
       const isAutomated = data.is_automated;
+      const needsHelp = data.needs_help;
+      const helpReason = data.help_reason;
 
       return {
         id,
@@ -31,6 +33,8 @@ export async function GET() {
           ? clientType
           : null) as ClientType,
         is_automated: typeof isAutomated === "boolean" ? isAutomated : true,
+        needs_help: typeof needsHelp === "boolean" ? needsHelp : false,
+        help_reason: typeof helpReason === "string" ? helpReason : undefined,
       };
     });
 
@@ -64,6 +68,11 @@ export async function PATCH(request: NextRequest) {
     const updateData: Record<string, unknown> = {};
     if (typeof is_automated === "boolean") {
       updateData.is_automated = is_automated;
+      // Si se activa el bot, limpiar el estado de "necesita ayuda"
+      if (is_automated === true) {
+        updateData.needs_help = false;
+        updateData.help_reason = null;
+      }
     }
 
     if (Object.keys(updateData).length === 0) {

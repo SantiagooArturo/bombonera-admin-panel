@@ -183,8 +183,15 @@ class Store {
       });
       if (!res.ok) throw new Error("Failed to update");
 
+      // Si se activa el bot, también limpiamos needs_help en el estado local
       this.users = this.users.map((u) =>
-        u.id === userId ? { ...u, is_automated: newValue } : u
+        u.id === userId
+          ? {
+              ...u,
+              is_automated: newValue,
+              ...(newValue ? { needs_help: false, help_reason: undefined } : {}),
+            }
+          : u
       );
       this.notify();
       return true;

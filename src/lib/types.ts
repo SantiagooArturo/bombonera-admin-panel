@@ -82,6 +82,10 @@ export interface User {
   client_type: ClientType;
   /** Si el bot responde automáticamente (true) o un humano debe responder (false). Default: true */
   is_automated?: boolean;
+  /** Si el usuario necesita atención humana (el bot solicitó ayuda). */
+  needs_help?: boolean;
+  /** Razón por la que se solicitó ayuda humana. */
+  help_reason?: string;
 }
 
 export const CLIENT_TYPE_LABELS: Record<NonNullable<ClientType>, string> = {
