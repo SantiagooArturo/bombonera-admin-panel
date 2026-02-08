@@ -8,9 +8,13 @@ export async function GET(request: NextRequest) {
     const date = searchParams.get("date");
     const courtType = searchParams.get("court_type");
     const status = searchParams.get("status");
+    const phoneNumber = searchParams.get("phone_number");
 
     let query: FirebaseFirestore.Query = db.collection("reservations");
 
+    if (phoneNumber) {
+      query = query.where("chat_id", "==", phoneNumber);
+    }
     if (date) {
       query = query.where("date", "==", date);
     }
@@ -44,16 +48,28 @@ export async function PATCH(request: NextRequest) {
   try {
     const db = getDb();
     const body = await request.json();
-    const { id, status } = body;
+    const { id, status, field, arrived } = body;
 
-    if (!id || !status) {
+    if (!id) {
       return NextResponse.json(
-        { error: "Se requiere id y status" },
+        { error: "Se requiere id" },
         { status: 400 }
       );
     }
 
-    await db.collection("reservations").doc(id).update({ status });
+    const updateData: Record<string, unknown> = {};
+    if (typeof status === "string") updateData.status = status;
+    if (typeof field === "number" || field === null) updateData.field = field;
+    if (typeof arrived === "boolean") updateData.arrived = arrived;
+
+    if (Object.keys(updateData).length === 0) {
+      return NextResponse.json(
+        { error: "No hay campos para actualizar" },
+        { status: 400 }
+      );
+    }
+
+    await db.collection("reservations").doc(id).update(updateData);
 
     return NextResponse.json({ success: true });
   } catch (error) {
