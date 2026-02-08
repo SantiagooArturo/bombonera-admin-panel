@@ -22,6 +22,10 @@ export interface Reservation {
   confirmed?: boolean;
   /** Cuándo se confirmó la reserva. */
   confirmed_at?: string;
+  /** Nombre del representante/responsable de la reserva. */
+  representative_name?: string;
+  /** Si el cliente ya llegó a la cancha. */
+  arrived?: boolean;
 }
 
 export interface BlockedSlot {
@@ -98,6 +102,9 @@ export const CLIENT_TYPE_LABELS: Record<NonNullable<ClientType>, string> = {
 // Transferencias: colección transfers. Registro de todos los pagos procesados.
 export type TransferStatus = "applied" | "rejected_duplicate" | "partial";
 
+/** Origen del pago: chatbot (comprobante digital) o manual (cobro presencial). */
+export type PaymentSource = "chatbot" | "manual";
+
 export interface Transfer {
   id: string;
   /** Número de WhatsApp del usuario que hizo la transferencia. */
@@ -114,6 +121,8 @@ export interface Transfer {
   reservation_id: string | null;
   /** Estado: applied (aplicado), rejected_duplicate (duplicado), partial (pago parcial). */
   status: TransferStatus;
+  /** Origen: "chatbot" (pago digital con comprobante) o "manual" (cobro presencial en la bombonera). */
+  source: PaymentSource;
   /** Fecha de creación del registro. */
   created_at: string;
 }

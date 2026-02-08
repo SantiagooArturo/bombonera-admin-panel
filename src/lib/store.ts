@@ -1,4 +1,4 @@
-import { Reservation, BlockedSlot, AutomatedNumber, User } from "./types";
+import type { Reservation, BlockedSlot, AutomatedNumber, User } from "./types";
 
 // API-backed store that syncs with Firebase via Next.js API routes
 type Listener = () => void;
@@ -198,6 +198,42 @@ class Store {
     } catch (error) {
       console.error("Error toggling user automation:", error);
       return false;
+    }
+  }
+
+  // User Reservations (para la vista expandida de un usuario)
+  async fetchUserReservations(phoneNumber: string): Promise<Reservation[]> {
+    try {
+      const res = await fetch(`/api/reservations?phone_number=${encodeURIComponent(phoneNumber)}`);
+      if (!res.ok) throw new Error("Failed to fetch");
+      return await res.json();
+    } catch (error) {
+      console.error("Error fetching user reservations:", error);
+      return [];
+    }
+  }
+
+  async processManualPayment(reservationId: string, amount: number, phoneNumber: string) {
+    try {
+      const res = await fetch("/api/payments/manual", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          reservation_id: reservationId,
+          amount,
+          phone_number: phoneNumber,
+        }),
+      });
+      if (!res.ok) throw new Error("Failed to process payment");
+      return await res.json() as {
+        success: boolean;
+        transfer_id: string;
+        new_amount_paid: number;
+        fully_paid: boolean;
+      };
+    } catch (error) {
+      console.error("Error processing manual payment:", error);
+      return null;
     }
   }
 
