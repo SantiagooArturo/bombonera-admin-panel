@@ -70,7 +70,7 @@ class Store {
     return this.updateReservationStatus(id, "cancelled");
   }
 
-  async sendPaymentReminder(reservation: Reservation) {
+  async sendPaymentReminder(reservation: Reservation, amountToCharge: number) {
     try {
       const res = await fetch("/api/send-reminder", {
         method: "POST",
@@ -82,6 +82,8 @@ class Store {
           date: reservation.date,
           time_slots: reservation.time_slots,
           total_price: reservation.total_price,
+          amount_paid: reservation.amount_paid || 0,
+          amount_to_charge: amountToCharge,
         }),
       });
       if (!res.ok) throw new Error("Failed to send reminder");

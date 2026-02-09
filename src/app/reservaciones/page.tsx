@@ -4,6 +4,7 @@ import { useState, useEffect } from "react";
 import ClientLayout, { useToastContext } from "@/components/ClientLayout";
 import ConfirmDialog from "@/components/ConfirmDialog";
 import { useStore } from "@/lib/hooks";
+import type { Reservation } from "@/lib/types";
 import {
   COURT_LABELS,
   STATUS_LABELS,
@@ -25,6 +26,8 @@ export default function ReservacionesPage() {
     id: string;
   } | null>(null);
   const [sendingReminder, setSendingReminder] = useState<string | null>(null);
+  const [reminderModal, setReminderModal] = useState<{ reservation: Reservation } | null>(null);
+  const [customAmount, setCustomAmount] = useState("");
 
   useEffect(() => {
     store.fetchReservations();
@@ -57,14 +60,14 @@ export default function ReservacionesPage() {
     setConfirmAction(null);
   }
 
-  async function handleSendReminder(resId: string) {
-    const reservation = reservations.find((r) => r.id === resId);
-    if (!reservation) return;
-    setSendingReminder(resId);
-    const success = await store.sendPaymentReminder(reservation);
+  async function handleSendReminder(reservation: Reservation, amountToCharge: number) {
+    setSendingReminder(reservation.id);
+    setReminderModal(null);
+    const success = await store.sendPaymentReminder(reservation, amountToCharge);
     if (success) toast("Recordatorio enviado por WhatsApp", "success");
     else toast("Error al enviar recordatorio", "error");
     setSendingReminder(null);
+    setCustomAmount("");
   }
 
   function formatDate(dateStr: string) {
@@ -233,7 +236,7 @@ export default function ReservacionesPage() {
                         {res.status === "pending" && (
                           <>
                             <button
-                              onClick={() => handleSendReminder(res.id)}
+                              onClick={() => setReminderModal({ reservation: res })}
                               disabled={sendingReminder === res.id}
                               className="px-5 py-3 text-body font-bold rounded-xl bg-green-600 text-white hover:bg-green-700 disabled:bg-green-400 transition-colors min-h-[48px]"
                             >
@@ -280,6 +283,75 @@ export default function ReservacionesPage() {
         onConfirm={handleConfirm}
         onCancel={() => setConfirmAction(null)}
       />
+
+      {/* Modal de Recordatorio de Pago */}
+      {reminderModal && (() => {
+        const r = reminderModal.reservation;
+        const totalPrice = r.total_price || 0;
+        const amountPaid = r.amount_paid || 0;
+        const pendiente = totalPrice - amountPaid;
+
+        return (
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
+            <div className="bg-white rounded-2xl shadow-2xl max-w-md w-full p-8">
+              <h3 className="text-heading font-bold text-gray-900 mb-3">Recordatorio de Pago</h3>
+
+              <div className="bg-gray-50 rounded-xl p-4 mb-6 space-y-2">
+                <div className="flex justify-between text-body">
+                  <span className="text-gray-600">Total</span>
+                  <span className="font-bold text-gray-900">S/ {totalPrice.toFixed(2)}</span>
+                </div>
+                <div className="flex justify-between text-body">
+                  <span className="text-gray-600">Pagado</span>
+                  <span className="font-bold text-green-700">S/ {amountPaid.toFixed(2)}</span>
+                </div>
+                <div className="flex justify-between text-body border-t border-gray-200 pt-2">
+                  <span className="text-gray-600 font-semibold">Pendiente</span>
+                  <span className="font-bold text-amber-700">S/ {pendiente.toFixed(2)}</span>
+                </div>
+              </div>
+
+              <div className="space-y-3 mb-6">
+                <button
+                  onClick={() => handleSendReminder(r, pendiente)}
+                  className="w-full px-6 py-4 text-body font-semibold rounded-xl bg-green-600 text-white hover:bg-green-700 transition-colors"
+                >
+                  Cobrar pendiente (S/ {pendiente.toFixed(2)})
+                </button>
+
+                <div className="flex gap-3">
+                  <input
+                    type="number"
+                    min="0"
+                    step="0.01"
+                    value={customAmount}
+                    onChange={(e) => setCustomAmount(e.target.value)}
+                    placeholder="Monto"
+                    className="flex-1 px-4 py-4 text-body rounded-xl border-2 border-gray-200 focus:border-bombonera-500 focus:outline-none bg-gray-50"
+                  />
+                  <button
+                    onClick={() => {
+                      const amount = parseFloat(customAmount);
+                      if (amount > 0) handleSendReminder(r, amount);
+                    }}
+                    disabled={!customAmount || parseFloat(customAmount) <= 0}
+                    className="px-6 py-4 text-body font-semibold rounded-xl bg-blue-600 text-white hover:bg-blue-700 disabled:bg-blue-300 transition-colors whitespace-nowrap"
+                  >
+                    Cobrar monto
+                  </button>
+                </div>
+              </div>
+
+              <button
+                onClick={() => { setReminderModal(null); setCustomAmount(""); }}
+                className="w-full px-6 py-4 text-body font-semibold rounded-xl border-2 border-gray-300 text-gray-700 hover:bg-gray-100 transition-colors"
+              >
+                Cancelar
+              </button>
+            </div>
+          </div>
+        );
+      })()}
     </ClientLayout>
   );
 }
