@@ -22,7 +22,7 @@ async function sendWhatsAppMessage(chatId: string, text: string) {
     method: "POST",
     headers,
     body: JSON.stringify({
-      session: "default",
+      session: "session_01kgx7mr4058d2hc98m62jx2cy",
       chatId,
       text,
     }),
@@ -39,7 +39,7 @@ async function sendWhatsAppMessage(chatId: string, text: string) {
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
-    const { chat_id, court_type, field, date, time_slots, total_price } = body;
+    const { chat_id, court_type, field, date, time_slots, total_price, amount_paid, amount_to_charge } = body;
 
     if (!chat_id || !court_type || !date || !time_slots) {
       return NextResponse.json(
@@ -72,17 +72,17 @@ export async function POST(request: NextRequest) {
       `⚽ Cancha: ${courtName}${field ? ` - Campo ${field}` : ""}`,
       `📅 Fecha: ${dateFormatted}`,
       `🕐 Horario: ${startTime} a ${endTime}`,
-      `💰 Total: S/ ${(total_price || 0).toFixed(2)} (reserva: S/ ${((total_price || 0) / 2).toFixed(2)})`,
+      `💰 Total: S/ ${(total_price || 0).toFixed(2)} | Pagado: S/ ${(amount_paid || 0).toFixed(2)} | Pendiente: S/ ${((total_price || 0) - (amount_paid || 0)).toFixed(2)}`,
     ].join("\n");
 
     await sendWhatsAppMessage(chat_id, detalles);
 
     await new Promise((resolve) => setTimeout(resolve, 1500));
 
-    // Mensaje 3: Pedido de pago
+    // Mensaje 3: Pedido de pago con monto a cobrar
     await sendWhatsAppMessage(
       chat_id,
-      `Envíame foto del pago para confirmarlo, te espero a las ${startTime} 🙌`
+      `Debes transferir S/ ${(amount_to_charge || 0).toFixed(2)} a BCP 194-1517117-0-13 (ALIFAD EIRL) y enviarme la captura para confirmarlo 🙌`
     );
 
     return NextResponse.json({ success: true });

@@ -1,0 +1,75 @@
+"use client";
+
+import type { Reservation } from "@/lib/types";
+
+/** Quita el prefijo "51" del número peruano si existe. */
+function formatPhone(phone: string): string {
+  return phone.startsWith("51") ? phone.slice(2) : phone;
+}
+
+/** Contenido visual de una celda ocupada por una reserva. */
+export function OccupiedCellContent({
+  reservation,
+}: {
+  reservation: Reservation;
+}) {
+  const paid = reservation.amount_paid ?? 0;
+  const total = reservation.total_price ?? 0;
+  const remaining = total - paid;
+  const arrived = reservation.arrived ?? false;
+  const fullyPaid = remaining <= 0;
+
+  return (
+    <div className="h-full rounded-lg border-2 border-blue-300 bg-white p-2 flex flex-col justify-center gap-0.5">
+      {/* Nombre */}
+      <p className="text-xs font-bold text-gray-800 truncate leading-tight">
+        {reservation.representative_name || "Sin nombre"}
+      </p>
+
+      {/* Teléfono con icono WSP */}
+      {reservation.phone_number && (
+        <div className="flex items-center gap-1 truncate leading-tight">
+          <svg
+            className="w-3 h-3 shrink-0 text-green-600"
+            viewBox="0 0 24 24"
+            fill="currentColor"
+          >
+            <path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51l-.57-.01c-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347z" />
+            <path d="M12 0C5.373 0 0 5.373 0 12c0 2.127.555 4.122 1.527 5.855L.06 23.485a.5.5 0 00.607.606l5.632-1.468A11.94 11.94 0 0012 24c6.627 0 12-5.373 12-12S18.627 0 12 0zm0 21.82c-1.998 0-3.87-.56-5.47-1.53l-.39-.234-3.347.872.89-3.262-.256-.406A9.8 9.8 0 012.18 12C2.18 6.58 6.58 2.18 12 2.18S21.82 6.58 21.82 12 17.42 21.82 12 21.82z" />
+          </svg>
+          <span className="text-[10px] text-gray-600 font-medium truncate">
+            {formatPhone(reservation.phone_number)}
+          </span>
+        </div>
+      )}
+
+      {/* Info de pago */}
+      {fullyPaid ? (
+        <span className="text-[10px] font-bold text-green-600 mt-0.5">
+          Pagado completo
+        </span>
+      ) : (
+        <div className="flex flex-col mt-0.5">
+          <span className="text-[10px] text-gray-500">
+            Total: S/{total}
+          </span>
+          <span className="text-[10px] font-bold text-red-500">
+            Falta: S/{remaining}
+          </span>
+        </div>
+      )}
+
+      {/* Indicador de llegada */}
+      {arrived && (
+        <span className="text-[10px] text-green-600 font-semibold">
+          ✓ Llegó
+        </span>
+      )}
+    </div>
+  );
+}
+
+/** Contenido visual de una celda vacía (disponible). */
+export function EmptyCellContent() {
+  return <div className="h-full min-h-[52px] rounded bg-green-50/40" />;
+}

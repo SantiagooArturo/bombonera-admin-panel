@@ -1,4 +1,4 @@
-import type { Reservation, BlockedSlot, AutomatedNumber, User } from "./types";
+import type { Reservation, BlockedSlot, AutomatedNumber, User, Invoice } from "./types";
 
 // API-backed store that syncs with Firebase via Next.js API routes
 type Listener = () => void;
@@ -8,8 +8,9 @@ class Store {
   private blockedSlots: BlockedSlot[] = [];
   private automatedNumbers: AutomatedNumber[] = [];
   private users: User[] = [];
+  private invoices: Invoice[] = [];
   private listeners: Set<Listener> = new Set();
-  private loaded = { reservations: false, blockedSlots: false, automatedNumbers: false, users: false };
+  private loaded = { reservations: false, blockedSlots: false, automatedNumbers: false, users: false, invoices: false };
 
   subscribe(listener: Listener) {
     this.listeners.add(listener);
@@ -56,7 +57,15 @@ class Store {
       if (!res.ok) throw new Error("Failed to update");
 
       this.reservations = this.reservations.map((r) =>
-        r.id === id ? { ...r, status } : r
+        r.id === id
+          ? {
+              ...r,
+              status,
+              ...(status === "paid"
+                ? { amount_paid: r.total_price, confirmed: true, confirmed_at: new Date().toISOString() }
+                : {}),
+            }
+          : r
       );
       this.notify();
       return true;
@@ -70,7 +79,7 @@ class Store {
     return this.updateReservationStatus(id, "cancelled");
   }
 
-  async sendPaymentReminder(reservation: Reservation) {
+  async sendPaymentReminder(reservation: Reservation, amountToCharge: number) {
     try {
       const res = await fetch("/api/send-reminder", {
         method: "POST",
@@ -82,6 +91,8 @@ class Store {
           date: reservation.date,
           time_slots: reservation.time_slots,
           total_price: reservation.total_price,
+          amount_paid: reservation.amount_paid || 0,
+          amount_to_charge: amountToCharge,
         }),
       });
       if (!res.ok) throw new Error("Failed to send reminder");
@@ -274,6 +285,82 @@ class Store {
       return true;
     } catch (error) {
       console.error("Error toggling automation:", error);
+      return false;
+    }
+  }
+
+  // Invoices
+  getInvoices() {
+    return this.invoices;
+  }
+
+  async fetchInvoices() {
+    try {
+      const res = await fetch("/api/invoices");
+      if (!res.ok) throw new Error("Failed to fetch");
+      this.invoices = await res.json();
+      this.loaded.invoices = true;
+      this.notify();
+    } catch (error) {
+      console.error("Error fetching invoices:", error);
+    }
+  }
+
+  async emitInvoice(reservation: Reservation) {
+    try {
+      const res = await fetch("/api/invoices", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          reservation_id: reservation.id,
+          user_id: reservation.chat_id,
+          phone_number: reservation.phone_number,
+          amount: reservation.total_price,
+          court_type: reservation.court_type,
+          date: reservation.date,
+        }),
+      });
+      if (!res.ok) throw new Error("Failed to emit invoice");
+      const result = await res.json() as {
+        success: boolean;
+        invoice_id: string;
+        file_url: string;
+      };
+
+      // Add to local state so UI updates immediately
+      const newInvoice: Invoice = {
+        id: result.invoice_id,
+        reservation_id: reservation.id,
+        user_id: reservation.chat_id,
+        phone_number: reservation.phone_number,
+        file_url: result.file_url,
+        amount: reservation.total_price,
+        court_type: reservation.court_type,
+        date: reservation.date,
+        status: "emitted",
+        created_at: new Date().toISOString(),
+      };
+      this.invoices = [...this.invoices, newInvoice];
+      this.notify();
+
+      return result;
+    } catch (error) {
+      console.error("Error emitting invoice:", error);
+      return null;
+    }
+  }
+
+  async sendInvoiceWhatsApp(chatId: string, fileUrl: string) {
+    try {
+      const res = await fetch("/api/invoices/send", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ chat_id: chatId, file_url: fileUrl }),
+      });
+      if (!res.ok) throw new Error("Failed to send invoice");
+      return true;
+    } catch (error) {
+      console.error("Error sending invoice via WhatsApp:", error);
       return false;
     }
   }

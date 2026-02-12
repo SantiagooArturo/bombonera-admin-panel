@@ -69,6 +69,18 @@ export async function PATCH(request: NextRequest) {
       );
     }
 
+    // Si se marca como pagado, poner amount_paid = total_price
+    if (status === "paid") {
+      const doc = await db.collection("reservations").doc(id).get();
+      if (doc.exists) {
+        const data = doc.data();
+        const totalPrice = data?.total_price || 0;
+        updateData.amount_paid = totalPrice;
+        updateData.confirmed = true;
+        updateData.confirmed_at = new Date().toISOString();
+      }
+    }
+
     await db.collection("reservations").doc(id).update(updateData);
 
     return NextResponse.json({ success: true });

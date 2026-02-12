@@ -1,0 +1,251 @@
+"use client";
+
+import { useMemo, useEffect, useRef } from "react";
+import { TIME_SLOTS, type Reservation, type CourtType } from "@/lib/types";
+import { OccupiedCellContent, EmptyCellContent } from "./GridCell";
+
+// ─── Column definitions ─────────────────────────────────────────────────────
+
+interface ColumnGroup {
+  label: string;
+  courtType: CourtType;
+  fields: number[];
+}
+
+const COLUMN_GROUPS: ColumnGroup[] = [
+  { label: "Voley 6v6", courtType: "voley_6v6", fields: [1, 2, 3, 8, 10, 11, 12] },
+  { label: "Multi 6v6", courtType: "voley_basket_6v6", fields: [4] },
+  { label: "Voley 5v5", courtType: "voley_5v5", fields: [5, 6, 7] },
+  { label: "Multi 5v5", courtType: "voley_basket_5v5", fields: [9] },
+];
+
+/** Todos los campos en orden de columna (agrupados por tipo). */
+const ALL_FIELDS = COLUMN_GROUPS.flatMap((g) => g.fields);
+
+/** Set de campos que inician un grupo (para bordes separadores). */
+const GROUP_START_FIELDS = new Set(
+  COLUMN_GROUPS.filter((_, i) => i > 0).map((g) => g.fields[0])
+);
+
+// ─── Grid cell types ────────────────────────────────────────────────────────
+
+type CellInfo =
+  | { type: "skip" }
+  | { type: "empty" }
+  | { type: "reservation"; reservation: Reservation; span: number };
+
+// ─── Props ──────────────────────────────────────────────────────────────────
+
+export interface ScheduleGridProps {
+  reservations: Reservation[];
+  autoAssignments: Map<string, number>;
+  currentSlot: string;
+  onSelectReservation: (reservation: Reservation) => void;
+}
+
+// ─── Component ──────────────────────────────────────────────────────────────
+
+export default function ScheduleGrid({
+  reservations,
+  autoAssignments,
+  currentSlot,
+  onSelectReservation,
+}: ScheduleGridProps) {
+  const currentRowRef = useRef<HTMLTableRowElement>(null);
+
+  // Auto-scroll a la fila del horario actual al montar
+  useEffect(() => {
+    currentRowRef.current?.scrollIntoView({
+      behavior: "smooth",
+      block: "center",
+    });
+  }, [currentSlot]);
+
+  // ── Build 2D grid ───────────────────────────────────────────────────────
+
+  const grid = useMemo(() => {
+    // field → slot → reservation
+    const fieldSlotMap = new Map<
+      number,
+      Map<string, Reservation>
+    >();
+
+    for (const r of reservations) {
+      if (r.status === "cancelled") continue;
+      const effectiveField = r.field ?? autoAssignments.get(r.id) ?? null;
+      if (effectiveField == null) continue;
+
+      if (!fieldSlotMap.has(effectiveField))
+        fieldSlotMap.set(effectiveField, new Map());
+      const slotMap = fieldSlotMap.get(effectiveField)!;
+
+      for (const slot of r.time_slots ?? []) {
+        slotMap.set(slot, r);
+      }
+    }
+
+    // Construct cells[slotIndex][fieldIndex]
+    const cells: CellInfo[][] = [];
+    const skipSet = new Set<string>();
+
+    for (let si = 0; si < TIME_SLOTS.length; si++) {
+      const row: CellInfo[] = [];
+      const slot = TIME_SLOTS[si];
+
+      for (let fi = 0; fi < ALL_FIELDS.length; fi++) {
+        const field = ALL_FIELDS[fi];
+
+        if (skipSet.has(`${si}:${fi}`)) {
+          row.push({ type: "skip" });
+          continue;
+        }
+
+        const slotMap = fieldSlotMap.get(field);
+        const reservation = slotMap?.get(slot);
+
+        if (!reservation) {
+          row.push({ type: "empty" });
+          continue;
+        }
+
+        // Calcular cuántos slots consecutivos ocupa esta reserva
+        let span = 1;
+        for (let next = si + 1; next < TIME_SLOTS.length; next++) {
+          const nextRes = slotMap?.get(TIME_SLOTS[next]);
+          if (nextRes && nextRes.id === reservation.id) {
+            span++;
+            skipSet.add(`${next}:${fi}`);
+          } else {
+            break;
+          }
+        }
+
+        row.push({ type: "reservation", reservation, span });
+      }
+
+      cells.push(row);
+    }
+
+    return cells;
+  }, [reservations, autoAssignments]);
+
+  // ── Render ──────────────────────────────────────────────────────────────
+
+  return (
+    <div
+      className="overflow-auto rounded-xl border border-gray-200 bg-white shadow-sm"
+      style={{ maxHeight: "calc(100vh - 220px)" }}
+    >
+      <table className="w-full border-collapse text-sm">
+        <thead>
+          {/* Fila 1: Headers de grupo (tipo de cancha) */}
+          <tr>
+            <th
+              rowSpan={2}
+              className="sticky left-0 top-0 z-30 bg-gray-50 border-b border-r border-gray-200 px-3 py-2 text-xs font-bold text-gray-500 min-w-[64px]"
+            >
+              Hora
+            </th>
+            {COLUMN_GROUPS.map((group) => (
+              <th
+                key={group.courtType}
+                colSpan={group.fields.length}
+                className="sticky top-0 z-20 bg-gray-50 border-b border-gray-200 px-2 py-2 text-xs font-bold text-gray-600 text-center whitespace-nowrap"
+              >
+                {group.label}
+              </th>
+            ))}
+          </tr>
+
+          {/* Fila 2: Números de campo */}
+          <tr>
+            {ALL_FIELDS.map((field) => (
+              <th
+                key={field}
+                className={`sticky top-[33px] z-20 bg-gray-50 border-b border-gray-200 px-2 py-1.5 text-xs font-bold text-gray-500 text-center min-w-[80px] ${
+                  GROUP_START_FIELDS.has(field)
+                    ? "border-l-2 border-l-gray-300"
+                    : ""
+                }`}
+              >
+                C{field}
+              </th>
+            ))}
+          </tr>
+        </thead>
+
+        <tbody>
+          {TIME_SLOTS.map((slot, si) => {
+            const isCurrent = slot === currentSlot;
+            const hour = parseInt(slot);
+            const label = hour <= 12 ? `${hour}am` : `${hour - 12}pm`;
+
+            return (
+              <tr
+                key={slot}
+                ref={isCurrent ? currentRowRef : undefined}
+                className={isCurrent ? "bg-bombonera-50/50" : ""}
+              >
+                {/* Columna de hora (sticky left) */}
+                <td
+                  className={`sticky left-0 z-10 border-r border-b border-gray-200 px-3 py-2 text-xs font-bold whitespace-nowrap ${
+                    isCurrent
+                      ? "bg-bombonera-100 text-bombonera-700"
+                      : "bg-gray-50 text-gray-500"
+                  }`}
+                >
+                  <div className="flex items-center gap-1.5">
+                    {isCurrent && (
+                      <span className="w-2 h-2 rounded-full bg-bombonera-500 animate-pulse" />
+                    )}
+                    {label}
+                  </div>
+                </td>
+
+                {/* Celdas de campos */}
+                {grid[si]?.map((cell, fi) => {
+                  if (cell.type === "skip") return null;
+
+                  const field = ALL_FIELDS[fi];
+                  const borderLeft = GROUP_START_FIELDS.has(field)
+                    ? "border-l-2 border-l-gray-300"
+                    : "";
+
+                  if (cell.type === "empty") {
+                    return (
+                      <td
+                        key={field}
+                        className={`border-b border-gray-100 p-1 h-[52px] ${borderLeft}`}
+                      >
+                        <EmptyCellContent />
+                      </td>
+                    );
+                  }
+
+                  const { reservation, span } = cell;
+                  const arrived = reservation.arrived ?? false;
+
+                  return (
+                    <td
+                      key={field}
+                      rowSpan={span}
+                      onClick={() =>
+                        onSelectReservation(reservation)
+                      }
+                      className={`border-b border-gray-100 p-1 cursor-pointer transition-colors hover:brightness-95 ${borderLeft} ${
+                        arrived ? "bg-green-50" : "bg-white"
+                      }`}
+                      style={{ height: `${span * 52}px` }}
+                    >
+                      <OccupiedCellContent reservation={reservation} />
+                    </td>
+                  );
+                })}
+              </tr>
+            );
+          })}
+        </tbody>
+      </table>
+    </div>
+  );
+}

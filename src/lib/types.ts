@@ -99,6 +99,20 @@ export const CLIENT_TYPE_LABELS: Record<NonNullable<ClientType>, string> = {
   sospechoso_fraude: "Sospechoso de fraude",
 };
 
+// Boletas: colección invoices. Registro de boletas emitidas.
+export interface Invoice {
+  id: string;
+  reservation_id: string;
+  user_id: string;
+  phone_number: string;
+  file_url: string;
+  amount: number;
+  court_type: string;
+  date: string;
+  status: string;
+  created_at: string;
+}
+
 // Transferencias: colección transfers. Registro de todos los pagos procesados.
 export type TransferStatus = "applied" | "rejected_duplicate" | "partial";
 
@@ -123,6 +137,8 @@ export interface Transfer {
   status: TransferStatus;
   /** Origen: "chatbot" (pago digital con comprobante) o "manual" (cobro presencial en la bombonera). */
   source: PaymentSource;
+  /** URL de la imagen del comprobante (solo para pagos via chatbot). */
+  media_url?: string | null;
   /** Fecha de creación del registro. */
   created_at: string;
 }
