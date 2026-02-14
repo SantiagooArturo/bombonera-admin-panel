@@ -2,13 +2,24 @@ import { NextRequest, NextResponse } from "next/server";
 import { getDb, getStorageBucket } from "@/lib/firebase-admin";
 import { randomUUID } from "crypto";
 
-export async function GET() {
+export async function GET(request: NextRequest) {
   try {
+    const reservationId = request.nextUrl.searchParams.get("reservation_id");
     const db = getDb();
-    const snapshot = await db.collection("invoices").get();
+
+    let query: FirebaseFirestore.Query = db.collection("invoices");
+    if (reservationId) {
+      query = query.where("reservation_id", "==", reservationId);
+    }
+
+    const snapshot = await query.get();
     const invoices = snapshot.docs.map((doc) => ({
       id: doc.id,
       ...doc.data(),
+      created_at:
+        doc.data().created_at?.toDate?.()?.toISOString() ??
+        doc.data().created_at ??
+        null,
     }));
     return NextResponse.json(invoices);
   } catch (error) {
@@ -25,7 +36,7 @@ export async function POST(request: NextRequest) {
     const db = getDb();
     const bucket = getStorageBucket();
     const body = await request.json();
-    const { reservation_id, user_id, phone_number, amount, court_type, date } = body;
+    const { reservation_id, user_id, phone_number, amount, court_type, date, transfer_id } = body;
 
     if (!reservation_id || !user_id) {
       return NextResponse.json(
@@ -71,6 +82,7 @@ export async function POST(request: NextRequest) {
       amount: amount || 0,
       court_type: court_type || "",
       date: date || "",
+      transfer_id: transfer_id || null,
       status: "emitted",
       created_at: new Date().toISOString(),
     };

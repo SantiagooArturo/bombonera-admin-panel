@@ -59,12 +59,12 @@ class Store {
       this.reservations = this.reservations.map((r) =>
         r.id === id
           ? {
-              ...r,
-              status,
-              ...(status === "paid"
-                ? { amount_paid: r.total_price, confirmed: true, confirmed_at: new Date().toISOString() }
-                : {}),
-            }
+            ...r,
+            status,
+            ...(status === "paid"
+              ? { amount_paid: r.total_price, confirmed: true, confirmed_at: new Date().toISOString() }
+              : {}),
+          }
           : r
       );
       this.notify();
@@ -198,10 +198,10 @@ class Store {
       this.users = this.users.map((u) =>
         u.id === userId
           ? {
-              ...u,
-              is_automated: newValue,
-              ...(newValue ? { needs_help: false, help_reason: undefined } : {}),
-            }
+            ...u,
+            is_automated: newValue,
+            ...(newValue ? { needs_help: false, help_reason: undefined } : {}),
+          }
           : u
       );
       this.notify();
@@ -245,6 +245,62 @@ class Store {
     } catch (error) {
       console.error("Error processing manual payment:", error);
       return null;
+    }
+  }
+
+  async revokeManualPayment(transferId: string, reservationId: string) {
+    try {
+      const res = await fetch(`/api/payments/manual?transfer_id=${transferId}&reservation_id=${reservationId}`, {
+        method: "DELETE",
+      });
+      if (!res.ok) throw new Error("Failed to revoke payment");
+      return await res.json();
+    } catch (error) {
+      console.error("Error revoking manual payment:", error);
+      return null;
+    }
+  }
+
+  async syncReservationPayments(reservationId: string) {
+    try {
+      const res = await fetch("/api/reservations/sync", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ reservation_id: reservationId }),
+      });
+      if (!res.ok) throw new Error("Failed to sync payments");
+      const result = await res.json();
+
+      this.fetchReservations(); // Refresh reservations to update UI
+      return result;
+    } catch (error) {
+      console.error("Error syncing payments:", error);
+      return null;
+    }
+  }
+
+  async fetchTransfers(reservationId: string) {
+    try {
+      const res = await fetch(`/api/transfers?reservation_id=${reservationId}`);
+      if (!res.ok) throw new Error("Failed to fetch transfers");
+      return await res.json() as import("./types").Transfer[];
+    } catch (error) {
+      console.error("Error fetching transfers:", error);
+      return [];
+    }
+  }
+
+  async verifyTransfer(transferId: string, verified: boolean) {
+    try {
+      const res = await fetch("/api/transfers", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ id: transferId, verified }),
+      });
+      return res.ok;
+    } catch (error) {
+      console.error("Error verifying transfer:", error);
+      return false;
     }
   }
 
@@ -294,20 +350,31 @@ class Store {
     return this.invoices;
   }
 
-  async fetchInvoices() {
+  async fetchInvoices(filters?: { reservation_id?: string }) {
     try {
-      const res = await fetch("/api/invoices");
+      const params = new URLSearchParams();
+      if (filters?.reservation_id) params.set("reservation_id", filters.reservation_id);
+
+      const res = await fetch(`/api/invoices?${params}`);
       if (!res.ok) throw new Error("Failed to fetch");
-      this.invoices = await res.json();
-      this.loaded.invoices = true;
-      this.notify();
+      const data = await res.json();
+
+      if (!filters) {
+        this.invoices = data;
+        this.loaded.invoices = true;
+        this.notify();
+      }
+      return data as Invoice[];
     } catch (error) {
       console.error("Error fetching invoices:", error);
+      return [];
     }
   }
 
-  async emitInvoice(reservation: Reservation) {
+  async emitInvoice(reservation: Reservation, transfer?: { id: string; amount: number }) {
     try {
+      const amountToBill = transfer?.amount || reservation.total_price;
+
       const res = await fetch("/api/invoices", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -315,9 +382,10 @@ class Store {
           reservation_id: reservation.id,
           user_id: reservation.chat_id,
           phone_number: reservation.phone_number,
-          amount: reservation.total_price,
+          amount: amountToBill,
           court_type: reservation.court_type,
           date: reservation.date,
+          transfer_id: transfer?.id,
         }),
       });
       if (!res.ok) throw new Error("Failed to emit invoice");
@@ -334,12 +402,14 @@ class Store {
         user_id: reservation.chat_id,
         phone_number: reservation.phone_number,
         file_url: result.file_url,
-        amount: reservation.total_price,
+        amount: amountToBill,
         court_type: reservation.court_type,
         date: reservation.date,
+        transfer_id: transfer?.id, // Ensure Invoice type has this optional field or cast it
         status: "emitted",
         created_at: new Date().toISOString(),
-      };
+      } as Invoice; // Casting in case type definition is outdated
+
       this.invoices = [...this.invoices, newInvoice];
       this.notify();
 

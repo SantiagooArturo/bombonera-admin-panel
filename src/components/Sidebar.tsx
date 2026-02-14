@@ -60,6 +60,17 @@ const NAV_ITEMS = [
       </svg>
     ),
   },
+  {
+    href: "/verificacion",
+    label: "Verificar Pagos",
+    icon: (
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" className="w-7 h-7">
+        <path fillRule="evenodd" d="M12 2.25c-5.385 0-9.75 4.365-9.75 9.75s4.365 9.75 9.75 9.75 9.75-4.365 9.75-9.75S17.385 2.25 12 2.25ZM12.75 9a.75.75 0 0 0-1.5 0v2.25H9a.75.75 0 0 0 0 1.5h2.25V15a.75.75 0 0 0 1.5 0v-2.25H15a.75.75 0 0 0 0-1.5h-2.25V9Z" clipRule="evenodd" />
+        <path d="M10.5 7.5a.75.75 0 0 1 .75-.75h1.5a.75.75 0 0 1 .75.75v3h3a.75.75 0 0 1 .75.75v1.5a.75.75 0 0 1-.75.75h-3v3a.75.75 0 0 1-.75.75h-1.5a.75.75 0 0 1-.75-.75v-3h-3a.75.75 0 0 1-.75-.75v-1.5a.75.75 0 0 1 .75-.75h3v-3Z" />
+        <path strokeLinecap="round" strokeLinejoin="round" d="M9 12.75 11.25 15 15 9.75M21 12a9 9 0 1 1-18 0 9 9 0 0 1 18 0Z" />
+      </svg>
+    ),
+  },
 ];
 
 export default function Sidebar() {
@@ -90,11 +101,10 @@ export default function Sidebar() {
               <Link
                 key={item.href}
                 href={item.href}
-                className={`flex items-center gap-4 px-5 py-4 rounded-xl text-body-lg font-semibold transition-all ${
-                  isActive
+                className={`flex items-center gap-4 px-5 py-4 rounded-xl text-body-lg font-semibold transition-all ${isActive
                     ? "bg-white/20 text-white shadow-lg"
                     : "text-green-200/80 hover:bg-white/10 hover:text-white"
-                }`}
+                  }`}
               >
                 {item.icon}
                 {item.label}
@@ -119,11 +129,10 @@ export default function Sidebar() {
               <Link
                 key={item.href}
                 href={item.href}
-                className={`flex flex-col items-center gap-1 py-3 px-4 text-sm font-medium transition-colors ${
-                  isActive
+                className={`flex flex-col items-center gap-1 py-3 px-4 text-sm font-medium transition-colors ${isActive
                     ? "text-white"
                     : "text-green-300/60"
-                }`}
+                  }`}
               >
                 {item.icon}
                 <span className="text-xs">{item.label}</span>

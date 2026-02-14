@@ -41,3 +41,27 @@ export async function GET(request: NextRequest) {
     );
   }
 }
+
+/**
+ * PATCH /api/transfers
+ * Verifica una transferencia.
+ */
+export async function PATCH(request: NextRequest) {
+  try {
+    const { id, verified } = await request.json();
+    if (!id) {
+      return NextResponse.json({ error: "Falta id" }, { status: 400 });
+    }
+
+    const db = getDb();
+    await db.collection("transfers").doc(id).update({
+      verified: verified,
+      verified_at: verified ? new Date().toISOString() : null,
+    });
+
+    return NextResponse.json({ success: true });
+  } catch (error) {
+    console.error("Error verifying transfer:", error);
+    return NextResponse.json({ error: "Error interno" }, { status: 500 });
+  }
+}

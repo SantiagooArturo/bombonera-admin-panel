@@ -109,6 +109,7 @@ export interface Invoice {
   amount: number;
   court_type: string;
   date: string;
+  transfer_id?: string;
   status: string;
   created_at: string;
 }
@@ -139,6 +140,10 @@ export interface Transfer {
   source: PaymentSource;
   /** URL de la imagen del comprobante (solo para pagos via chatbot). */
   media_url?: string | null;
+  /** Si la transferencia ha sido verificada manualmente por el administrador. */
+  verified?: boolean;
+  /** Fecha de verificación. */
+  verified_at?: string;
   /** Fecha de creación del registro. */
   created_at: string;
 }
