@@ -26,7 +26,7 @@ export async function POST(request: NextRequest) {
 
     const bucket = getStorageBucket();
     const ext = file.type.split("/")[1] === "jpeg" ? "jpg" : file.type.split("/")[1];
-    const storagePath = `manual-payments/${randomUUID()}.${ext}`;
+    const storagePath = `payments/${randomUUID()}.${ext}`;
     const bucketFile = bucket.file(storagePath);
 
     const buffer = Buffer.from(await file.arrayBuffer());

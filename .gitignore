@@ -34,3 +34,7 @@ yarn-error.log*
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+
+.env*
+
+utils/bombonera-agent-firebase-adminsdk-fbsvc-8b126991fe.json
