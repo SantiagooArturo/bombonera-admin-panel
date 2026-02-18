@@ -3,134 +3,12 @@
 import { useEffect, useState, useMemo, useCallback } from "react";
 import ClientLayout, { useToastContext } from "@/components/ClientLayout";
 import { useStore } from "@/lib/hooks";
-import { TIME_SLOTS, type Reservation } from "@/lib/types";
+import { TIME_SLOTS, type Reservation, type PaymentMethod } from "@/lib/types";
 import ScheduleGrid from "@/components/operations/ScheduleGrid";
 import ReservationDetailPanel from "@/components/operations/ReservationDetailPanel";
+import PaymentModal from "@/components/PaymentModal";
+import ReceiptPopup from "@/components/ReceiptPopup";
 import { computeAutoAssignments } from "@/components/operations/autoAssign";
-
-// ─── Payment Modal ──────────────────────────────────────────────────────────
-
-function PaymentModal({
-  reservation,
-  onConfirm,
-  onCancel,
-  loading,
-}: {
-  reservation: Reservation;
-  onConfirm: (amount: number) => void;
-  onCancel: () => void;
-  loading: boolean;
-}) {
-  const remaining = (reservation.total_price || 0) - (reservation.amount_paid || 0);
-  const [amount, setAmount] = useState(remaining.toFixed(2));
-  const parsedAmount = parseFloat(amount);
-  const isValid =
-    !isNaN(parsedAmount) && parsedAmount > 0 && parsedAmount <= remaining + 0.01;
-
-  return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
-      <div className="bg-white rounded-2xl shadow-2xl max-w-md w-full p-8">
-        <h3 className="text-heading font-bold text-gray-900 mb-2">
-          Cobrar pago
-        </h3>
-        <p className="text-body text-gray-500 mb-6">
-          {reservation.representative_name || "Sin nombre"}
-        </p>
-
-        <div className="space-y-3 mb-6">
-          <div className="flex justify-between text-body">
-            <span className="text-gray-500">Total</span>
-            <span className="font-bold">
-              S/ {(reservation.total_price || 0).toFixed(2)}
-            </span>
-          </div>
-          <div className="flex justify-between text-body">
-            <span className="text-gray-500">Ya pagado</span>
-            <span className="font-semibold text-blue-700">
-              S/ {(reservation.amount_paid || 0).toFixed(2)}
-            </span>
-          </div>
-          <div className="flex justify-between text-body border-t pt-3">
-            <span className="font-semibold">Restante</span>
-            <span className="font-bold text-red-600">
-              S/ {remaining.toFixed(2)}
-            </span>
-          </div>
-        </div>
-
-        <label className="block text-body font-medium text-gray-700 mb-2">
-          Monto (S/)
-        </label>
-        <input
-          type="number"
-          step="0.01"
-          min="0.01"
-          max={remaining}
-          value={amount}
-          onChange={(e) => setAmount(e.target.value)}
-          className="w-full px-5 py-4 text-body-lg font-bold rounded-xl border-2 border-gray-200 focus:border-bombonera-500 focus:outline-none bg-gray-50 mb-6"
-        />
-
-        <div className="flex gap-4">
-          <button
-            onClick={onCancel}
-            disabled={loading}
-            className="flex-1 px-6 py-4 text-body font-semibold rounded-xl border-2 border-gray-300 text-gray-700 hover:bg-gray-100 disabled:opacity-50"
-          >
-            Cancelar
-          </button>
-          <button
-            onClick={() => isValid && onConfirm(parsedAmount)}
-            disabled={!isValid || loading}
-            className="flex-1 px-6 py-4 text-body font-semibold rounded-xl bg-blue-600 text-white hover:bg-blue-700 disabled:opacity-50"
-          >
-            {loading ? "Procesando..." : "Cobrar"}
-          </button>
-        </div>
-      </div>
-    </div>
-  );
-}
-
-// ─── Receipt Popup ──────────────────────────────────────────────────────────
-
-function ReceiptPopup({
-  onYes,
-  onNo,
-}: {
-  onYes: () => void;
-  onNo: () => void;
-}) {
-  return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
-      <div className="bg-white rounded-2xl shadow-2xl max-w-md w-full p-8">
-        <h3 className="text-heading font-bold text-gray-900 mb-3">
-          ¿Emitir boleta?
-        </h3>
-        <p className="text-body text-gray-600 mb-2">
-          Se enviará por WhatsApp al cliente.
-        </p>
-        <p className="text-body text-gray-400 mb-8">
-          Podrás hacerlo más tarde si prefieres.
-        </p>
-        <div className="flex gap-4">
-          <button
-            onClick={onNo}
-            className="flex-1 px-6 py-4 text-body font-semibold rounded-xl border-2 border-gray-300 text-gray-700 hover:bg-gray-100"
-          >
-            No, después
-          </button>
-          <button
-            onClick={onYes}
-            className="flex-1 px-6 py-4 text-body font-semibold rounded-xl bg-green-600 text-white hover:bg-green-700"
-          >
-            Sí, emitir
-          </button>
-        </div>
-      </div>
-    </div>
-  );
-}
 
 // ─── Helpers ────────────────────────────────────────────────────────────────
 
@@ -280,13 +158,15 @@ export default function OperacionesPage() {
     }
   }
 
-  async function handleConfirmPayment(amount: number) {
+  async function handleConfirmPayment(amount: number, paymentMethod: PaymentMethod, mediaUrl?: string) {
     if (!payingRes) return;
     setPaymentLoading(true);
     const result = await store.processManualPayment(
       payingRes.id,
       amount,
-      payingRes.chat_id
+      payingRes.chat_id,
+      paymentMethod,
+      mediaUrl,
     );
     setPaymentLoading(false);
 

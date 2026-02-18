@@ -224,7 +224,13 @@ class Store {
     }
   }
 
-  async processManualPayment(reservationId: string, amount: number, phoneNumber: string) {
+  async processManualPayment(
+    reservationId: string,
+    amount: number,
+    phoneNumber: string,
+    paymentMethod: "digital" | "efectivo",
+    mediaUrl?: string,
+  ) {
     try {
       const res = await fetch("/api/payments/manual", {
         method: "POST",
@@ -233,6 +239,8 @@ class Store {
           reservation_id: reservationId,
           amount,
           phone_number: phoneNumber,
+          payment_method: paymentMethod,
+          media_url: mediaUrl,
         }),
       });
       if (!res.ok) throw new Error("Failed to process payment");

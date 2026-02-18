@@ -8,7 +8,10 @@ import {
   COURT_LABELS,
   type ClientType,
   type Reservation,
+  type PaymentMethod,
 } from "@/lib/types";
+import PaymentModal from "@/components/PaymentModal";
+import ReceiptPopup from "@/components/ReceiptPopup";
 
 // ─── Helpers ────────────────────────────────────────────────────────────────
 
@@ -79,120 +82,6 @@ function SortHeader({
         </button>
       </span>
     </th>
-  );
-}
-
-// ─── Payment Modal ──────────────────────────────────────────────────────────
-
-function PaymentModal({
-  reservation,
-  onConfirm,
-  onCancel,
-  loading,
-}: {
-  reservation: Reservation;
-  onConfirm: (amount: number) => void;
-  onCancel: () => void;
-  loading: boolean;
-}) {
-  const remaining = (reservation.total_price || 0) - (reservation.amount_paid || 0);
-  const [amount, setAmount] = useState(remaining.toFixed(2));
-
-  const parsedAmount = parseFloat(amount);
-  const isValid = !isNaN(parsedAmount) && parsedAmount > 0 && parsedAmount <= remaining + 0.01;
-
-  return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
-      <div className="bg-white rounded-2xl shadow-2xl max-w-md w-full p-8">
-        <h3 className="text-heading font-bold text-gray-900 mb-2">Cobrar pago presencial</h3>
-        <p className="text-body text-gray-500 mb-6">
-          {COURT_LABELS[reservation.court_type] || reservation.court_type} — {formatDate(reservation.date)}
-        </p>
-
-        <div className="space-y-4 mb-6">
-          <div className="flex justify-between text-body">
-            <span className="text-gray-500">Precio total</span>
-            <span className="font-bold text-gray-900">S/ {(reservation.total_price || 0).toFixed(2)}</span>
-          </div>
-          <div className="flex justify-between text-body">
-            <span className="text-gray-500">Ya pagado</span>
-            <span className="font-semibold text-blue-700">S/ {(reservation.amount_paid || 0).toFixed(2)}</span>
-          </div>
-          <div className="flex justify-between text-body border-t pt-3">
-            <span className="text-gray-700 font-semibold">Restante</span>
-            <span className="font-bold text-red-600">S/ {remaining.toFixed(2)}</span>
-          </div>
-        </div>
-
-        <label className="block text-body font-medium text-gray-700 mb-2">
-          Monto a cobrar (S/)
-        </label>
-        <input
-          type="number"
-          step="0.01"
-          min="0.01"
-          max={remaining}
-          value={amount}
-          onChange={(e) => setAmount(e.target.value)}
-          className="w-full px-5 py-4 text-body-lg font-bold rounded-xl border-2 border-gray-200 focus:border-bombonera-500 focus:outline-none bg-gray-50 mb-6"
-        />
-
-        <div className="flex gap-4">
-          <button
-            onClick={onCancel}
-            disabled={loading}
-            className="flex-1 px-6 py-4 text-body font-semibold rounded-xl border-2 border-gray-300 text-gray-700 hover:bg-gray-100 transition-colors disabled:opacity-50"
-          >
-            Cancelar
-          </button>
-          <button
-            onClick={() => isValid && onConfirm(parsedAmount)}
-            disabled={!isValid || loading}
-            className="flex-1 px-6 py-4 text-body font-semibold rounded-xl bg-blue-600 text-white hover:bg-blue-700 transition-colors disabled:opacity-50"
-          >
-            {loading ? "Procesando..." : "Cobrar"}
-          </button>
-        </div>
-      </div>
-    </div>
-  );
-}
-
-// ─── Receipt Popup ──────────────────────────────────────────────────────────
-
-function ReceiptPopup({
-  onYes,
-  onNo,
-}: {
-  onYes: () => void;
-  onNo: () => void;
-}) {
-  return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
-      <div className="bg-white rounded-2xl shadow-2xl max-w-md w-full p-8">
-        <h3 className="text-heading font-bold text-gray-900 mb-3">¿Emitir boleta?</h3>
-        <p className="text-body text-gray-600 mb-2">
-          El comprobante se enviará automáticamente por WhatsApp al cliente.
-        </p>
-        <p className="text-body text-gray-400 mb-8">
-          Si prefieres no emitirla ahora, podrás hacerlo más tarde.
-        </p>
-        <div className="flex gap-4">
-          <button
-            onClick={onNo}
-            className="flex-1 px-6 py-4 text-body font-semibold rounded-xl border-2 border-gray-300 text-gray-700 hover:bg-gray-100 transition-colors"
-          >
-            No, después
-          </button>
-          <button
-            onClick={onYes}
-            className="flex-1 px-6 py-4 text-body font-semibold rounded-xl bg-green-600 text-white hover:bg-green-700 transition-colors"
-          >
-            Sí, emitir boleta
-          </button>
-        </div>
-      </div>
-    </div>
   );
 }
 
@@ -397,13 +286,15 @@ export default function UsuariosPage() {
     setPayingPhoneNumber(phoneNumber);
   }
 
-  async function handleConfirmPayment(amount: number) {
+  async function handleConfirmPayment(amount: number, paymentMethod: PaymentMethod, mediaUrl?: string) {
     if (!payingReservation) return;
     setPaymentLoading(true);
     const result = await store.processManualPayment(
       payingReservation.id,
       amount,
-      payingPhoneNumber
+      payingPhoneNumber,
+      paymentMethod,
+      mediaUrl,
     );
     setPaymentLoading(false);
 

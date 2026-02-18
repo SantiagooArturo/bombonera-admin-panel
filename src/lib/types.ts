@@ -120,31 +120,24 @@ export type TransferStatus = "applied" | "rejected_duplicate" | "partial";
 /** Origen del pago: chatbot (comprobante digital) o manual (cobro presencial). */
 export type PaymentSource = "chatbot" | "manual";
 
+/** Método de pago: digital (transferencia, Yape, depósito…) o efectivo. */
+export type PaymentMethod = "digital" | "efectivo";
+
 export interface Transfer {
   id: string;
-  /** Número de WhatsApp del usuario que hizo la transferencia. */
   phone_number: string;
-  /** Nombre del destinatario extraído del comprobante. */
   recipient_name: string | null;
-  /** Monto transferido. */
   amount: number | null;
-  /** Fecha de la transacción extraída del comprobante (YYYY-MM-DD). */
   transaction_date: string | null;
-  /** Número de operación único del comprobante. */
   operation_id: string | null;
-  /** ID de la reserva a la que se aplicó el pago. */
   reservation_id: string | null;
-  /** Estado: applied (aplicado), rejected_duplicate (duplicado), partial (pago parcial). */
   status: TransferStatus;
-  /** Origen: "chatbot" (pago digital con comprobante) o "manual" (cobro presencial en la bombonera). */
   source: PaymentSource;
-  /** URL de la imagen del comprobante (solo para pagos via chatbot). */
+  payment_method: PaymentMethod;
+  /** URL de la imagen del comprobante. Obligatoria en chatbot, opcional en manual-digital. */
   media_url?: string | null;
-  /** Si la transferencia ha sido verificada manualmente por el administrador. */
   verified?: boolean;
-  /** Fecha de verificación. */
   verified_at?: string;
-  /** Fecha de creación del registro. */
   created_at: string;
 }
 

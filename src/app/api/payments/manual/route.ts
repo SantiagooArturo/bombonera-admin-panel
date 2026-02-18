@@ -10,11 +10,11 @@ export async function POST(request: NextRequest) {
   try {
     const db = getDb();
     const body = await request.json();
-    const { reservation_id, amount, phone_number } = body;
+    const { reservation_id, amount, phone_number, payment_method, media_url } = body;
 
-    if (!reservation_id || !amount || !phone_number) {
+    if (!reservation_id || !amount || !phone_number || !payment_method) {
       return NextResponse.json(
-        { error: "Se requiere reservation_id, amount y phone_number" },
+        { error: "Se requiere reservation_id, amount, phone_number y payment_method" },
         { status: 400 }
       );
     }
@@ -48,7 +48,7 @@ export async function POST(request: NextRequest) {
 
     await resRef.update(reservationUpdate);
 
-    const transferData = {
+    const transferData: Record<string, unknown> = {
       phone_number,
       recipient_name: null,
       amount,
@@ -57,8 +57,12 @@ export async function POST(request: NextRequest) {
       reservation_id,
       status: isFullyPaid ? "applied" : "partial",
       source: "manual",
+      payment_method: payment_method as string,
       created_at: FieldValue.serverTimestamp(),
     };
+    if (media_url) {
+      transferData.media_url = media_url;
+    }
 
     const transferRef = await db.collection("transfers").add(transferData);
 
