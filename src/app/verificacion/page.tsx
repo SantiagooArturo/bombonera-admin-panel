@@ -73,10 +73,9 @@ export default function VerificacionPage() {
             setTransfers(transfersData || []);
             setInvoices(invoicesData || []);
 
-            // 4. Update reservation amount in local view (optimistic or fetched)
-            // We'll calculate it from transfers to be instant
+            // 4. Recalcular amount_paid sumando todos los pagos aplicados/parciales
             const total = (transfersData || []).reduce((sum: number, t: Transfer) => {
-                if (t.source === 'manual' || t.verified) return sum + (t.amount || 0);
+                if (t.status === 'applied' || t.status === 'partial') return sum + (t.amount || 0);
                 return sum;
             }, 0);
 

@@ -48,17 +48,8 @@ export async function POST(request: NextRequest) {
             let calculatedPaid = 0;
             transfersSnapshot.forEach(doc => {
                 const data = doc.data();
-                // Si es manual, suma.
-                // Si es chatbot, tiene que estar verificado para sumar al "Verified Amount".
-                // Pero el usuario quiere "Sincerar". 
-                // Si el sistema actual suma todo (incluso no verificado), entonces sumamos todo. 
-                // Pero la alerta dice "suma de pagos registrados es X".
-
-                // Criterio Seguro: Sumar todo lo que sea (source='manual') OR (verified=true).
-                const isManual = data.source === 'manual';
-                const isVerified = !!data.verified;
-
-                if (isManual || isVerified) {
+                const status = data.status as string;
+                if (status === "applied" || status === "partial") {
                     calculatedPaid += (data.amount || 0);
                 }
             });
