@@ -1,4 +1,4 @@
-﻿"use client";
+"use client";
 
 import { useState, useEffect } from "react";
 import ClientLayout, { useToastContext } from "@/components/ClientLayout";
@@ -84,7 +84,7 @@ export default function VerificacionPage() {
 
         } catch (error) {
             console.error("Error loading data", error);
-            toast("Error al cargar informaciÃ³n", "error");
+            toast("Error al cargar información", "error");
         } finally {
             setLoadingData(false);
         }
@@ -94,9 +94,9 @@ export default function VerificacionPage() {
         const success = await store.verifyTransfer(transferId, !currentStatus);
         if (success) {
             setTransfers(prev => prev.map(t => t.id === transferId ? { ...t, verified: !currentStatus, verified_at: new Date().toISOString() } : t));
-            toast(currentStatus ? "VerificaciÃ³n removida" : "Transferencia verificada", "success");
+            toast(currentStatus ? "Verificación removida" : "Transferencia verificada", "success");
         } else {
-            toast("Error al actualizar verificaciÃ³n", "error");
+            toast("Error al actualizar verificación", "error");
         }
     };
 
@@ -118,7 +118,7 @@ export default function VerificacionPage() {
 
     const handleRevokeManualPayment = async (transferId: string) => {
         if (!selectedReservation) return;
-        if (!confirm("Â¿EstÃ¡s seguro de revocar (eliminar) este pago manual? El monto se descontarÃ¡ de la reserva.")) return;
+        if (!confirm("¿Estás seguro de revocar (eliminar) este pago manual? El monto se descontará de la reserva.")) return;
 
         const result = await store.revokeManualPayment(transferId, selectedReservation.id);
         if (result?.success) {
@@ -144,7 +144,7 @@ export default function VerificacionPage() {
             <div className="p-6 md:p-10 max-w-7xl mx-auto">
                 <div className="mb-8">
                     <h1 className="text-3xl font-bold text-gray-900">
-                        VerificaciÃ³n de Pagos
+                        Verificación de Pagos
                     </h1>
                     <p className="text-lg text-gray-500 mt-2">
                         Revisa los comprobantes y valida las reservas para evitar fraudes.
@@ -155,7 +155,7 @@ export default function VerificacionPage() {
                 <div className="bg-white rounded-2xl border border-gray-200 p-6 mb-8 shadow-sm">
                     <input
                         type="text"
-                        placeholder="Buscar por telÃ©fono, nombre o cancha..."
+                        placeholder="Buscar por teléfono, nombre o cancha..."
                         value={filterText}
                         onChange={(e) => setFilterText(e.target.value)}
                         className="w-full px-5 py-4 text-lg rounded-xl border-2 border-gray-200 focus:border-blue-500 focus:outline-none bg-gray-50"
@@ -269,7 +269,7 @@ export default function VerificacionPage() {
                 )}
             </div>
 
-            {/* MODAL DE VERIFICACIÃ“N */}
+            {/* MODAL DE VERIFICACIÓN */}
             {showModal && selectedReservation && (
                 <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 p-4 backdrop-blur-sm">
                     <div className="bg-white rounded-2xl shadow-2xl max-w-4xl w-full max-h-[90vh] overflow-hidden flex flex-col">
@@ -297,7 +297,7 @@ export default function VerificacionPage() {
                                                 <p className="font-bold text-gray-900 text-lg">{selectedReservation.representative_name || "Desconocido"}</p>
                                             </div>
                                             <div>
-                                                <p className="text-gray-500 text-sm">TelÃ©fono</p>
+                                                <p className="text-gray-500 text-sm">Teléfono</p>
                                                 <div className="flex items-center gap-2">
                                                     <a
                                                         href={`https://wa.me/${selectedReservation.phone_number?.startsWith("51") ? selectedReservation.phone_number : `51${selectedReservation.phone_number}`}?text=.`}
@@ -329,7 +329,7 @@ export default function VerificacionPage() {
                                             </div>
                                         </div>
                                     </div>
-                                    {/* ALERT: DESFASE CRÃTICO */}
+                                    {/* ALERT: DESFASE CRÍTICO */}
                                     {(() => {
                                         if (loadingData) return null;
                                         const totalVerifiedAmount = transfers.reduce((acc, t) => acc + (t.amount || 0), 0);
@@ -351,11 +351,11 @@ export default function VerificacionPage() {
                                             // Formatear cancha (quitar "Campo X")
                                             const courtName = COURT_LABELS[selectedReservation.court_type].split('(')[0].trim();
 
-                                            // Formatear fecha amigable (ej: "el sÃ¡bado 14 de mayo")
+                                            // Formatear fecha amigable (ej: "el sábado 14 de mayo")
                                             const dateObj = new Date(selectedReservation.date + "T12:00:00");
                                             const dateFriendly = dateObj.toLocaleDateString("es-PE", { weekday: 'long', day: 'numeric', month: 'long' });
 
-                                            const message = `Hola, estamos revisando los pagos de tu reserva del ${dateFriendly} de ${timeRange} en ${courtName} y nos falta verificar un comprobante. Por favor, Â¿podrÃ­as reenviarnos la captura? Muchas gracias.`;
+                                            const message = `Hola, estamos revisando los pagos de tu reserva del ${dateFriendly} de ${timeRange} en ${courtName} y nos falta verificar un comprobante. Por favor, ¿podrías reenviarnos la captura? Muchas gracias.`;
 
                                             return (
                                                 <div className="bg-red-50 border-l-4 border-red-500 p-4 rounded-r-xl mb-6 shadow-sm">
@@ -365,12 +365,12 @@ export default function VerificacionPage() {
                                                                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
                                                             </svg>
                                                             <div>
-                                                                <h4 className="font-bold text-red-800 text-lg">Â¡Desfase CrÃ­tico Detectado!</h4>
+                                                                <h4 className="font-bold text-red-800 text-lg">¡Desfase Crítico Detectado!</h4>
                                                                 <p className="text-red-700 text-sm mt-1">
                                                                     La reserva figura como <span className="font-bold">pagada (S/ {selectedReservation.amount_paid})</span>, pero la suma de los pagos registrados es solo <span className="font-bold">S/ {totalVerifiedAmount.toFixed(2)}</span>.
                                                                 </p>
                                                                 <p className="text-red-600 text-xs mt-2">
-                                                                    Esto puede ocurrir si se registrÃ³ un pago manual sin crear la transferencia correspondiente, o si hubo un error en el chatbot.
+                                                                    Esto puede ocurrir si se registró un pago manual sin crear la transferencia correspondiente, o si hubo un error en el chatbot.
                                                                 </p>
                                                             </div>
                                                         </div>
@@ -447,7 +447,7 @@ export default function VerificacionPage() {
                                                                                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
                                                                                     </svg>
                                                                                     <span className="text-xs font-bold text-gray-500">Sin Imagen</span>
-                                                                                    <span className="text-[10px] text-gray-400 leading-tight mt-1">El usuario no adjuntÃ³ captura</span>
+                                                                                    <span className="text-[10px] text-gray-400 leading-tight mt-1">El usuario no adjuntó captura</span>
                                                                                 </>
                                                                             )}
                                                                         </div>
@@ -471,12 +471,12 @@ export default function VerificacionPage() {
                                                                                     ? 'Cobrado en Caja'
                                                                                     : transfer.verified
                                                                                         ? 'Transferencia Validada'
-                                                                                        : 'Pendiente RevisiÃ³n'}
+                                                                                        : 'Pendiente Revisión'}
                                                                             </span>
                                                                         </div>
                                                                         <div className="text-sm text-gray-500 flex items-center gap-2">
                                                                             <span>{new Date(transfer.created_at).toLocaleString()}</span>
-                                                                            <span>â€¢</span>
+                                                                            <span>•</span>
                                                                             <span className="capitalize">{transfer.source === 'manual' ? 'Pago Presencial' : 'Transferencia Digital'}</span>
                                                                         </div>
                                                                         {transfer.verified && transfer.verified_at && transfer.source !== 'manual' && (
@@ -499,7 +499,7 @@ export default function VerificacionPage() {
                                                                                 {transfer.verified ? (
                                                                                     <>
                                                                                         <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg>
-                                                                                        Deshacer ValidaciÃ³n
+                                                                                        Deshacer Validación
                                                                                     </>
                                                                                 ) : (
                                                                                     <>
@@ -551,7 +551,7 @@ export default function VerificacionPage() {
                                                 ) : (
                                                     <div className="p-8 text-center border-2 border-dashed border-gray-200 rounded-2xl bg-gray-50">
                                                         <p className="text-gray-500 font-medium">No hay pagos registrados para esta reserva.</p>
-                                                        <p className="text-sm text-gray-400 mt-1">El cliente aÃºn no ha enviado comprobantes.</p>
+                                                        <p className="text-sm text-gray-400 mt-1">El cliente aún no ha enviado comprobantes.</p>
                                                     </div>
                                                 )}
                                             </div>
