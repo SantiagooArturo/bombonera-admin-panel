@@ -25,6 +25,7 @@ export default function VerificacionPage() {
 
     // Filter states
     const [filterText, setFilterText] = useState("");
+    const [filterStatus, setFilterStatus] = useState<"all" | "pending" | "paid" | "cancelled">("all");
 
     useEffect(() => {
         store.fetchReservations();
@@ -36,6 +37,10 @@ export default function VerificacionPage() {
     );
 
     const filteredReservations = sortedReservations.filter((r) => {
+        // Filtro por estado
+        if (filterStatus !== "all" && r.status !== filterStatus) return false;
+
+        // Filtro por texto
         if (filterText) {
             const search = filterText.toLowerCase();
             return (
@@ -151,7 +156,7 @@ export default function VerificacionPage() {
                 </div>
 
                 {/* Search / Filter */}
-                <div className="bg-white rounded-2xl border border-gray-200 p-6 mb-8 shadow-sm">
+                <div className="bg-white rounded-2xl border border-gray-200 p-6 mb-8 shadow-sm space-y-4">
                     <input
                         type="text"
                         placeholder="Buscar por teléfono, nombre o cancha..."
@@ -159,6 +164,32 @@ export default function VerificacionPage() {
                         onChange={(e) => setFilterText(e.target.value)}
                         className="w-full px-5 py-4 text-lg rounded-xl border-2 border-gray-200 focus:border-blue-500 focus:outline-none bg-gray-50"
                     />
+                    <div className="flex gap-2 flex-wrap">
+                        {([
+                            { value: "all", label: "Todos" },
+                            { value: "pending", label: "Por Cobrar" },
+                            { value: "paid", label: "Pagado" },
+                            { value: "cancelled", label: "Cancelado" },
+                        ] as const).map((opt) => (
+                            <button
+                                key={opt.value}
+                                onClick={() => setFilterStatus(opt.value)}
+                                className={`px-4 py-2 rounded-lg text-sm font-bold transition-all ${
+                                    filterStatus === opt.value
+                                        ? opt.value === "paid"
+                                            ? "bg-green-100 text-green-700 border-2 border-green-300"
+                                            : opt.value === "pending"
+                                                ? "bg-amber-100 text-amber-700 border-2 border-amber-300"
+                                                : opt.value === "cancelled"
+                                                    ? "bg-red-100 text-red-700 border-2 border-red-300"
+                                                    : "bg-blue-100 text-blue-700 border-2 border-blue-300"
+                                        : "bg-gray-100 text-gray-600 border-2 border-transparent hover:bg-gray-200"
+                                }`}
+                            >
+                                {opt.label}
+                            </button>
+                        ))}
+                    </div>
                 </div>
 
                 {!loaded ? (
