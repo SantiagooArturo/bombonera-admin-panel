@@ -41,7 +41,7 @@ export default function VerificacionPage() {
             return (
                 r.phone_number?.includes(search) ||
                 r.representative_name?.toLowerCase().includes(search) ||
-                COURT_LABELS[r.court_type].toLowerCase().includes(search) ||
+                (COURT_LABELS[r.court_type as keyof typeof COURT_LABELS] ?? r.court_type).toLowerCase().includes(search) ||
                 r.field?.toString().includes(search)
             );
         }
@@ -180,7 +180,7 @@ export default function VerificacionPage() {
                                     <tr key={res.id} className="border-b border-gray-100 hover:bg-gray-50 transition-colors">
                                         <td className="p-6">
                                             <div className="font-bold text-xl text-gray-900">
-                                                {COURT_LABELS[res.court_type].split('(')[0]}
+                                                {(COURT_LABELS[res.court_type as keyof typeof COURT_LABELS] ?? res.court_type).split('(')[0].trim()}
                                                 {res.field ? ` #${res.field}` : ''}
                                             </div>
                                             <div className="text-gray-500 mt-1 text-base">
@@ -348,7 +348,7 @@ export default function VerificacionPage() {
                                             const timeRange = `${formatHour(startH)} a ${formatHour(endH)}`;
 
                                             // Formatear cancha (quitar "Campo X")
-                                            const courtName = COURT_LABELS[selectedReservation.court_type].split('(')[0].trim();
+                                            const courtName = (COURT_LABELS[selectedReservation.court_type as keyof typeof COURT_LABELS] ?? selectedReservation.court_type).split('(')[0].trim();
 
                                             // Formatear fecha amigable (ej: "el sábado 14 de mayo")
                                             const dateObj = new Date(selectedReservation.date + "T12:00:00");
