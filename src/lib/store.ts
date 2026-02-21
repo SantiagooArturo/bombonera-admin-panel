@@ -212,17 +212,61 @@ class Store {
     }
   }
 
-  async updateUserClientType(userId: string, clientType: ClientType) {
+  async resetUser(userId: string) {
+    try {
+      const res = await fetch("/api/users", {
+        method: "DELETE",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ id: userId }),
+      });
+      if (!res.ok) throw new Error("Failed to delete user");
+
+      this.users = this.users.filter((u) => u.id !== userId);
+      this.notify();
+      return true;
+    } catch (error) {
+      console.error("Error deleting user:", error);
+      return false;
+    }
+  }
+
+  async updateUserCustomName(userId: string, customName: string) {
     try {
       const res = await fetch("/api/users", {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ id: userId, client_type: clientType }),
+        body: JSON.stringify({ id: userId, custom_name: customName || null }),
       });
       if (!res.ok) throw new Error("Failed to update");
 
       this.users = this.users.map((u) =>
-        u.id === userId ? { ...u, client_type: clientType } : u
+        u.id === userId ? { ...u, custom_name: customName || undefined } : u
+      );
+      this.notify();
+      return true;
+    } catch (error) {
+      console.error("Error updating custom name:", error);
+      return false;
+    }
+  }
+
+  async updateUserClientType(userId: string, clientType: ClientType) {
+    try {
+      const isFraud = clientType === "sospechoso_fraude";
+      const body: Record<string, unknown> = { id: userId, client_type: clientType };
+      if (isFraud) body.is_automated = false;
+
+      const res = await fetch("/api/users", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+      });
+      if (!res.ok) throw new Error("Failed to update");
+
+      this.users = this.users.map((u) =>
+        u.id === userId
+          ? { ...u, client_type: clientType, ...(isFraud ? { is_automated: false } : {}) }
+          : u
       );
       this.notify();
       return true;

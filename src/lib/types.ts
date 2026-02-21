@@ -78,11 +78,18 @@ export interface User {
   id: string; // document id = chat_id normalizado (número WA)
   chat_id: string;
   phone_number?: string;
+  /** Nombre del contacto en WhatsApp (pushName). */
+  contact_name?: string;
+  /** Nombre personalizado asignado desde el panel admin. */
+  custom_name?: string;
+  /** Último nombre usado al crear reserva. */
+  last_representative_name?: string;
+  /** Último DNI usado al crear reserva. */
+  last_dni?: string;
   /** Número de veces que ha reservado (denormalizado en users para query eficiente). */
   reservation_count: number;
   /** Saldo: negativo = debe dinero; positivo = canceló a tiempo (crédito). */
   balance: number;
-  /** Tipo de cliente (lógica por implementar). */
   client_type: ClientType;
   /** Si el bot responde automáticamente (true) o un humano debe responder (false). Default: true */
   is_automated?: boolean;

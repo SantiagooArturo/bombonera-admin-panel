@@ -9,6 +9,7 @@ import {
   type ClientType,
   type Reservation,
   type PaymentMethod,
+  type User,
 } from "@/lib/types";
 import PaymentModal from "@/components/PaymentModal";
 import ReceiptPopup from "@/components/ReceiptPopup";
@@ -46,6 +47,17 @@ function formatSaldo(balance: number): { text: string; variant: "negative" | "ze
 function formatDate(dateStr: string) {
   const d = new Date(dateStr + "T12:00:00");
   return d.toLocaleDateString("es-PE", { weekday: "short", day: "numeric", month: "short" });
+}
+
+function needsAttention(user: User): boolean {
+  return !!(user.needs_help || user.client_type === "sospechoso_fraude");
+}
+
+function getDisplayName(user: User): { name: string; source: "custom" | "contact" | "reservation" | "none" } {
+  if (user.custom_name) return { name: user.custom_name, source: "custom" };
+  if (user.contact_name) return { name: user.contact_name, source: "contact" };
+  if (user.last_representative_name) return { name: user.last_representative_name, source: "reservation" };
+  return { name: "Sin nombre", source: "none" };
 }
 
 // ─── Sort Header ────────────────────────────────────────────────────────────
@@ -115,7 +127,7 @@ function UserReservationsRow({
   if (loading) {
     return (
       <tr>
-        <td colSpan={5} className="px-10 py-6 bg-gray-50 text-body text-gray-400">
+        <td colSpan={6} className="px-10 py-6 bg-gray-50 text-body text-gray-400">
           Cargando reservas...
         </td>
       </tr>
@@ -125,7 +137,7 @@ function UserReservationsRow({
   if (reservations.length === 0) {
     return (
       <tr>
-        <td colSpan={5} className="px-10 py-6 bg-gray-50 text-body text-gray-400">
+        <td colSpan={6} className="px-10 py-6 bg-gray-50 text-body text-gray-400">
           Este usuario no tiene reservas
         </td>
       </tr>
@@ -134,7 +146,7 @@ function UserReservationsRow({
 
   return (
     <tr>
-      <td colSpan={5} className="p-0">
+      <td colSpan={6} className="p-0">
         <div className="bg-gray-50 border-t border-gray-200 px-8 py-4">
           <p className="text-body font-bold text-gray-700 mb-3">
             Reservas ({reservations.length})
@@ -234,7 +246,12 @@ export default function UsuariosPage() {
   const [sortDir, setSortDir] = useState<SortDir>("asc");
   const [togglingId, setTogglingId] = useState<string | null>(null);
   const [updatingClientType, setUpdatingClientType] = useState<string | null>(null);
+  const [editingNameId, setEditingNameId] = useState<string | null>(null);
+  const [editingNameValue, setEditingNameValue] = useState("");
+  const [resetConfirmId, setResetConfirmId] = useState<string | null>(null);
+  const [resetting, setResetting] = useState(false);
   const [search, setSearch] = useState("");
+  const [filterNeedsHelp, setFilterNeedsHelp] = useState(false);
   const [expandedUserId, setExpandedUserId] = useState<string | null>(null);
 
   // Modal de pago
@@ -258,22 +275,43 @@ export default function UsuariosPage() {
     }
   };
 
-  async function handleToggleAutomation(userId: string, currentValue: boolean, hadNeedsHelp?: boolean) {
+  async function handleToggleAutomation(userId: string, currentValue: boolean) {
     setTogglingId(userId);
     const success = await store.toggleUserAutomation(userId);
     if (success) {
-      if (hadNeedsHelp && !currentValue) {
-        toast("Problema resuelto", "success");
-      } else {
-        toast(
-          currentValue ? "Bot desactivado" : "Bot activado",
-          currentValue ? "info" : "success"
-        );
-      }
+      toast(
+        currentValue ? "Bot desactivado" : "Bot activado",
+        currentValue ? "info" : "success"
+      );
     } else {
       toast("Error al cambiar estado", "error");
     }
     setTogglingId(null);
+  }
+
+  async function handleResetUser() {
+    if (!resetConfirmId) return;
+    setResetting(true);
+    const success = await store.resetUser(resetConfirmId);
+    if (success) {
+      toast("Usuario eliminado correctamente", "success");
+      if (expandedUserId === resetConfirmId) setExpandedUserId(null);
+    } else {
+      toast("Error al eliminar usuario", "error");
+    }
+    setResetting(false);
+    setResetConfirmId(null);
+  }
+
+  async function handleSaveCustomName(userId: string) {
+    const success = await store.updateUserCustomName(userId, editingNameValue);
+    if (success) {
+      toast("Nombre actualizado", "success");
+    } else {
+      toast("Error al actualizar nombre", "error");
+    }
+    setEditingNameId(null);
+    setEditingNameValue("");
   }
 
   async function handleClientTypeChange(userId: string, newType: ClientType) {
@@ -337,21 +375,36 @@ export default function UsuariosPage() {
     setShowReceiptPopup(false);
   }, []);
 
-  // Filtrado por búsqueda
   const filteredUsers = useMemo(() => {
-    if (!search.trim()) return users;
-    const term = search.replace(/\D/g, "");
-    if (!term) return users;
+    const raw = search.trim();
+    if (!raw) return users;
+    const lower = raw.toLowerCase();
+    const digits = raw.replace(/\D/g, "");
+
     return users.filter((u) => {
       const phone = (u.phone_number || u.chat_id || "").replace(/\D/g, "");
-      return phone.includes(term);
+      if (digits && phone.includes(digits)) return true;
+      if (digits && u.last_dni?.includes(digits)) return true;
+      const names = [u.custom_name, u.contact_name, u.last_representative_name]
+        .filter(Boolean)
+        .map((n) => n!.toLowerCase());
+      return names.some((n) => n.includes(lower));
     });
   }, [users, search]);
 
+  const needsHelpCount = useMemo(() => users.filter(needsAttention).length, [users]);
+
   const sortedUsers = useMemo(() => {
-    if (!sortBy) return filteredUsers;
-    const list = [...filteredUsers];
-    list.sort((a, b) => {
+    let list = filterNeedsHelp
+      ? filteredUsers.filter(needsAttention)
+      : filteredUsers;
+
+    list = [...list].sort((a, b) => {
+      const ha = needsAttention(a) ? 0 : 1;
+      const hb = needsAttention(b) ? 0 : 1;
+      if (ha !== hb) return ha - hb;
+
+      if (!sortBy) return 0;
       let cmp = 0;
       if (sortBy === "reservation_count") {
         cmp = a.reservation_count - b.reservation_count;
@@ -363,20 +416,45 @@ export default function UsuariosPage() {
       return sortDir === "asc" ? cmp : -cmp;
     });
     return list;
-  }, [filteredUsers, sortBy, sortDir]);
+  }, [filteredUsers, sortBy, sortDir, filterNeedsHelp]);
 
   return (
     <ClientLayout>
-      <div className="p-6 md:p-10 max-w-6xl">
+      <div className="p-6 md:p-10 max-w-fit">
         <div className="mb-8">
           <h1 className="text-heading-lg font-bold text-gray-900">Usuarios</h1>
           <p className="text-body-lg text-gray-500 mt-1">
-            Busca un usuario por número de WhatsApp para ver sus reservas y cobrar pagos
+            Gestiona usuarios, reservas y cobros
           </p>
         </div>
 
-        {/* Buscador */}
-        <div className="mb-6">
+        {/* Banner de alerta si hay usuarios que necesitan ayuda */}
+        {needsHelpCount > 0 && !filterNeedsHelp && (
+          <button
+            onClick={() => setFilterNeedsHelp(true)}
+            className="w-full mb-6 flex items-center gap-3 px-5 py-4 bg-red-50 border-2 border-red-200 rounded-xl text-left hover:bg-red-100 transition-colors"
+          >
+            <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-red-500 text-white font-bold text-body">
+              {needsHelpCount}
+            </span>
+            <div>
+              <p className="text-body font-bold text-red-800">
+                {needsHelpCount === 1
+                  ? "1 usuario necesita atención"
+                  : `${needsHelpCount} usuarios necesitan atención`}
+              </p>
+              <p className="text-sm text-red-600">
+                Usuarios con peligro de fraude o que requieren intervención humana. Click para revisar.
+              </p>
+            </div>
+            <svg className="h-5 w-5 text-red-400 ml-auto shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+            </svg>
+          </button>
+        )}
+
+        {/* Buscador + filtro */}
+        <div className="mb-6 space-y-3">
           <div className="relative max-w-md">
             <svg
               className="absolute left-4 top-1/2 -translate-y-1/2 h-5 w-5 text-gray-400"
@@ -388,7 +466,7 @@ export default function UsuariosPage() {
             </svg>
             <input
               type="text"
-              placeholder="Buscar por número de WhatsApp..."
+              placeholder="Buscar por nombre, DNI o número..."
               value={search}
               onChange={(e) => setSearch(e.target.value)}
               className="w-full pl-12 pr-5 py-4 text-body rounded-xl border-2 border-gray-200 focus:border-bombonera-500 focus:outline-none bg-white shadow-sm"
@@ -401,6 +479,40 @@ export default function UsuariosPage() {
                 ✕
               </button>
             )}
+          </div>
+
+          <div className="flex items-center gap-2">
+            <span className="text-sm text-gray-500 mr-1">Mostrar:</span>
+            <button
+              onClick={() => setFilterNeedsHelp(false)}
+              className={`px-3 py-1.5 rounded-full text-sm font-medium transition-colors border ${
+                !filterNeedsHelp
+                  ? "bg-gray-900 text-white border-gray-900"
+                  : "bg-white text-gray-600 border-gray-300 hover:border-gray-400"
+              }`}
+            >
+              Todos
+            </button>
+            <button
+              onClick={() => setFilterNeedsHelp(true)}
+              className={`px-3 py-1.5 rounded-full text-sm font-medium transition-colors border inline-flex items-center gap-1.5 ${
+                filterNeedsHelp
+                  ? "bg-red-600 text-white border-red-600"
+                  : "bg-white text-red-600 border-red-200 hover:border-red-400"
+              }`}
+            >
+              <svg className="w-3.5 h-3.5" fill="currentColor" viewBox="0 0 20 20">
+                <path fillRule="evenodd" d="M8.257 3.099c.765-1.36 2.722-1.36 3.486 0l5.58 9.92c.75 1.334-.213 2.98-1.742 2.98H4.42c-1.53 0-2.493-1.646-1.743-2.98l5.58-9.92zM11 13a1 1 0 11-2 0 1 1 0 012 0zm-1-8a1 1 0 00-1 1v3a1 1 0 002 0V6a1 1 0 00-1-1z" clipRule="evenodd" />
+              </svg>
+              Requieren atención
+              {needsHelpCount > 0 && (
+                <span className={`px-1.5 py-0.5 rounded-full text-xs font-bold leading-none ${
+                  filterNeedsHelp ? "bg-white/25" : "bg-red-500 text-white"
+                }`}>
+                  {needsHelpCount}
+                </span>
+              )}
+            </button>
           </div>
         </div>
 
@@ -420,6 +532,7 @@ export default function UsuariosPage() {
                 <thead>
                   <tr className="border-b border-gray-200 bg-gray-50/80">
                     <th className="px-6 py-4 text-body font-bold text-gray-700">WhatsApp</th>
+                    <th className="px-6 py-4 text-body font-bold text-gray-700">Nombre</th>
                     <SortHeader label="Reservas" sortKey="reservation_count" onSort={handleSort} />
                     <SortHeader label="Saldo" sortKey="balance" onSort={handleSort} />
                     <SortHeader label="Tipo de cliente" sortKey="client_type" onSort={handleSort} />
@@ -429,14 +542,14 @@ export default function UsuariosPage() {
                 <tbody>
                   {sortedUsers.length === 0 ? (
                     <tr>
-                      <td colSpan={5} className="px-6 py-12 text-center text-body-lg text-gray-400">
-                        {search ? "No se encontraron usuarios con ese número" : "No hay usuarios en la colección"}
+                      <td colSpan={6} className="px-6 py-12 text-center text-body-lg text-gray-400">
+                        {search ? "No se encontraron usuarios" : "No hay usuarios en la colección"}
                       </td>
                     </tr>
                   ) : (
                     sortedUsers.map((user) => {
                       const saldo = formatSaldo(user.balance);
-                      const needsHelp = user.needs_help ?? false;
+                      const attention = needsAttention(user);
                       const isExpanded = expandedUserId === user.id;
                       return (
                         <>
@@ -444,7 +557,7 @@ export default function UsuariosPage() {
                             key={user.id}
                             onClick={() => setExpandedUserId(isExpanded ? null : user.id)}
                             className={`border-b border-gray-100 last:border-0 cursor-pointer transition-colors ${
-                              needsHelp
+                              attention
                                 ? "bg-red-50 hover:bg-red-100/60"
                                 : isExpanded
                                 ? "bg-bombonera-50"
@@ -469,18 +582,84 @@ export default function UsuariosPage() {
                                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
                                   </svg>
                                 </span>
-                                {needsHelp && (
-                                  <span
-                                    className="inline-flex items-center gap-1 text-xs font-semibold text-red-700 bg-red-100 px-2 py-1 rounded-md"
-                                    title={user.help_reason || "Requiere atención"}
-                                  >
-                                    <svg className="w-3 h-3" fill="currentColor" viewBox="0 0 20 20">
-                                      <path fillRule="evenodd" d="M8.257 3.099c.765-1.36 2.722-1.36 3.486 0l5.58 9.92c.75 1.334-.213 2.98-1.742 2.98H4.42c-1.53 0-2.493-1.646-1.743-2.98l5.58-9.92zM11 13a1 1 0 11-2 0 1 1 0 012 0zm-1-8a1 1 0 00-1 1v3a1 1 0 002 0V6a1 1 0 00-1-1z" clipRule="evenodd" />
-                                    </svg>
-                                    Necesita ayuda
-                                  </span>
+                                {user.needs_help && (
+                                  <div className="flex flex-col gap-1">
+                                    <span className="inline-flex items-center gap-1.5 text-xs font-bold text-white bg-red-500 px-2.5 py-1 rounded-md animate-pulse">
+                                      <svg className="w-3.5 h-3.5" fill="currentColor" viewBox="0 0 20 20">
+                                        <path fillRule="evenodd" d="M8.257 3.099c.765-1.36 2.722-1.36 3.486 0l5.58 9.92c.75 1.334-.213 2.98-1.742 2.98H4.42c-1.53 0-2.493-1.646-1.743-2.98l5.58-9.92zM11 13a1 1 0 11-2 0 1 1 0 012 0zm-1-8a1 1 0 00-1 1v3a1 1 0 002 0V6a1 1 0 00-1-1z" clipRule="evenodd" />
+                                      </svg>
+                                      Requiere atención
+                                    </span>
+                                    {user.help_reason && (
+                                      <span className="text-xs text-red-600 pl-1 max-w-[200px] truncate" title={user.help_reason}>
+                                        {user.help_reason}
+                                      </span>
+                                    )}
+                                  </div>
                                 )}
                               </div>
+                            </td>
+                            <td className="px-6 py-4 whitespace-nowrap" onClick={(e) => e.stopPropagation()}>
+                              {editingNameId === user.id ? (
+                                <div className="flex items-center gap-2">
+                                  <input
+                                    type="text"
+                                    value={editingNameValue}
+                                    onChange={(e) => setEditingNameValue(e.target.value)}
+                                    onKeyDown={(e) => {
+                                      if (e.key === "Enter") handleSaveCustomName(user.id);
+                                      if (e.key === "Escape") { setEditingNameId(null); setEditingNameValue(""); }
+                                    }}
+                                    autoFocus
+                                    className="w-32 px-2 py-1 text-body border-2 border-bombonera-400 rounded-lg focus:outline-none"
+                                    placeholder="Nombre..."
+                                  />
+                                  <button
+                                    onClick={() => handleSaveCustomName(user.id)}
+                                    className="text-green-600 hover:text-green-700"
+                                    title="Guardar"
+                                  >
+                                    <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                                    </svg>
+                                  </button>
+                                  <button
+                                    onClick={() => { setEditingNameId(null); setEditingNameValue(""); }}
+                                    className="text-gray-400 hover:text-gray-600"
+                                    title="Cancelar"
+                                  >
+                                    <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                                    </svg>
+                                  </button>
+                                </div>
+                              ) : (() => {
+                                const display = getDisplayName(user);
+                                return (
+                                  <div className="flex items-center gap-2">
+                                    <span className={`text-body ${display.source === "none" ? "text-gray-400 italic" : "text-gray-900 font-medium"}`}>
+                                      {display.name}
+                                    </span>
+                                    {display.source !== "custom" && display.source !== "none" && (
+                                      <span className="text-xs text-gray-400">
+                                        {display.source === "contact" ? "(WSP)" : "(reserva)"}
+                                      </span>
+                                    )}
+                                    <button
+                                      onClick={() => {
+                                        setEditingNameId(user.id);
+                                        setEditingNameValue(user.custom_name || "");
+                                      }}
+                                      className="text-gray-300 hover:text-bombonera-500 transition-colors"
+                                      title="Editar nombre personalizado"
+                                    >
+                                      <svg className="h-3.5 w-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" />
+                                      </svg>
+                                    </button>
+                                  </div>
+                                );
+                              })()}
                             </td>
                             <td className="px-6 py-4 text-body text-gray-700">{user.reservation_count}</td>
                             <td className="px-6 py-4">
@@ -531,21 +710,22 @@ export default function UsuariosPage() {
                               <button
                                 onClick={(e) => {
                                   e.stopPropagation();
-                                  handleToggleAutomation(user.id, user.is_automated ?? true, needsHelp);
+                                  const currentlyOff = !(user.is_automated ?? true);
+                                  if (currentlyOff && user.client_type === "sospechoso_fraude") {
+                                    toast("Cambia el tipo de cliente antes de activar el bot", "error");
+                                    return;
+                                  }
+                                  handleToggleAutomation(user.id, user.is_automated ?? true);
                                 }}
                                 disabled={togglingId === user.id}
                                 className={`px-4 py-2 rounded-lg text-body font-semibold transition-colors ${
-                                  needsHelp
-                                    ? "bg-red-600 text-white hover:bg-red-700"
-                                    : (user.is_automated ?? true)
+                                  (user.is_automated ?? true)
                                     ? "bg-green-100 text-green-700 hover:bg-green-200"
                                     : "bg-gray-200 text-gray-600 hover:bg-gray-300"
                                 } disabled:opacity-50`}
                               >
                                 {togglingId === user.id
                                   ? "..."
-                                  : needsHelp
-                                  ? "Resolver"
                                   : (user.is_automated ?? true)
                                   ? "Activado"
                                   : "Desactivado"}
@@ -553,11 +733,26 @@ export default function UsuariosPage() {
                             </td>
                           </tr>
                           {isExpanded && (
-                            <UserReservationsRow
-                              key={`reservations-${user.id}`}
-                              userId={user.id}
-                              onPay={(res) => handleStartPayment(res, user.id)}
-                            />
+                            <>
+                              <UserReservationsRow
+                                key={`reservations-${user.id}`}
+                                userId={user.id}
+                                onPay={(res) => handleStartPayment(res, user.id)}
+                              />
+                              <tr>
+                                <td colSpan={6} className="px-8 pb-4 bg-gray-50">
+                                  <button
+                                    onClick={() => setResetConfirmId(user.id)}
+                                    className="inline-flex items-center gap-2 px-3 py-1.5 text-sm font-medium text-gray-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors"
+                                  >
+                                    <svg className="h-3.5 w-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                                    </svg>
+                                    Eliminar usuario
+                                  </button>
+                                </td>
+                              </tr>
+                            </>
                           )}
                         </>
                       );
@@ -586,6 +781,58 @@ export default function UsuariosPage() {
           onYes={handleReceiptYes}
           onNo={handleReceiptNo}
         />
+      )}
+
+      {/* Modal de confirmación: resetear usuario */}
+      {resetConfirmId && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
+          <div className="bg-white rounded-2xl shadow-xl max-w-md w-full mx-4 p-6">
+            <div className="flex items-center gap-3 mb-4">
+              <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-red-100">
+                <svg className="h-5 w-5 text-red-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-2.5L13.732 4c-.77-.833-1.964-.833-2.732 0L4.082 16.5c-.77.833.192 2.5 1.732 2.5z" />
+                </svg>
+              </span>
+              <h3 className="text-body-lg font-bold text-gray-900">Eliminar usuario</h3>
+            </div>
+            <p className="text-body text-gray-600 mb-2">
+              Esta acción es irreversible. Se eliminará por completo:
+            </p>
+            <ul className="text-body text-gray-600 mb-6 space-y-1 pl-4">
+              <li className="flex items-center gap-2">
+                <span className="w-1.5 h-1.5 rounded-full bg-red-400 shrink-0" />
+                Todo el historial de conversación
+              </li>
+              <li className="flex items-center gap-2">
+                <span className="w-1.5 h-1.5 rounded-full bg-red-400 shrink-0" />
+                Todas las reservas (pendientes y pasadas)
+              </li>
+              <li className="flex items-center gap-2">
+                <span className="w-1.5 h-1.5 rounded-full bg-red-400 shrink-0" />
+                El registro del usuario en el sistema
+              </li>
+            </ul>
+            <p className="text-sm text-gray-500 mb-6">
+              Si el usuario vuelve a escribir, se creará automáticamente como &quot;Nuevo&quot;.
+            </p>
+            <div className="flex gap-3 justify-end">
+              <button
+                onClick={() => setResetConfirmId(null)}
+                disabled={resetting}
+                className="px-4 py-2.5 rounded-xl text-body font-semibold bg-gray-100 text-gray-700 hover:bg-gray-200 transition-colors disabled:opacity-50"
+              >
+                Cancelar
+              </button>
+              <button
+                onClick={handleResetUser}
+                disabled={resetting}
+                className="px-4 py-2.5 rounded-xl text-body font-bold bg-red-600 text-white hover:bg-red-700 transition-colors disabled:opacity-50"
+              >
+                {resetting ? "Eliminando..." : "Sí, eliminar"}
+              </button>
+            </div>
+          </div>
+        </div>
       )}
     </ClientLayout>
   );
