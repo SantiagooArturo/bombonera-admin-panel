@@ -43,11 +43,6 @@ function formatSaldo(balance: number): { text: string; variant: "negative" | "ze
   return { text: "0", variant: "zero" };
 }
 
-function clientTypeLabel(clientType: ClientType): string {
-  if (!clientType) return "—";
-  return CLIENT_TYPE_LABELS[clientType] ?? clientType;
-}
-
 function formatDate(dateStr: string) {
   const d = new Date(dateStr + "T12:00:00");
   return d.toLocaleDateString("es-PE", { weekday: "short", day: "numeric", month: "short" });
