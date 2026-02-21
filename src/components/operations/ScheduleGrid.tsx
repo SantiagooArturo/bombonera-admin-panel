@@ -4,6 +4,16 @@ import { useMemo, useEffect, useRef } from "react";
 import { TIME_SLOTS, type Reservation, type CourtType } from "@/lib/types";
 import { OccupiedCellContent, EmptyCellContent } from "./GridCell";
 
+// ─── Helpers ─────────────────────────────────────────────────────────────────
+
+function formatHour12(slot: string): string {
+  const h = parseInt(slot.split(":")[0]);
+  if (h === 0) return "12 am";
+  if (h < 12) return `${h} am`;
+  if (h === 12) return "12 pm";
+  return `${h - 12} pm`;
+}
+
 // ─── Column definitions ─────────────────────────────────────────────────────
 
 interface ColumnGroup {
@@ -22,11 +32,6 @@ const COLUMN_GROUPS: ColumnGroup[] = [
 /** Todos los campos en orden de columna (agrupados por tipo). */
 const ALL_FIELDS = COLUMN_GROUPS.flatMap((g) => g.fields);
 
-/** Set de campos que inician un grupo (para bordes separadores). */
-const GROUP_START_FIELDS = new Set(
-  COLUMN_GROUPS.filter((_, i) => i > 0).map((g) => g.fields[0])
-);
-
 // ─── Grid cell types ────────────────────────────────────────────────────────
 
 type CellInfo =
@@ -40,6 +45,7 @@ export interface ScheduleGridProps {
   reservations: Reservation[];
   autoAssignments: Map<string, number>;
   currentSlot: string;
+  isToday: boolean;
   onSelectReservation: (reservation: Reservation) => void;
 }
 
@@ -49,6 +55,7 @@ export default function ScheduleGrid({
   reservations,
   autoAssignments,
   currentSlot,
+  isToday,
   onSelectReservation,
 }: ScheduleGridProps) {
   const currentRowRef = useRef<HTMLTableRowElement>(null);
@@ -142,7 +149,7 @@ export default function ScheduleGrid({
           <tr>
             <th
               rowSpan={2}
-              className="sticky left-0 top-0 z-30 bg-gray-50 border-b border-r border-gray-200 px-3 py-2 text-xs font-bold text-gray-500 min-w-[64px]"
+              className="sticky left-0 top-0 z-30 bg-gray-50 border-b border-r border-gray-300 px-3 py-2 text-xs font-bold text-gray-500 min-w-[64px] text-right pr-2"
             >
               Hora
             </th>
@@ -150,7 +157,7 @@ export default function ScheduleGrid({
               <th
                 key={group.courtType}
                 colSpan={group.fields.length}
-                className="sticky top-0 z-20 bg-gray-50 border-b border-gray-200 px-2 py-2 text-xs font-bold text-gray-600 text-center whitespace-nowrap"
+                className="sticky top-0 z-20 bg-gray-50 border-b border-l border-gray-300 px-2 py-2 text-xs font-bold text-gray-600 text-center whitespace-nowrap"
               >
                 {group.label}
               </th>
@@ -162,13 +169,9 @@ export default function ScheduleGrid({
             {ALL_FIELDS.map((field) => (
               <th
                 key={field}
-                className={`sticky top-[33px] z-20 bg-gray-50 border-b border-gray-200 px-2 py-1.5 text-xs font-bold text-gray-500 text-center min-w-[80px] ${
-                  GROUP_START_FIELDS.has(field)
-                    ? "border-l-2 border-l-gray-300"
-                    : ""
-                }`}
+                className="sticky top-[33px] z-20 bg-gray-50 border-b border-l border-gray-300 px-2 py-1.5 text-xs font-bold text-gray-500 text-center min-w-[80px]"
               >
-                C{field}
+                Campo {field}
               </th>
             ))}
           </tr>
@@ -176,9 +179,9 @@ export default function ScheduleGrid({
 
         <tbody>
           {TIME_SLOTS.map((slot, si) => {
-            const isCurrent = slot === currentSlot;
-            const hour = parseInt(slot);
-            const label = hour <= 12 ? `${hour}am` : `${hour - 12}pm`;
+            const isCurrent = isToday && slot === currentSlot;
+            const isFirst = si === 0;
+            const label = formatHour12(slot);
 
             return (
               <tr
@@ -186,15 +189,19 @@ export default function ScheduleGrid({
                 ref={isCurrent ? currentRowRef : undefined}
                 className={isCurrent ? "bg-bombonera-50/50" : ""}
               >
-                {/* Columna de hora (sticky left) */}
+                {/* Columna de hora (sticky left) — hora en la intersección */}
                 <td
-                  className={`sticky left-0 z-10 border-r border-b border-gray-200 px-3 py-2 text-xs font-bold whitespace-nowrap ${
+                  className={`sticky left-0 z-10 border-r border-gray-300 text-xs font-bold whitespace-nowrap overflow-visible text-right pr-2 ${
                     isCurrent
                       ? "bg-bombonera-100 text-bombonera-700"
                       : "bg-gray-50 text-gray-500"
                   }`}
+                  style={{ verticalAlign: "top", height: 52 }}
                 >
-                  <div className="flex items-center gap-1.5">
+                  <div
+                    className={`flex items-center justify-end gap-1.5 ${isFirst ? "" : "-translate-y-1/2"}`}
+                    style={{ lineHeight: 1 }}
+                  >
                     {isCurrent && (
                       <span className="w-2 h-2 rounded-full bg-bombonera-500 animate-pulse" />
                     )}
@@ -207,15 +214,12 @@ export default function ScheduleGrid({
                   if (cell.type === "skip") return null;
 
                   const field = ALL_FIELDS[fi];
-                  const borderLeft = GROUP_START_FIELDS.has(field)
-                    ? "border-l-2 border-l-gray-300"
-                    : "";
 
                   if (cell.type === "empty") {
                     return (
                       <td
                         key={field}
-                        className={`border-b border-gray-100 p-1 h-[52px] ${borderLeft}`}
+                        className="border-b border-l border-gray-300 p-1 h-[52px]"
                       >
                         <EmptyCellContent />
                       </td>
@@ -232,7 +236,7 @@ export default function ScheduleGrid({
                       onClick={() =>
                         onSelectReservation(reservation)
                       }
-                      className={`border-b border-gray-100 p-1 cursor-pointer transition-colors hover:brightness-95 ${borderLeft} ${
+                      className={`border-b border-l border-gray-300 p-1 cursor-pointer transition-colors hover:brightness-95 ${
                         arrived ? "bg-green-50" : "bg-white"
                       }`}
                       style={{ height: `${span * 52}px` }}
@@ -244,6 +248,21 @@ export default function ScheduleGrid({
               </tr>
             );
           })}
+
+          {/* Fila final: etiqueta de cierre */}
+          <tr>
+            <td
+              className="sticky left-0 z-10 border-r border-gray-300 text-xs font-bold whitespace-nowrap bg-gray-50 text-gray-500 overflow-visible text-right pr-2"
+              style={{ verticalAlign: "top", height: 8 }}
+            >
+              <div className="-translate-y-1/2 flex justify-end" style={{ lineHeight: 1 }}>
+                {formatHour12(`${parseInt(TIME_SLOTS[TIME_SLOTS.length - 1]) + 1}:00`)}
+              </div>
+            </td>
+            {ALL_FIELDS.map((field) => (
+              <td key={`end-${field}`} style={{ height: 8 }} />
+            ))}
+          </tr>
         </tbody>
       </table>
     </div>

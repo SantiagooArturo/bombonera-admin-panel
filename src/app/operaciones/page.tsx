@@ -3,11 +3,9 @@
 import { useEffect, useState, useMemo, useCallback } from "react";
 import ClientLayout, { useToastContext } from "@/components/ClientLayout";
 import { useStore } from "@/lib/hooks";
-import { TIME_SLOTS, type Reservation, type PaymentMethod } from "@/lib/types";
+import { TIME_SLOTS, type Reservation } from "@/lib/types";
 import ScheduleGrid from "@/components/operations/ScheduleGrid";
 import ReservationDetailPanel from "@/components/operations/ReservationDetailPanel";
-import PaymentModal from "@/components/PaymentModal";
-import ReceiptPopup from "@/components/ReceiptPopup";
 import { computeAutoAssignments } from "@/components/operations/autoAssign";
 
 // ─── Helpers ────────────────────────────────────────────────────────────────
@@ -20,10 +18,23 @@ function getCurrentSlot(): string {
 
 // ─── Page ───────────────────────────────────────────────────────────────────
 
+const MAX_DAY_OFFSET = 7;
+
+function formatDateISO(date: Date): string {
+  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")}`;
+}
+
+function getDateWithOffset(offset: number): Date {
+  const d = new Date();
+  d.setDate(d.getDate() + offset);
+  return d;
+}
+
 export default function OperacionesPage() {
   const store = useStore();
   const toast = useToastContext();
 
+  const [dayOffset, setDayOffset] = useState(0);
   const [currentSlot, setCurrentSlot] = useState(getCurrentSlot);
   const [reservations, setReservations] = useState<Reservation[]>([]);
   const [loading, setLoading] = useState(true);
@@ -31,28 +42,33 @@ export default function OperacionesPage() {
   // Detail panel state
   const [selectedRes, setSelectedRes] = useState<Reservation | null>(null);
 
-  // Payment modal state
-  const [payingRes, setPayingRes] = useState<Reservation | null>(null);
-  const [paymentLoading, setPaymentLoading] = useState(false);
-  const [showReceipt, setShowReceipt] = useState(false);
-
   // Auto-avanzar la hora cada 30s
   useEffect(() => {
     const interval = setInterval(() => setCurrentSlot(getCurrentSlot()), 30000);
     return () => clearInterval(interval);
   }, []);
 
-  const today = useMemo(() => {
-    const d = new Date();
-    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
-  }, []);
+  const selectedDate = useMemo(() => formatDateISO(getDateWithOffset(dayOffset)), [dayOffset]);
+
+  const selectedDateLabel = useMemo(() => {
+    const date = getDateWithOffset(dayOffset);
+    if (dayOffset === 0) return "Hoy";
+    if (dayOffset === 1) return "Mañana";
+    return date.toLocaleDateString("es-PE", { weekday: "long", day: "numeric", month: "long" });
+  }, [dayOffset]);
+
+  const isToday = dayOffset === 0;
+
+  useEffect(() => {
+    setSelectedRes(null);
+  }, [dayOffset]);
 
   // ── Fetch reservas del día ────────────────────────────────────────────
 
   const loadReservations = useCallback(async () => {
     setLoading(true);
     try {
-      const res = await fetch(`/api/reservations?date=${today}`);
+      const res = await fetch(`/api/reservations?date=${selectedDate}`);
       if (res.ok) {
         const data: Reservation[] = await res.json();
         setReservations(data.filter((r) => r.status !== "cancelled" || r.field));
@@ -61,7 +77,7 @@ export default function OperacionesPage() {
       console.error("Error fetching reservations:", e);
     }
     setLoading(false);
-  }, [today]);
+  }, [selectedDate]);
 
   useEffect(() => {
     loadReservations();
@@ -87,54 +103,7 @@ export default function OperacionesPage() {
     return { total: active.length, arrived, withField };
   }, [reservations, autoAssignments]);
 
-  // ── Campo efectivo y campos usados (para dropdown del detail panel) ───
-
-  const effectiveFieldForSelected = useMemo(() => {
-    if (!selectedRes) return null;
-    return selectedRes.field ?? autoAssignments.get(selectedRes.id) ?? null;
-  }, [selectedRes, autoAssignments]);
-
-  const usedFieldsForSelected = useMemo(() => {
-    if (!selectedRes) return [];
-    const slots = new Set(selectedRes.time_slots ?? []);
-
-    const used: number[] = [];
-    for (const r of reservations) {
-      if (r.id === selectedRes.id || r.status === "cancelled") continue;
-      if (r.court_type !== selectedRes.court_type) continue;
-      const effectiveField = r.field ?? autoAssignments.get(r.id) ?? null;
-      if (effectiveField == null) continue;
-
-      const hasOverlap = (r.time_slots ?? []).some((s) => slots.has(s));
-      if (hasOverlap) used.push(effectiveField);
-    }
-    return used;
-  }, [selectedRes, reservations, autoAssignments]);
-
   // ── Handlers ──────────────────────────────────────────────────────────
-
-  async function handleAssignField(resId: string, field: number | null) {
-    try {
-      const res = await fetch("/api/reservations", {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ id: resId, field }),
-      });
-      if (res.ok) {
-        setReservations((prev) =>
-          prev.map((r) => (r.id === resId ? { ...r, field } : r))
-        );
-        // Actualizar panel de detalle si está abierto para esta reserva
-        if (selectedRes?.id === resId) {
-          setSelectedRes((prev) =>
-            prev ? { ...prev, field } : null
-          );
-        }
-      }
-    } catch {
-      toast("Error al asignar campo", "error");
-    }
-  }
 
   async function handleToggleArrived(resId: string, arrived: boolean) {
     try {
@@ -158,40 +127,6 @@ export default function OperacionesPage() {
     }
   }
 
-  async function handleConfirmPayment(amount: number, paymentMethod: PaymentMethod, mediaUrl?: string) {
-    if (!payingRes) return;
-    setPaymentLoading(true);
-    const result = await store.processManualPayment(
-      payingRes.id,
-      amount,
-      payingRes.chat_id,
-      paymentMethod,
-      mediaUrl,
-    );
-    setPaymentLoading(false);
-
-    if (result?.success) {
-      toast(`Cobro registrado: S/ ${amount.toFixed(2)}`, "success");
-      const updatedRes = {
-        ...payingRes,
-        amount_paid: result.new_amount_paid,
-        status: (result.fully_paid ? "paid" : payingRes.status) as Reservation["status"],
-        confirmed: true,
-      };
-      setPayingRes(null);
-      setReservations((prev) =>
-        prev.map((r) => (r.id === updatedRes.id ? updatedRes : r))
-      );
-      // Actualizar panel de detalle si está abierto
-      if (selectedRes?.id === updatedRes.id) {
-        setSelectedRes(updatedRes);
-      }
-      setShowReceipt(true);
-    } else {
-      toast("Error al procesar el pago", "error");
-    }
-  }
-
   function handleSelectReservation(reservation: Reservation) {
     setSelectedRes(reservation);
   }
@@ -203,96 +138,66 @@ export default function OperacionesPage() {
       <div className="p-6 md:p-10">
         {/* Header */}
         <div className="mb-6">
-          <h1 className="text-heading-lg font-bold text-gray-900">En Vivo</h1>
-          <p className="text-body-lg text-gray-500 mt-1">
-            Hoy · Vista completa de canchas y disponibilidad
-          </p>
+          <h1 className="text-heading-lg font-bold text-gray-900">
+            {isToday ? "En Vivo" : "Reservas"}
+          </h1>
+          <div className="flex items-center gap-4 mt-2">
+            <button
+              onClick={() => setDayOffset((prev) => Math.max(0, prev - 1))}
+              disabled={dayOffset === 0}
+              className="p-2 rounded-lg border border-gray-200 hover:bg-gray-100 disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
+              aria-label="Día anterior"
+            >
+              <svg className="w-5 h-5 text-gray-700" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
+              </svg>
+            </button>
+            <span className="text-body-lg text-gray-700 font-semibold capitalize w-[280px] text-center">
+              {selectedDateLabel}
+            </span>
+            <button
+              onClick={() => setDayOffset((prev) => Math.min(MAX_DAY_OFFSET, prev + 1))}
+              disabled={dayOffset >= MAX_DAY_OFFSET}
+              className="p-2 rounded-lg border border-gray-200 hover:bg-gray-100 disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
+              aria-label="Día siguiente"
+            >
+              <svg className="w-5 h-5 text-gray-700" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+              </svg>
+            </button>
+            {!isToday && (
+              <button
+                onClick={() => setDayOffset(0)}
+                className="ml-2 px-3 py-1.5 text-sm font-medium text-blue-600 bg-blue-50 rounded-lg hover:bg-blue-100 transition-colors"
+              >
+                Ir a Hoy
+              </button>
+            )}
+          </div>
         </div>
 
-        {/* Stats bar */}
-        <div className="flex items-center gap-6 mb-6 bg-white rounded-xl border border-gray-200 px-6 py-4 shadow-sm">
-          <div className="text-center">
-            <p className="text-2xl font-bold text-gray-900">{stats.total}</p>
-            <p className="text-xs text-gray-500 font-medium">Reservas hoy</p>
-          </div>
-          <div className="w-px h-8 bg-gray-200" />
-          <div className="text-center">
-            <p className="text-2xl font-bold text-green-600">{stats.arrived}</p>
-            <p className="text-xs text-gray-500 font-medium">Llegaron</p>
-          </div>
-          <div className="w-px h-8 bg-gray-200" />
-          <div className="text-center">
-            <p className="text-2xl font-bold text-bombonera-600">
-              {stats.withField}
-            </p>
-            <p className="text-xs text-gray-500 font-medium">Con campo</p>
-          </div>
-          <div className="flex-1" />
-          <div className="flex items-center gap-3 text-xs text-gray-500">
-            <span className="flex items-center gap-1">
-              <span className="w-3 h-3 rounded border border-gray-200 bg-green-50/40" />
-              Disponible
-            </span>
-            <span className="flex items-center gap-1">
-              <span className="w-3 h-3 rounded border border-gray-200 bg-green-50" />
-              Llegó
-            </span>
-          </div>
-        </div>
 
         {/* Grid */}
-        {loading ? (
-          <div className="flex items-center justify-center py-20">
-            <p className="text-body-lg text-gray-400 font-medium">
-              Cargando...
-            </p>
-          </div>
-        ) : (
+        <div className={`transition-opacity duration-200 ${loading ? "opacity-50 pointer-events-none" : ""}`}>
           <ScheduleGrid
             reservations={reservations}
             autoAssignments={autoAssignments}
             currentSlot={currentSlot}
+            isToday={isToday}
             onSelectReservation={handleSelectReservation}
           />
-        )}
+        </div>
       </div>
 
       {/* Detail Panel */}
       {selectedRes && (
         <ReservationDetailPanel
           reservation={selectedRes}
-          effectiveField={effectiveFieldForSelected}
-          usedFields={usedFieldsForSelected}
           onClose={() => setSelectedRes(null)}
-          onAssignField={handleAssignField}
           onToggleArrived={handleToggleArrived}
-          onPay={setPayingRes}
         />
       )}
 
-      {/* Payment Modal */}
-      {payingRes && (
-        <PaymentModal
-          reservation={payingRes}
-          onConfirm={handleConfirmPayment}
-          onCancel={() => setPayingRes(null)}
-          loading={paymentLoading}
-        />
-      )}
-
-      {/* Receipt Popup */}
-      {showReceipt && (
-        <ReceiptPopup
-          onYes={() => {
-            toast(
-              "Función de boleta aún no disponible. Podrás emitirla más tarde.",
-              "info"
-            );
-            setShowReceipt(false);
-          }}
-          onNo={() => setShowReceipt(false)}
-        />
-      )}
     </ClientLayout>
   );
 }

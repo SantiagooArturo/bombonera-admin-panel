@@ -462,12 +462,11 @@ class Store {
           transfer_id: transfer?.id,
         }),
       });
-      if (!res.ok) throw new Error("Failed to emit invoice");
-      const result = await res.json() as {
-        success: boolean;
-        invoice_id: string;
-        file_url: string;
-      };
+      const result = await res.json();
+      if (!res.ok) {
+        const msg = result?.error || "Error desconocido al emitir boleta";
+        throw new Error(msg);
+      }
 
       // Add to local state so UI updates immediately
       const newInvoice: Invoice = {
