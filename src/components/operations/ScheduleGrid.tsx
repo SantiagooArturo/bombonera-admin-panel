@@ -1,8 +1,8 @@
 "use client";
 
 import { useMemo, useEffect, useRef } from "react";
-import { TIME_SLOTS, type Reservation, type CourtType } from "@/lib/types";
-import { OccupiedCellContent, EmptyCellContent } from "./GridCell";
+import { TIME_SLOTS, type Reservation, type CourtType, type BlockedSlot } from "@/lib/types";
+import { OccupiedCellContent, EmptyCellContent, BlockedCellContent } from "./GridCell";
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
@@ -37,26 +37,31 @@ const ALL_FIELDS = COLUMN_GROUPS.flatMap((g) => g.fields);
 type CellInfo =
   | { type: "skip" }
   | { type: "empty" }
+  | { type: "blocked"; blockedSlot: BlockedSlot }
   | { type: "reservation"; reservation: Reservation; span: number };
 
 // ─── Props ──────────────────────────────────────────────────────────────────
 
 export interface ScheduleGridProps {
   reservations: Reservation[];
+  blockedSlots: BlockedSlot[];
   autoAssignments: Map<string, number>;
   currentSlot: string;
   isToday: boolean;
   onSelectReservation: (reservation: Reservation) => void;
+  onSelectBlocked: (blockedSlot: BlockedSlot) => void;
 }
 
 // ─── Component ──────────────────────────────────────────────────────────────
 
 export default function ScheduleGrid({
   reservations,
+  blockedSlots,
   autoAssignments,
   currentSlot,
   isToday,
   onSelectReservation,
+  onSelectBlocked,
 }: ScheduleGridProps) {
   const currentRowRef = useRef<HTMLTableRowElement>(null);
 
@@ -72,26 +77,26 @@ export default function ScheduleGrid({
 
   const grid = useMemo(() => {
     // field → slot → reservation
-    const fieldSlotMap = new Map<
-      number,
-      Map<string, Reservation>
-    >();
-
+    const fieldSlotMap = new Map<number, Map<string, Reservation>>();
     for (const r of reservations) {
       if (r.status === "cancelled") continue;
       const effectiveField = r.field ?? autoAssignments.get(r.id) ?? null;
       if (effectiveField == null) continue;
-
       if (!fieldSlotMap.has(effectiveField))
         fieldSlotMap.set(effectiveField, new Map());
       const slotMap = fieldSlotMap.get(effectiveField)!;
-
       for (const slot of r.time_slots ?? []) {
         slotMap.set(slot, r);
       }
     }
 
-    // Construct cells[slotIndex][fieldIndex]
+    // field → slot → BlockedSlot
+    const blockedMap = new Map<number, Map<string, BlockedSlot>>();
+    for (const b of blockedSlots) {
+      if (!blockedMap.has(b.field)) blockedMap.set(b.field, new Map());
+      blockedMap.get(b.field)!.set(b.time_slot, b);
+    }
+
     const cells: CellInfo[][] = [];
     const skipSet = new Set<string>();
 
@@ -110,31 +115,35 @@ export default function ScheduleGrid({
         const slotMap = fieldSlotMap.get(field);
         const reservation = slotMap?.get(slot);
 
-        if (!reservation) {
-          row.push({ type: "empty" });
+        if (reservation) {
+          let span = 1;
+          for (let next = si + 1; next < TIME_SLOTS.length; next++) {
+            const nextRes = slotMap?.get(TIME_SLOTS[next]);
+            if (nextRes && nextRes.id === reservation.id) {
+              span++;
+              skipSet.add(`${next}:${fi}`);
+            } else {
+              break;
+            }
+          }
+          row.push({ type: "reservation", reservation, span });
           continue;
         }
 
-        // Calcular cuántos slots consecutivos ocupa esta reserva
-        let span = 1;
-        for (let next = si + 1; next < TIME_SLOTS.length; next++) {
-          const nextRes = slotMap?.get(TIME_SLOTS[next]);
-          if (nextRes && nextRes.id === reservation.id) {
-            span++;
-            skipSet.add(`${next}:${fi}`);
-          } else {
-            break;
-          }
+        const blocked = blockedMap.get(field)?.get(slot);
+        if (blocked) {
+          row.push({ type: "blocked", blockedSlot: blocked });
+          continue;
         }
 
-        row.push({ type: "reservation", reservation, span });
+        row.push({ type: "empty" });
       }
 
       cells.push(row);
     }
 
     return cells;
-  }, [reservations, autoAssignments]);
+  }, [reservations, blockedSlots, autoAssignments]);
 
   // ── Render ──────────────────────────────────────────────────────────────
 
@@ -217,11 +226,20 @@ export default function ScheduleGrid({
 
                   if (cell.type === "empty") {
                     return (
+                      <td key={field} className="border-b border-l border-gray-300 p-1 h-[52px]">
+                        <EmptyCellContent />
+                      </td>
+                    );
+                  }
+
+                  if (cell.type === "blocked") {
+                    return (
                       <td
                         key={field}
-                        className="border-b border-l border-gray-300 p-1 h-[52px]"
+                        onClick={() => onSelectBlocked(cell.blockedSlot)}
+                        className="border-b border-l border-gray-300 p-1 h-[52px] cursor-pointer hover:brightness-95 transition-colors"
                       >
-                        <EmptyCellContent />
+                        <BlockedCellContent reason={cell.blockedSlot.reason} />
                       </td>
                     );
                   }
@@ -233,9 +251,7 @@ export default function ScheduleGrid({
                     <td
                       key={field}
                       rowSpan={span}
-                      onClick={() =>
-                        onSelectReservation(reservation)
-                      }
+                      onClick={() => onSelectReservation(reservation)}
                       className={`border-b border-l border-gray-300 p-1 cursor-pointer transition-colors hover:brightness-95 ${
                         arrived ? "bg-green-50" : "bg-white"
                       }`}
