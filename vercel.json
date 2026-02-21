@@ -1,0 +1,16 @@
+{
+  "crons": [
+    {
+      "path": "/api/cron/reservation-reminder",
+      "schedule": "0 15 * * *"
+    },
+    {
+      "path": "/api/cron/recurrent-rebooking",
+      "schedule": "0 4 * * *"
+    },
+    {
+      "path": "/api/cron/payment-reminder",
+      "schedule": "0 14 * * *"
+    }
+  ]
+}
