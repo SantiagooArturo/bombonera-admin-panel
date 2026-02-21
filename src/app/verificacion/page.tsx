@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { Suspense, useState, useEffect } from "react";
 import { useSearchParams } from "next/navigation";
 import ClientLayout, { useToastContext } from "@/components/ClientLayout";
 import { useStore } from "@/lib/hooks";
@@ -15,6 +15,14 @@ import {
 import PaymentSidebar from "@/components/verificacion/PaymentSidebar";
 
 export default function VerificacionPage() {
+    return (
+        <Suspense>
+            <VerificacionContent />
+        </Suspense>
+    );
+}
+
+function VerificacionContent() {
     const store = useStore();
     const toast = useToastContext();
     const searchParams = useSearchParams();

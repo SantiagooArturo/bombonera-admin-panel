@@ -2,7 +2,7 @@
 
 import { useEffect, useState, useMemo, useCallback } from "react";
 import ClientLayout, { useToastContext } from "@/components/ClientLayout";
-import { useStore } from "@/lib/hooks";
+
 import { TIME_SLOTS, type Reservation } from "@/lib/types";
 import ScheduleGrid from "@/components/operations/ScheduleGrid";
 import ReservationDetailPanel from "@/components/operations/ReservationDetailPanel";
@@ -31,7 +31,6 @@ function getDateWithOffset(offset: number): Date {
 }
 
 export default function OperacionesPage() {
-  const store = useStore();
   const toast = useToastContext();
 
   const [dayOffset, setDayOffset] = useState(0);
@@ -91,17 +90,6 @@ export default function OperacionesPage() {
     () => computeAutoAssignments(reservations),
     [reservations]
   );
-
-  // ── Stats del día ─────────────────────────────────────────────────────
-
-  const stats = useMemo(() => {
-    const active = reservations.filter((r) => r.status !== "cancelled");
-    const arrived = active.filter((r) => r.arrived).length;
-    const withField = active.filter(
-      (r) => r.field != null || autoAssignments.has(r.id)
-    ).length;
-    return { total: active.length, arrived, withField };
-  }, [reservations, autoAssignments]);
 
   // ── Handlers ──────────────────────────────────────────────────────────
 
