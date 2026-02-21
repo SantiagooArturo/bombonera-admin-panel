@@ -3,6 +3,13 @@
 import { useState, useRef } from "react";
 import { Transfer, Invoice, Reservation, PaymentMethod } from "@/lib/types";
 
+// ─── WhatsApp icon (reutilizado) ─────────────────────────────────────────────
+
+const WSP_ICON_PATH =
+  "M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.008-.57-.008-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347m-5.421 7.403h-.004a9.87 9.87 0 01-5.031-1.378l-.361-.214-3.741.982.998-3.648-.235-.374a9.86 9.86 0 01-1.51-5.26c.001-5.45 4.436-9.884 9.888-9.884 2.64 0 5.122 1.03 6.988 2.898a9.825 9.825 0 012.893 6.994c-.003 5.45-4.437 9.884-9.885 9.884m8.413-18.297A11.815 11.815 0 0012.05 0C5.495 0 .16 5.335.157 11.892c0 2.096.547 4.142 1.588 5.945L.057 24l6.305-1.654a11.882 11.882 0 005.683 1.448h.005c6.554 0 11.89-5.335 11.893-11.893a11.821 11.821 0 00-3.48-8.413Z";
+
+// ─── Props ───────────────────────────────────────────────────────────────────
+
 interface PaymentSidebarProps {
   reservation: Reservation;
   transfers: Transfer[];
@@ -15,7 +22,10 @@ interface PaymentSidebarProps {
   onRevokeManualPayment: (transferId: string) => void;
   onRegisterPayment: (amount: number, method: PaymentMethod, mediaUrl?: string) => void;
   onClose: () => void;
+  onToggleArrived?: (resId: string, arrived: boolean) => void;
 }
+
+// ─── Sub-components ──────────────────────────────────────────────────────────
 
 function ImageViewer({ src, onClose }: { src: string; onClose: () => void }) {
   return (
@@ -53,6 +63,31 @@ function formatTransferTime(dateStr: string) {
   const hour12 = h % 12 || 12;
   return `${hour12}:${String(m).padStart(2, "0")} ${isPm ? "pm" : "am"}`;
 }
+
+function formatHour12(hourStr: string): string {
+  const h = parseInt(hourStr.split(":")[0]);
+  if (h === 0) return "12:00 am";
+  if (h < 12) return `${h}:00 am`;
+  if (h === 12) return "12:00 pm";
+  return `${h - 12}:00 pm`;
+}
+
+function formatReservationTime(reservation: Reservation) {
+  if (!reservation.time_slots?.length) return "—";
+  const start = reservation.time_slots[0];
+  const lastHour = parseInt(reservation.time_slots[reservation.time_slots.length - 1].split(":")[0]) + 1;
+  return `${formatHour12(start)} – ${formatHour12(`${lastHour}:00`)}`;
+}
+
+function formatPhoneDisplay(phone: string) {
+  return phone.startsWith("51") ? phone.slice(2) : phone;
+}
+
+function wspLink(phone: string) {
+  return `https://wa.me/${phone.startsWith("51") ? phone : `51${phone}`}?text=.`;
+}
+
+// ─── Register Payment Form ───────────────────────────────────────────────────
 
 function RegisterPaymentForm({
   remaining,
@@ -142,7 +177,6 @@ function RegisterPaymentForm({
         </button>
       </div>
 
-      {/* Método */}
       <div>
         <label className="block text-sm font-medium text-gray-600 mb-2">Método de pago</label>
         <div className="flex gap-3">
@@ -171,7 +205,6 @@ function RegisterPaymentForm({
         </div>
       </div>
 
-      {/* Upload foto (solo digital) */}
       {method === "digital" && (
         <div>
           <label className="block text-sm font-medium text-gray-600 mb-2">
@@ -203,17 +236,10 @@ function RegisterPaymentForm({
               Adjuntar foto
             </button>
           )}
-          <input
-            ref={fileInputRef}
-            type="file"
-            accept="image/jpeg,image/png,image/webp"
-            onChange={handleFileChange}
-            className="hidden"
-          />
+          <input ref={fileInputRef} type="file" accept="image/jpeg,image/png,image/webp" onChange={handleFileChange} className="hidden" />
         </div>
       )}
 
-      {/* Monto */}
       <div>
         <label className="block text-sm font-medium text-gray-600 mb-2">Monto a cobrar (S/)</label>
         <input
@@ -227,7 +253,6 @@ function RegisterPaymentForm({
         />
       </div>
 
-      {/* Acciones */}
       <div className="flex gap-3">
         <button
           onClick={() => { setOpen(false); clearFile(); }}
@@ -248,14 +273,10 @@ function RegisterPaymentForm({
   );
 }
 
+// ─── Transfer Card ───────────────────────────────────────────────────────────
+
 function TransferCard({
-  transfer,
-  invoice,
-  emittingInvoiceId,
-  onVerify,
-  onEmitInvoice,
-  onRevoke,
-  onViewImage,
+  transfer, invoice, emittingInvoiceId, onVerify, onEmitInvoice, onRevoke, onViewImage,
 }: {
   transfer: Transfer;
   invoice: Invoice | undefined;
@@ -269,7 +290,6 @@ function TransferCard({
 
   return (
     <div className={`rounded-2xl border-2 transition-all ${transfer.verified ? "border-green-400 bg-green-50/30" : "border-gray-200 bg-white"}`}>
-      {/* Header con columnas */}
       <div className={`grid grid-cols-2 border-b-2 rounded-t-2xl ${transfer.verified ? "border-green-400 bg-green-50/50" : "border-gray-200 bg-gray-50/50"}`}>
         <div className="px-5 py-2.5 text-xs font-bold text-gray-500 uppercase tracking-wider">Pago</div>
         <div className={`px-5 py-2.5 text-xs font-bold text-gray-500 uppercase tracking-wider border-l-2 ${transfer.verified ? "border-green-400" : "border-gray-200"}`}>Boleta asociada</div>
@@ -278,7 +298,6 @@ function TransferCard({
       <div className="grid grid-cols-2">
         {/* COLUMNA IZQUIERDA: PAGO */}
         <div className="p-5 space-y-4">
-          {/* Voucher */}
           <div className="w-full">
             {transfer.media_url ? (
               <div
@@ -286,32 +305,22 @@ function TransferCard({
                 onClick={() => onViewImage(transfer.media_url!)}
               >
                 {/* eslint-disable-next-line @next/next/no-img-element */}
-                <img
-                  src={transfer.media_url}
-                  alt="Voucher"
-                  className="w-full h-full object-cover transition-transform group-hover:scale-105"
-                />
+                <img src={transfer.media_url} alt="Voucher" className="w-full h-full object-cover transition-transform group-hover:scale-105" />
                 <div className="absolute inset-0 bg-black/0 group-hover:bg-black/20 flex items-center justify-center transition-colors">
-                  <span className="text-sm font-bold text-white bg-black/60 px-4 py-2 rounded-lg backdrop-blur-sm opacity-0 group-hover:opacity-100 transition-opacity">
-                    Ver imagen
-                  </span>
+                  <span className="text-sm font-bold text-white bg-black/60 px-4 py-2 rounded-lg backdrop-blur-sm opacity-0 group-hover:opacity-100 transition-opacity">Ver imagen</span>
                 </div>
               </div>
             ) : (
               <div className="rounded-xl bg-gray-50 border-2 border-dashed border-gray-200 flex flex-col items-center justify-center p-6 text-center aspect-[4/3]">
                 {transfer.source === "manual" ? (
                   <>
-                    <svg className="w-10 h-10 text-gray-300 mb-2" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M17 9V7a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2m2 4h10a2 2 0 002-2v-6a2 2 0 00-2-2H9a2 2 0 00-2 2v6a2 2 0 002 2zm7-5a2 2 0 11-4 0 2 2 0 014 0z" />
-                    </svg>
+                    <svg className="w-10 h-10 text-gray-300 mb-2" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M17 9V7a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2m2 4h10a2 2 0 002-2v-6a2 2 0 00-2-2H9a2 2 0 00-2 2v6a2 2 0 002 2zm7-5a2 2 0 11-4 0 2 2 0 014 0z" /></svg>
                     <span className="text-sm font-semibold text-gray-400">Pago en Caja</span>
                     <span className="text-xs text-gray-300 mt-1">Sin voucher digital</span>
                   </>
                 ) : (
                   <>
-                    <svg className="w-10 h-10 text-amber-300 mb-2" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
-                    </svg>
+                    <svg className="w-10 h-10 text-amber-300 mb-2" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" /></svg>
                     <span className="text-sm font-semibold text-gray-400">Sin imagen</span>
                     <span className="text-xs text-gray-300 mt-1">No adjuntó captura</span>
                   </>
@@ -320,20 +329,16 @@ function TransferCard({
             )}
           </div>
 
-          {/* Info */}
           <div className="space-y-1.5">
             <p className="text-2xl font-bold text-gray-900">S/ {transfer.amount?.toFixed(2)}</p>
             <p className="text-base text-gray-600">{formatTransferDate(transfer.created_at)}</p>
             <p className="text-base text-gray-600">{formatTransferTime(transfer.created_at)}</p>
-            <p className="text-base text-gray-600">
-              {transfer.source === "manual" ? "Pagado: en caja" : "Pagado: vía digital"}
-            </p>
+            <p className="text-base text-gray-600">{transfer.source === "manual" ? "Pagado: en caja" : "Pagado: vía digital"}</p>
             <p className={`text-base font-semibold ${transfer.verified ? "text-green-600" : "text-amber-600"}`}>
               {transfer.verified ? "Validado" : transfer.source === "manual" ? "Cobro manual" : "Pendiente validación"}
             </p>
           </div>
 
-          {/* Action */}
           <div>
             {transfer.source !== "manual" ? (
               <button
@@ -345,15 +350,9 @@ function TransferCard({
                 }`}
               >
                 {transfer.verified ? (
-                  <>
-                    <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg>
-                    Deshacer
-                  </>
+                  <><svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg>Deshacer</>
                 ) : (
-                  <>
-                    <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" /></svg>
-                    Validar Pago
-                  </>
+                  <><svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" /></svg>Validar Pago</>
                 )}
               </button>
             ) : (
@@ -361,9 +360,7 @@ function TransferCard({
                 onClick={() => onRevoke(transfer.id)}
                 className="w-full py-3 px-4 rounded-xl font-bold text-sm transition-all active:scale-[0.98] flex items-center justify-center gap-2 bg-white border-2 border-red-100 text-red-600 hover:bg-red-50"
               >
-                <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
-                </svg>
+                <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg>
                 Eliminar pago
               </button>
             )}
@@ -410,15 +407,9 @@ function TransferCard({
                 className="w-full py-3 px-4 rounded-xl font-bold text-sm bg-gray-900 text-white hover:bg-gray-800 flex items-center justify-center gap-2 transition-colors disabled:opacity-60 disabled:cursor-not-allowed shadow-sm"
               >
                 {emittingInvoiceId === transfer.id ? (
-                  <>
-                    <svg className="w-5 h-5 animate-spin" fill="none" viewBox="0 0 24 24"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" /><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" /></svg>
-                    Emitiendo...
-                  </>
+                  <><svg className="w-5 h-5 animate-spin" fill="none" viewBox="0 0 24 24"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" /><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" /></svg>Emitiendo...</>
                 ) : (
-                  <>
-                    <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" /></svg>
-                    Emitir Boleta
-                  </>
+                  <><svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" /></svg>Emitir Boleta</>
                 )}
               </button>
             </div>
@@ -454,19 +445,7 @@ function SkeletonCard() {
   );
 }
 
-function formatHour12(hourStr: string) {
-  const h = parseInt(hourStr.split(":")[0]);
-  const isPm = h >= 12;
-  const hour12 = h % 12 || 12;
-  return `${hour12}:00 ${isPm ? "pm" : "am"}`;
-}
-
-function formatReservationTime(reservation: Reservation) {
-  if (!reservation.time_slots?.length) return "—";
-  const start = reservation.time_slots[0];
-  const lastHour = parseInt(reservation.time_slots[reservation.time_slots.length - 1].split(":")[0]) + 1;
-  return `${formatHour12(start)} – ${formatHour12(`${lastHour}:00`)}`;
-}
+// ─── Main Component ──────────────────────────────────────────────────────────
 
 export default function PaymentSidebar({
   reservation,
@@ -480,13 +459,24 @@ export default function PaymentSidebar({
   onRevokeManualPayment,
   onRegisterPayment,
   onClose,
+  onToggleArrived,
 }: PaymentSidebarProps) {
   const [viewingImage, setViewingImage] = useState<string | null>(null);
+  const [arrivedLoading, setArrivedLoading] = useState(false);
 
   const totalPrice = reservation.total_price || 0;
   const amountPaid = reservation.amount_paid || 0;
   const remaining = Math.max(0, totalPrice - amountPaid);
   const fullyPaid = remaining <= 0;
+  const arrived = reservation.arrived ?? false;
+  const isCancelled = reservation.status === "cancelled";
+
+  async function handleArrivedToggle() {
+    if (!onToggleArrived) return;
+    setArrivedLoading(true);
+    await onToggleArrived(reservation.id, !arrived);
+    setArrivedLoading(false);
+  }
 
   return (
     <>
@@ -496,31 +486,17 @@ export default function PaymentSidebar({
       {/* Sidebar */}
       <div className="fixed inset-y-0 right-0 z-50 w-full max-w-3xl bg-white shadow-2xl flex flex-col animate-slide-in-right">
         {/* Header */}
-        <div className="px-6 py-5 border-b border-gray-200 flex justify-between items-center bg-gray-50 shrink-0">
-          <h3 className="text-xl font-bold text-gray-900">Pagos y Boletas</h3>
-          <button
-            onClick={onClose}
-            className="text-gray-500 hover:text-gray-700 p-2 rounded-lg hover:bg-gray-200 transition-colors"
-            aria-label="Cerrar sidebar"
-          >
-            <svg className="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-            </svg>
-          </button>
-        </div>
-
-        {/* Reservation Info */}
-        <div className="px-6 py-4 border-b border-gray-200 bg-white shrink-0">
-          <div className="flex items-start justify-between gap-4">
-            <div className="space-y-1">
-              <p className="text-lg font-bold text-gray-900">
-                {reservation.representative_name || "Sin nombre"}
-              </p>
-              <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-sm text-gray-500">
+        <div className="px-6 py-4 border-b border-gray-200 bg-gray-50 shrink-0">
+          <div className="flex items-center justify-between">
+            <div>
+              <h3 className="text-xl font-bold text-gray-900">Detalle de reserva</h3>
+              <div className="flex flex-wrap items-center gap-x-3 gap-y-1 mt-1 text-sm text-gray-500">
                 <span className="font-semibold text-gray-700">
                   {reservation.field ? `Cancha ${reservation.field}` : "Sin cancha"}
                 </span>
+                <span className="text-gray-300">·</span>
                 <span>{formatReservationTime(reservation)}</span>
+                <span className="text-gray-300">·</span>
                 <span>
                   {new Date(reservation.date + "T12:00:00").toLocaleDateString("es-PE", {
                     weekday: "short", day: "numeric", month: "short",
@@ -528,15 +504,55 @@ export default function PaymentSidebar({
                 </span>
               </div>
             </div>
-            <div className="text-right shrink-0">
-              <span className={`inline-block px-3 py-1 rounded-lg text-xs font-bold uppercase tracking-wide ${
-                fullyPaid
-                  ? "bg-green-100 text-green-700"
-                  : "bg-amber-100 text-amber-700"
-              }`}>
-                {fullyPaid ? "Pagado" : "Pendiente"}
-              </span>
+            <button
+              onClick={onClose}
+              className="text-gray-500 hover:text-gray-700 p-2 rounded-lg hover:bg-gray-200 transition-colors shrink-0"
+              aria-label="Cerrar sidebar"
+            >
+              <svg className="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+              </svg>
+            </button>
+          </div>
+        </div>
+
+        {/* Client Info */}
+        <div className="px-6 py-4 border-b border-gray-200 bg-white shrink-0">
+          <div className="flex items-center justify-between gap-4">
+            <div className="space-y-1">
+              <p className="text-lg font-bold text-gray-900">
+                {reservation.representative_name || "Sin nombre"}
+              </p>
+              {reservation.phone_number && (
+                <a
+                  href={wspLink(reservation.phone_number)}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="inline-flex items-center gap-2 hover:bg-green-50 px-2 py-1 rounded-lg transition-colors group"
+                  title="Abrir chat de WhatsApp"
+                >
+                  <svg className="w-5 h-5 text-green-600" fill="currentColor" viewBox="0 0 24 24">
+                    <path d={WSP_ICON_PATH} />
+                  </svg>
+                  <span className="text-gray-500 text-base font-mono group-hover:text-green-700 group-hover:underline">
+                    {formatPhoneDisplay(reservation.phone_number)}
+                  </span>
+                </a>
+              )}
             </div>
+            {onToggleArrived && !isCancelled && (
+              <button
+                onClick={handleArrivedToggle}
+                disabled={arrivedLoading}
+                className={`px-5 py-2.5 rounded-xl font-bold text-sm transition-all disabled:opacity-50 shrink-0 ${
+                  arrived
+                    ? "bg-green-500 text-white shadow-md hover:bg-green-600"
+                    : "bg-blue-600 text-white shadow-sm hover:bg-blue-700"
+                }`}
+              >
+                {arrivedLoading ? "..." : arrived ? "✓ Ya llegó" : "Marcar llegada"}
+              </button>
+            )}
           </div>
 
           {/* Resumen financiero */}
@@ -558,18 +574,10 @@ export default function PaymentSidebar({
 
         {/* Content */}
         <div className="flex-1 overflow-y-auto p-6 space-y-5 bg-gray-50">
-          {/* Registrar cobro */}
-          <RegisterPaymentForm
-            remaining={remaining}
-            loading={paymentLoading}
-            onSubmit={onRegisterPayment}
-          />
+          <RegisterPaymentForm remaining={remaining} loading={paymentLoading} onSubmit={onRegisterPayment} />
 
           {loading && transfers.length === 0 ? (
-            <>
-              <SkeletonCard />
-              <SkeletonCard />
-            </>
+            <><SkeletonCard /><SkeletonCard /></>
           ) : transfers.length > 0 ? (
             transfers.map((transfer) => {
               const invoice = invoices.find((inv) => inv.transfer_id === transfer.id);
@@ -595,7 +603,6 @@ export default function PaymentSidebar({
         </div>
       </div>
 
-      {/* Image Viewer Popup */}
       {viewingImage && <ImageViewer src={viewingImage} onClose={() => setViewingImage(null)} />}
     </>
   );

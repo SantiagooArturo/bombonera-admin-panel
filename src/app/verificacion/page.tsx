@@ -2,17 +2,11 @@
 
 import { Suspense, useState, useEffect } from "react";
 import { useSearchParams } from "next/navigation";
-import ClientLayout, { useToastContext } from "@/components/ClientLayout";
+import ClientLayout from "@/components/ClientLayout";
 import { useStore } from "@/lib/hooks";
-import {
-    Reservation,
-    COURT_LABELS,
-    STATUS_LABELS,
-    Transfer,
-    Invoice,
-    PaymentMethod,
-} from "@/lib/types";
+import { COURT_LABELS, STATUS_LABELS } from "@/lib/types";
 import PaymentSidebar from "@/components/verificacion/PaymentSidebar";
+import { usePaymentSidebar } from "@/components/verificacion/usePaymentSidebar";
 
 export default function VerificacionPage() {
     return (
@@ -24,23 +18,14 @@ export default function VerificacionPage() {
 
 function VerificacionContent() {
     const store = useStore();
-    const toast = useToastContext();
     const searchParams = useSearchParams();
     const reservations = store.getReservations();
     const loaded = store.isLoaded("reservations");
 
-    const [selectedReservation, setSelectedReservation] = useState<Reservation | null>(null);
-    const [transfers, setTransfers] = useState<Transfer[]>([]);
-    const [invoices, setInvoices] = useState<Invoice[]>([]);
-    const [loadingData, setLoadingData] = useState(false);
-    const [showModal, setShowModal] = useState(false);
-    const [emittingInvoiceId, setEmittingInvoiceId] = useState<string | null>(null);
-    const [paymentLoading, setPaymentLoading] = useState(false);
+    const sidebar = usePaymentSidebar();
 
-    // Filter states
     const [filterText, setFilterText] = useState(searchParams.get("search") ?? "");
     const [filterStatus, setFilterStatus] = useState<"all" | "pending" | "paid" | "cancelled">("all");
-
     const [autoOpenHandled, setAutoOpenHandled] = useState(false);
 
     useEffect(() => {
@@ -53,23 +38,19 @@ function VerificacionContent() {
         if (resId) {
             const target = reservations.find((r) => r.id === resId);
             if (target) {
-                handleOpenVerification(target);
+                sidebar.open(target);
                 setAutoOpenHandled(true);
             }
         }
     // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [loaded, reservations, autoOpenHandled, searchParams]);
 
-    // Sort by date (newest first)
     const sortedReservations = [...reservations].sort(
         (a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
     );
 
     const filteredReservations = sortedReservations.filter((r) => {
-        // Filtro por estado
         if (filterStatus !== "all" && r.status !== filterStatus) return false;
-
-        // Filtro por texto
         if (filterText) {
             const search = filterText.toLowerCase();
             return (
@@ -81,135 +62,6 @@ function VerificacionContent() {
         }
         return true;
     });
-
-    const handleCloseModal = () => {
-        setShowModal(false);
-        setTransfers([]);
-        setInvoices([]);
-        setSelectedReservation(null);
-    };
-
-    const handleOpenVerification = async (reservation: Reservation) => {
-        setSelectedReservation(reservation);
-        setShowModal(true);
-        setLoadingData(true);
-        try {
-            // 1. Sync payments first to ensure amounts are correct
-            await store.syncReservationPayments(reservation.id);
-
-            // 2. Fetch fresh data
-            const [transfersData, invoicesData] = await Promise.all([
-                store.fetchTransfers(reservation.id),
-                store.fetchInvoices({ reservation_id: reservation.id })
-            ]);
-
-            // 3. Update local state
-            setTransfers(transfersData || []);
-            setInvoices(invoicesData || []);
-
-            // 4. Recalcular amount_paid sumando todos los pagos aplicados/parciales
-            const total = (transfersData || []).reduce((sum: number, t: Transfer) => {
-                if (t.status === 'applied' || t.status === 'partial') return sum + (t.amount || 0);
-                return sum;
-            }, 0);
-
-            setSelectedReservation(prev => prev ? { ...prev, amount_paid: total } : null);
-
-        } catch (error) {
-            console.error("Error loading data", error);
-            toast("Error al cargar información", "error");
-        } finally {
-            setLoadingData(false);
-        }
-    };
-
-    const handleVerifyTransfer = async (transferId: string, currentStatus: boolean) => {
-        const success = await store.verifyTransfer(transferId, !currentStatus);
-        if (success) {
-            setTransfers(prev => prev.map(t => t.id === transferId ? { ...t, verified: !currentStatus, verified_at: new Date().toISOString() } : t));
-            toast(currentStatus ? "Verificación removida" : "Transferencia verificada", "success");
-        } else {
-            toast("Error al actualizar verificación", "error");
-        }
-    };
-
-
-
-    const handleEmitTransferInvoice = async (transfer: Transfer) => {
-        if (!selectedReservation) {
-            toast("No hay reserva seleccionada", "error");
-            return;
-        }
-
-        setEmittingInvoiceId(transfer.id);
-        try {
-            const result = await store.emitInvoice(selectedReservation, { id: transfer.id, amount: transfer.amount || 0 });
-            if (result) {
-                toast("Boleta emitida correctamente", "success");
-                const newInvoices = await store.fetchInvoices({ reservation_id: selectedReservation.id });
-                setInvoices(newInvoices || []);
-            } else {
-                toast("Error al emitir boleta. Revisa la consola para más detalles.", "error");
-            }
-        } catch {
-            toast("Error inesperado al emitir boleta", "error");
-        } finally {
-            setEmittingInvoiceId(null);
-        }
-    };
-
-    const handleRevokeManualPayment = async (transferId: string) => {
-        if (!selectedReservation) return;
-        if (!confirm("¿Estás seguro de revocar (eliminar) este pago manual? El monto se descontará de la reserva.")) return;
-
-        const result = await store.revokeManualPayment(transferId, selectedReservation.id);
-        if (result?.success) {
-            toast("Pago manual revocado correctamente", "success");
-            // Remove from list locally
-            setTransfers(prev => prev.filter(t => t.id !== transferId));
-            // Update local reservation amount if possible, or just close modal to force refresh?
-            // Ideally we refresh reservation in parent, but for now let's just update the local view if needed.
-            if (result.refunded) {
-                setSelectedReservation(prev => prev ? {
-                    ...prev,
-                    amount_paid: Math.max(0, (prev.amount_paid || 0) - result.refunded)
-                } : null);
-            }
-        } else {
-            toast("Error al revocar pago", "error");
-        }
-    };
-
-    const handleRegisterPayment = async (amount: number, method: PaymentMethod, mediaUrl?: string) => {
-        if (!selectedReservation) return;
-        setPaymentLoading(true);
-        try {
-            const result = await store.processManualPayment(
-                selectedReservation.id,
-                amount,
-                selectedReservation.phone_number,
-                method,
-                mediaUrl,
-            );
-            if (result?.success) {
-                toast(`Cobro registrado: S/ ${amount.toFixed(2)}`, "success");
-                setSelectedReservation(prev => prev ? {
-                    ...prev,
-                    amount_paid: result.new_amount_paid,
-                    status: result.fully_paid ? "paid" as Reservation["status"] : prev.status,
-                    confirmed: true,
-                } : null);
-                const newTransfers = await store.fetchTransfers(selectedReservation.id);
-                setTransfers(newTransfers || []);
-            } else {
-                toast("Error al procesar el pago", "error");
-            }
-        } catch {
-            toast("Error inesperado al registrar pago", "error");
-        } finally {
-            setPaymentLoading(false);
-        }
-    };
 
     return (
         <ClientLayout>
@@ -330,7 +182,7 @@ function VerificacionContent() {
                                         </td>
                                         <td className="p-6 text-center">
                                             <button
-                                                onClick={() => handleOpenVerification(res)}
+                                                onClick={() => sidebar.open(res)}
                                                 className="bg-blue-600 hover:bg-blue-700 text-white font-bold py-3 px-6 rounded-xl text-base shadow-md transition-transform active:scale-95"
                                             >
                                                 Ver Pagos
@@ -366,20 +218,19 @@ function VerificacionContent() {
                 )}
             </div>
 
-            {/* SIDEBAR DE VERIFICACIÓN */}
-            {showModal && selectedReservation && (
+            {sidebar.isOpen && sidebar.selectedReservation && (
                 <PaymentSidebar
-                    reservation={selectedReservation}
-                    transfers={transfers}
-                    invoices={invoices}
-                    loading={loadingData}
-                    emittingInvoiceId={emittingInvoiceId}
-                    paymentLoading={paymentLoading}
-                    onVerifyTransfer={handleVerifyTransfer}
-                    onEmitInvoice={handleEmitTransferInvoice}
-                    onRevokeManualPayment={handleRevokeManualPayment}
-                    onRegisterPayment={handleRegisterPayment}
-                    onClose={handleCloseModal}
+                    reservation={sidebar.selectedReservation}
+                    transfers={sidebar.transfers}
+                    invoices={sidebar.invoices}
+                    loading={sidebar.loadingData}
+                    emittingInvoiceId={sidebar.emittingInvoiceId}
+                    paymentLoading={sidebar.paymentLoading}
+                    onVerifyTransfer={sidebar.handleVerifyTransfer}
+                    onEmitInvoice={sidebar.handleEmitInvoice}
+                    onRevokeManualPayment={sidebar.handleRevokeManualPayment}
+                    onRegisterPayment={sidebar.handleRegisterPayment}
+                    onClose={sidebar.close}
                 />
             )}
         </ClientLayout>

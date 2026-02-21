@@ -5,7 +5,8 @@ import ClientLayout, { useToastContext } from "@/components/ClientLayout";
 
 import { TIME_SLOTS, type Reservation } from "@/lib/types";
 import ScheduleGrid from "@/components/operations/ScheduleGrid";
-import ReservationDetailPanel from "@/components/operations/ReservationDetailPanel";
+import PaymentSidebar from "@/components/verificacion/PaymentSidebar";
+import { usePaymentSidebar } from "@/components/verificacion/usePaymentSidebar";
 import { computeAutoAssignments } from "@/components/operations/autoAssign";
 
 // ─── Helpers ────────────────────────────────────────────────────────────────
@@ -15,8 +16,6 @@ function getCurrentSlot(): string {
   const slot = `${hour}:00`;
   return TIME_SLOTS.includes(slot) ? slot : TIME_SLOTS[0];
 }
-
-// ─── Page ───────────────────────────────────────────────────────────────────
 
 const MAX_DAY_OFFSET = 7;
 
@@ -30,6 +29,8 @@ function getDateWithOffset(offset: number): Date {
   return d;
 }
 
+// ─── Page ───────────────────────────────────────────────────────────────────
+
 export default function OperacionesPage() {
   const toast = useToastContext();
 
@@ -38,10 +39,12 @@ export default function OperacionesPage() {
   const [reservations, setReservations] = useState<Reservation[]>([]);
   const [loading, setLoading] = useState(true);
 
-  // Detail panel state
-  const [selectedRes, setSelectedRes] = useState<Reservation | null>(null);
+  const sidebar = usePaymentSidebar({
+    onReservationUpdated: (resId, patch) => {
+      setReservations((prev) => prev.map((r) => (r.id === resId ? { ...r, ...patch } : r)));
+    },
+  });
 
-  // Auto-avanzar la hora cada 30s
   useEffect(() => {
     const interval = setInterval(() => setCurrentSlot(getCurrentSlot()), 30000);
     return () => clearInterval(interval);
@@ -59,7 +62,8 @@ export default function OperacionesPage() {
   const isToday = dayOffset === 0;
 
   useEffect(() => {
-    setSelectedRes(null);
+    sidebar.close();
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [dayOffset]);
 
   // ── Fetch reservas del día ────────────────────────────────────────────
@@ -84,14 +88,12 @@ export default function OperacionesPage() {
     return () => clearInterval(interval);
   }, [loadReservations]);
 
-  // ── Auto-assignments ──────────────────────────────────────────────────
-
   const autoAssignments = useMemo(
     () => computeAutoAssignments(reservations),
     [reservations]
   );
 
-  // ── Handlers ──────────────────────────────────────────────────────────
+  // ── Asistencia (solo operaciones) ─────────────────────────────────────
 
   async function handleToggleArrived(resId: string, arrived: boolean) {
     try {
@@ -104,19 +106,13 @@ export default function OperacionesPage() {
         setReservations((prev) =>
           prev.map((r) => (r.id === resId ? { ...r, arrived } : r))
         );
-        if (selectedRes?.id === resId) {
-          setSelectedRes((prev) =>
-            prev ? { ...prev, arrived } : null
-          );
-        }
+        sidebar.setSelectedReservation((prev) =>
+          prev?.id === resId ? { ...prev, arrived } : prev
+        );
       }
     } catch {
       toast("Error al marcar asistencia", "error");
     }
-  }
-
-  function handleSelectReservation(reservation: Reservation) {
-    setSelectedRes(reservation);
   }
 
   // ── Render ────────────────────────────────────────────────────────────
@@ -164,7 +160,6 @@ export default function OperacionesPage() {
           </div>
         </div>
 
-
         {/* Grid */}
         <div className={`transition-opacity duration-200 ${loading ? "opacity-50 pointer-events-none" : ""}`}>
           <ScheduleGrid
@@ -172,20 +167,28 @@ export default function OperacionesPage() {
             autoAssignments={autoAssignments}
             currentSlot={currentSlot}
             isToday={isToday}
-            onSelectReservation={handleSelectReservation}
+            onSelectReservation={sidebar.open}
           />
         </div>
       </div>
 
-      {/* Detail Panel */}
-      {selectedRes && (
-        <ReservationDetailPanel
-          reservation={selectedRes}
-          onClose={() => setSelectedRes(null)}
+      {/* Detail Sidebar */}
+      {sidebar.isOpen && sidebar.selectedReservation && (
+        <PaymentSidebar
+          reservation={sidebar.selectedReservation}
+          transfers={sidebar.transfers}
+          invoices={sidebar.invoices}
+          loading={sidebar.loadingData}
+          emittingInvoiceId={sidebar.emittingInvoiceId}
+          paymentLoading={sidebar.paymentLoading}
+          onVerifyTransfer={sidebar.handleVerifyTransfer}
+          onEmitInvoice={sidebar.handleEmitInvoice}
+          onRevokeManualPayment={sidebar.handleRevokeManualPayment}
+          onRegisterPayment={sidebar.handleRegisterPayment}
+          onClose={sidebar.close}
           onToggleArrived={handleToggleArrived}
         />
       )}
-
     </ClientLayout>
   );
 }
