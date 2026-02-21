@@ -3,7 +3,8 @@
 import { useEffect } from "react";
 import ClientLayout from "@/components/ClientLayout";
 import { useStore } from "@/lib/hooks";
-import { COURT_LABELS, STATUS_LABELS } from "@/lib/types";
+
+
 
 function formatDate(dateStr: string) {
   const d = new Date(dateStr + "T12:00:00");
@@ -39,22 +40,6 @@ export default function DashboardPage() {
   const pendingRevenue = todayReservations
     .filter((r) => r.status === "pending")
     .reduce((sum, r) => sum + r.total_price, 0);
-
-  const next7Days = Array.from({ length: 7 }, (_, i) => {
-    const d = new Date();
-    d.setDate(d.getDate() + i);
-    const dateStr = d.toISOString().split("T")[0];
-    const dayReservations = reservations.filter(
-      (r) => r.date === dateStr && r.status !== "cancelled"
-    );
-    return {
-      date: dateStr,
-      dayName: d.toLocaleDateString("es-PE", { weekday: "short" }),
-      dayNumber: d.getDate(),
-      isToday: i === 0,
-      count: dayReservations.length,
-    };
-  });
 
   return (
     <ClientLayout>
@@ -120,100 +105,6 @@ export default function DashboardPage() {
                   </svg>
                 }
               />
-            </div>
-
-            <div className="bg-white rounded-2xl border border-gray-200 p-6 mb-10 shadow-sm">
-              <h2 className="text-heading font-bold text-gray-900 mb-5">
-                Próximos 7 días
-              </h2>
-              <div className="grid grid-cols-7 gap-3">
-                {next7Days.map((day) => (
-                  <div
-                    key={day.date}
-                    className={`flex flex-col items-center p-4 rounded-xl transition-colors ${
-                      day.isToday
-                        ? "bg-bombonera-600 text-white"
-                        : "bg-gray-50 text-gray-700 hover:bg-gray-100"
-                    }`}
-                  >
-                    <span className={`text-sm font-medium uppercase ${day.isToday ? "text-green-200" : "text-gray-400"}`}>
-                      {day.dayName}
-                    </span>
-                    <span className="text-heading font-bold mt-1">
-                      {day.dayNumber}
-                    </span>
-                    {day.count > 0 && (
-                      <span
-                        className={`mt-2 text-sm font-bold px-3 py-1 rounded-full ${
-                          day.isToday
-                            ? "bg-white/20 text-white"
-                            : "bg-bombonera-100 text-bombonera-700"
-                        }`}
-                      >
-                        {day.count}
-                      </span>
-                    )}
-                  </div>
-                ))}
-              </div>
-            </div>
-
-            <div className="bg-white rounded-2xl border border-gray-200 p-6 shadow-sm">
-              <h2 className="text-heading font-bold text-gray-900 mb-5">
-                Reservas de Hoy
-              </h2>
-              {todayReservations.length === 0 ? (
-                <p className="text-body-lg text-gray-400 py-8 text-center">
-                  No hay reservas para hoy
-                </p>
-              ) : (
-                <div className="space-y-4">
-                  {todayReservations
-                    .sort((a, b) => (a.time_slots[0] || "").localeCompare(b.time_slots[0] || ""))
-                    .map((res) => (
-                      <div
-                        key={res.id}
-                        className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 p-5 rounded-xl bg-gray-50 border border-gray-100"
-                      >
-                        <div className="flex items-center gap-4">
-                          <div className="w-14 h-14 rounded-xl bg-bombonera-100 flex items-center justify-center text-bombonera-700 font-bold text-xl shrink-0">
-                            {res.time_slots?.[0] || "—"}
-                          </div>
-                          <div>
-                            <p className="text-body-lg font-semibold text-gray-900">
-                              {COURT_LABELS[res.court_type]} — Campo {res.field || "?"}
-                            </p>
-                            <p className="text-body text-gray-500">
-                              {res.time_slots?.[0]} - {res.time_slots?.length > 0 ? parseInt(res.time_slots[res.time_slots.length - 1]) + 1 : "?"}:00
-                              {res.phone_number ? ` · Tel: ${res.phone_number}` : ""}
-                            </p>
-                          </div>
-                        </div>
-                        <div className="flex items-center gap-3 sm:gap-4">
-                          <div className="text-right">
-                            <span className="text-body-lg font-bold text-gray-900">
-                              S/ {(res.total_price || 0).toFixed(2)}
-                            </span>
-                            <p className="text-xs text-gray-500">
-                              Reserva: S/ {(res.reservation_price ?? (res.total_price || 0) / 2).toFixed(2)}
-                            </p>
-                          </div>
-                          <span
-                            className={`px-4 py-2 rounded-full text-sm font-bold ${
-                              res.status === "paid"
-                                ? "bg-blue-100 text-blue-700"
-                                : res.status === "pending"
-                                ? "bg-amber-100 text-amber-700"
-                                : "bg-red-100 text-red-700"
-                            }`}
-                          >
-                            {STATUS_LABELS[res.status] || res.status}
-                          </span>
-                        </div>
-                      </div>
-                    ))}
-                </div>
-              )}
             </div>
           </>
         )}
