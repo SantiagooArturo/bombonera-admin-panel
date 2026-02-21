@@ -34,7 +34,7 @@ const NAV_ITEMS = [
   },
   {
     href: "/bloqueos",
-    label: "Bloqueos",
+    label: "Bloquear Horarios",
     icon: (
       <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" className="w-7 h-7">
         <path fillRule="evenodd" d="M12 1.5a5.25 5.25 0 0 0-5.25 5.25v3a3 3 0 0 0-3 3v6.75a3 3 0 0 0 3 3h10.5a3 3 0 0 0 3-3v-6.75a3 3 0 0 0-3-3v-3c0-2.9-2.35-5.25-5.25-5.25Zm3.75 8.25v-3a3.75 3.75 0 1 0-7.5 0v3h7.5Z" clipRule="evenodd" />
@@ -60,8 +60,8 @@ export default function Sidebar() {
   return (
     <>
       {/* Desktop Sidebar */}
-      <aside className="hidden md:flex fixed left-0 top-0 bottom-0 w-[240px] bg-field-dark flex-col z-40">
-        <div className="p-6 border-b border-white/10">
+      <aside className="hidden md:flex fixed left-0 top-0 bottom-0 w-[250px] bg-field-dark flex-col z-40">
+        <div className="py-6 px-4 border-b border-white/10">
           <div className="flex items-center gap-3">
             <div className="w-12 h-12 rounded-xl bg-bombonera-400 flex items-center justify-center">
               <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="white" className="w-7 h-7">
@@ -75,14 +75,14 @@ export default function Sidebar() {
           </div>
         </div>
 
-        <nav className="flex-1 p-4 flex flex-col gap-2">
+        <nav className="flex-1 py-4 flex flex-col gap-2">
           {NAV_ITEMS.map((item) => {
             const isActive = pathname === item.href;
             return (
               <Link
                 key={item.href}
                 href={item.href}
-                className={`flex items-center gap-4 px-5 py-4 rounded-xl text-body-lg font-semibold transition-all ${isActive
+                className={`flex items-center gap-3 px-5 py-4 rounded-xl text-body-md font-semibold transition-all ${isActive
                     ? "bg-white/20 text-white shadow-lg"
                     : "text-green-200/80 hover:bg-white/10 hover:text-white"
                   }`}
@@ -93,12 +93,6 @@ export default function Sidebar() {
             );
           })}
         </nav>
-
-        <div className="p-4 border-t border-white/10">
-          <div className="px-5 py-3 rounded-xl bg-white/5 text-green-300/60 text-sm text-center">
-            Datos de prueba
-          </div>
-        </div>
       </aside>
 
       {/* Mobile Bottom Navigation */}
