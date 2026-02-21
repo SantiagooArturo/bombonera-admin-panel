@@ -25,6 +25,7 @@ export default function VerificacionPage() {
 
     // Filter states
     const [filterText, setFilterText] = useState("");
+    const [filterStatus, setFilterStatus] = useState<"all" | "pending" | "paid" | "cancelled">("all");
 
     useEffect(() => {
         store.fetchReservations();
@@ -36,12 +37,16 @@ export default function VerificacionPage() {
     );
 
     const filteredReservations = sortedReservations.filter((r) => {
+        // Filtro por estado
+        if (filterStatus !== "all" && r.status !== filterStatus) return false;
+
+        // Filtro por texto
         if (filterText) {
             const search = filterText.toLowerCase();
             return (
                 r.phone_number?.includes(search) ||
                 r.representative_name?.toLowerCase().includes(search) ||
-                COURT_LABELS[r.court_type].toLowerCase().includes(search) ||
+                (COURT_LABELS[r.court_type as keyof typeof COURT_LABELS] ?? r.court_type).toLowerCase().includes(search) ||
                 r.field?.toString().includes(search)
             );
         }
@@ -151,7 +156,7 @@ export default function VerificacionPage() {
                 </div>
 
                 {/* Search / Filter */}
-                <div className="bg-white rounded-2xl border border-gray-200 p-6 mb-8 shadow-sm">
+                <div className="bg-white rounded-2xl border border-gray-200 p-6 mb-8 shadow-sm space-y-4">
                     <input
                         type="text"
                         placeholder="Buscar por teléfono, nombre o cancha..."
@@ -159,6 +164,32 @@ export default function VerificacionPage() {
                         onChange={(e) => setFilterText(e.target.value)}
                         className="w-full px-5 py-4 text-lg rounded-xl border-2 border-gray-200 focus:border-blue-500 focus:outline-none bg-gray-50"
                     />
+                    <div className="flex gap-2 flex-wrap">
+                        {([
+                            { value: "all", label: "Todos" },
+                            { value: "pending", label: "Por Cobrar" },
+                            { value: "paid", label: "Pagado" },
+                            { value: "cancelled", label: "Cancelado" },
+                        ] as const).map((opt) => (
+                            <button
+                                key={opt.value}
+                                onClick={() => setFilterStatus(opt.value)}
+                                className={`px-4 py-2 rounded-lg text-sm font-bold transition-all ${
+                                    filterStatus === opt.value
+                                        ? opt.value === "paid"
+                                            ? "bg-green-100 text-green-700 border-2 border-green-300"
+                                            : opt.value === "pending"
+                                                ? "bg-amber-100 text-amber-700 border-2 border-amber-300"
+                                                : opt.value === "cancelled"
+                                                    ? "bg-red-100 text-red-700 border-2 border-red-300"
+                                                    : "bg-blue-100 text-blue-700 border-2 border-blue-300"
+                                        : "bg-gray-100 text-gray-600 border-2 border-transparent hover:bg-gray-200"
+                                }`}
+                            >
+                                {opt.label}
+                            </button>
+                        ))}
+                    </div>
                 </div>
 
                 {!loaded ? (
@@ -180,7 +211,7 @@ export default function VerificacionPage() {
                                     <tr key={res.id} className="border-b border-gray-100 hover:bg-gray-50 transition-colors">
                                         <td className="p-6">
                                             <div className="font-bold text-xl text-gray-900">
-                                                {COURT_LABELS[res.court_type].split('(')[0]}
+                                                {(COURT_LABELS[res.court_type as keyof typeof COURT_LABELS] ?? res.court_type).split('(')[0].trim()}
                                                 {res.field ? ` #${res.field}` : ''}
                                             </div>
                                             <div className="text-gray-500 mt-1 text-base">
@@ -348,7 +379,7 @@ export default function VerificacionPage() {
                                             const timeRange = `${formatHour(startH)} a ${formatHour(endH)}`;
 
                                             // Formatear cancha (quitar "Campo X")
-                                            const courtName = COURT_LABELS[selectedReservation.court_type].split('(')[0].trim();
+                                            const courtName = (COURT_LABELS[selectedReservation.court_type as keyof typeof COURT_LABELS] ?? selectedReservation.court_type).split('(')[0].trim();
 
                                             // Formatear fecha amigable (ej: "el sábado 14 de mayo")
                                             const dateObj = new Date(selectedReservation.date + "T12:00:00");

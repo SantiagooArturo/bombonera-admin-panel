@@ -48,6 +48,9 @@ export default function ReservationDetailPanel({
   const [transfers, setTransfers] = useState<Transfer[]>([]);
   const [transfersLoading, setTransfersLoading] = useState(false);
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
+  const [showMessageModal, setShowMessageModal] = useState(false);
+  const [messageText, setMessageText] = useState("");
+  const [sendingMessage, setSendingMessage] = useState(false);
 
   const paid = res.amount_paid ?? 0;
   const total = res.total_price ?? 0;
@@ -105,6 +108,31 @@ export default function ReservationDetailPanel({
     setArrivedLoading(true);
     await onToggleArrived(res.id, !arrived);
     setArrivedLoading(false);
+  }
+
+  const PRESET_MESSAGES = [
+    "Tu reserva empieza en media hora!",
+    "Tu reserva empieza en 15 minutos!",
+    "Ya esta lista tu cancha, te esperamos!",
+  ];
+
+  async function handleSendMessage() {
+    if (!messageText.trim() || !res.chat_id) return;
+    setSendingMessage(true);
+    try {
+      const resp = await fetch("/api/send-message", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ chat_id: res.chat_id, message: messageText.trim() }),
+      });
+      if (resp.ok) {
+        setMessageText("");
+        setShowMessageModal(false);
+      }
+    } catch (err) {
+      console.error("Error sending message:", err);
+    }
+    setSendingMessage(false);
   }
 
   // ── Render ──────────────────────────────────────────────────────────────
@@ -357,8 +385,86 @@ export default function ReservationDetailPanel({
               </button>
             </div>
           )}
+
+          {/* Enviar comunicado */}
+          {!isCancelled && res.chat_id && (
+            <div>
+              <label className="block text-sm font-semibold text-gray-700 mb-2">
+                Comunicado
+              </label>
+              <button
+                onClick={() => setShowMessageModal(true)}
+                className="w-full px-4 py-3 rounded-xl text-sm font-bold bg-amber-500 text-white shadow-sm hover:bg-amber-600 transition-all"
+              >
+                Enviar mensaje por WhatsApp
+              </button>
+            </div>
+          )}
         </div>
       </div>
+
+      {/* Modal enviar comunicado */}
+      {showMessageModal && (
+        <div
+          className="fixed inset-0 z-[60] flex items-center justify-center bg-black/50 p-4"
+          onClick={() => setShowMessageModal(false)}
+        >
+          <div
+            className="bg-white rounded-2xl shadow-2xl max-w-md w-full p-6"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <h3 className="text-lg font-bold text-gray-900 mb-4">
+              Enviar comunicado
+            </h3>
+
+            {/* Mensajes predeterminados */}
+            <div className="space-y-2 mb-4">
+              {PRESET_MESSAGES.map((msg) => (
+                <button
+                  key={msg}
+                  onClick={() => setMessageText(msg)}
+                  className={`w-full text-left px-4 py-2.5 rounded-xl text-sm transition-colors ${
+                    messageText === msg
+                      ? "bg-amber-100 border-2 border-amber-400 font-semibold text-amber-800"
+                      : "bg-gray-50 border-2 border-gray-200 text-gray-700 hover:bg-gray-100"
+                  }`}
+                >
+                  {msg}
+                </button>
+              ))}
+            </div>
+
+            {/* Caja de texto libre */}
+            <textarea
+              value={messageText}
+              onChange={(e) => setMessageText(e.target.value)}
+              placeholder="Escribe un mensaje personalizado..."
+              rows={3}
+              className="w-full px-4 py-3 rounded-xl border-2 border-gray-200 text-sm focus:border-amber-400 focus:outline-none resize-none mb-4"
+            />
+
+            {/* Botones */}
+            <div className="flex gap-3">
+              <button
+                onClick={() => {
+                  setShowMessageModal(false);
+                  setMessageText("");
+                }}
+                className="flex-1 px-4 py-3 rounded-xl text-sm font-semibold bg-gray-100 text-gray-700 hover:bg-gray-200 transition-colors"
+              >
+                Cancelar
+              </button>
+              <button
+                onClick={handleSendMessage}
+                disabled={!messageText.trim() || sendingMessage}
+                className="flex-1 px-4 py-3 rounded-xl text-sm font-bold bg-amber-500 text-white hover:bg-amber-600 transition-colors disabled:opacity-50"
+              >
+                {sendingMessage ? "Enviando..." : "Enviar"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Modal preview de comprobante */}
       {previewUrl && (
