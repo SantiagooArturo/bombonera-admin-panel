@@ -393,6 +393,8 @@ class Store {
           amount: amountToBill,
           court_type: reservation.court_type,
           date: reservation.date,
+          time_slots: reservation.time_slots,
+          representative_name: reservation.representative_name,
           transfer_id: transfer?.id,
         }),
       });
