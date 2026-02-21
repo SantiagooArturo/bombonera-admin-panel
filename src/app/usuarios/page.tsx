@@ -19,9 +19,8 @@ type SortKey = "reservation_count" | "balance" | "client_type";
 type SortDir = "asc" | "desc";
 
 const CLIENT_TYPE_ORDER: (ClientType | "null")[] = [
-  "buen_cliente",
+  "recurrente",
   "indeciso",
-  "cliente_problematico",
   "sospechoso_fraude",
   "null",
 ];
@@ -239,6 +238,7 @@ export default function UsuariosPage() {
   const [sortBy, setSortBy] = useState<SortKey | null>(null);
   const [sortDir, setSortDir] = useState<SortDir>("asc");
   const [togglingId, setTogglingId] = useState<string | null>(null);
+  const [updatingClientType, setUpdatingClientType] = useState<string | null>(null);
   const [search, setSearch] = useState("");
   const [expandedUserId, setExpandedUserId] = useState<string | null>(null);
 
@@ -279,6 +279,18 @@ export default function UsuariosPage() {
       toast("Error al cambiar estado", "error");
     }
     setTogglingId(null);
+  }
+
+  async function handleClientTypeChange(userId: string, newType: ClientType) {
+    setUpdatingClientType(userId);
+    const success = await store.updateUserClientType(userId, newType);
+    if (success) {
+      const label = newType ? CLIENT_TYPE_LABELS[newType] ?? newType : "Nuevo";
+      toast(`Tipo actualizado: ${label}`, "success");
+    } else {
+      toast("Error al actualizar tipo de cliente", "error");
+    }
+    setUpdatingClientType(null);
   }
 
   function handleStartPayment(reservation: Reservation, phoneNumber: string) {
@@ -495,21 +507,30 @@ export default function UsuariosPage() {
                               </span>
                             </td>
                             <td className="px-6 py-4">
-                              <span
-                                className={`inline-flex px-3 py-1.5 rounded-lg text-body font-medium ${
+                              <select
+                                value={user.client_type ?? ""}
+                                onChange={(e) => {
+                                  e.stopPropagation();
+                                  const val = e.target.value || null;
+                                  handleClientTypeChange(user.id, val as ClientType);
+                                }}
+                                onClick={(e) => e.stopPropagation()}
+                                disabled={updatingClientType === user.id}
+                                className={`px-3 py-1.5 rounded-lg text-body font-medium border-2 cursor-pointer transition-colors ${
                                   user.client_type === "sospechoso_fraude"
-                                    ? "bg-red-100 text-red-700"
-                                    : user.client_type === "cliente_problematico"
-                                    ? "bg-orange-100 text-orange-700"
-                                    : user.client_type === "buen_cliente"
-                                    ? "bg-green-100 text-green-700"
+                                    ? "bg-red-50 text-red-700 border-red-200"
+                                    : user.client_type === "recurrente"
+                                    ? "bg-green-50 text-green-700 border-green-200"
                                     : user.client_type === "indeciso"
-                                    ? "bg-yellow-100 text-yellow-700"
-                                    : "text-gray-500"
-                                }`}
+                                    ? "bg-yellow-50 text-yellow-700 border-yellow-200"
+                                    : "bg-gray-50 text-gray-600 border-gray-200"
+                                } disabled:opacity-50`}
                               >
-                                {clientTypeLabel(user.client_type)}
-                              </span>
+                                <option value="">Nuevo</option>
+                                <option value="recurrente">Recurrente</option>
+                                <option value="indeciso">Indeciso</option>
+                                <option value="sospechoso_fraude">Peligro de fraude</option>
+                              </select>
                             </td>
                             <td className="px-6 py-4">
                               <button

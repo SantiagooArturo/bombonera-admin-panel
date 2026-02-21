@@ -29,7 +29,7 @@ export async function GET() {
         phone_number: data.phone_number ?? undefined,
         reservation_count: typeof reservationCount === "number" ? reservationCount : 0,
         balance: typeof balance === "number" ? balance : 0,
-        client_type: (clientType === "indeciso" || clientType === "buen_cliente" || clientType === "cliente_problematico" || clientType === "sospechoso_fraude"
+        client_type: (clientType === "recurrente" || clientType === "indeciso" || clientType === "sospechoso_fraude"
           ? clientType
           : null) as ClientType,
         is_automated: typeof isAutomated === "boolean" ? isAutomated : true,
@@ -56,7 +56,7 @@ export async function PATCH(request: NextRequest) {
   try {
     const db = getDb();
     const body = await request.json();
-    const { id, is_automated } = body;
+    const { id, is_automated, client_type } = body;
 
     if (!id) {
       return NextResponse.json(
@@ -65,14 +65,25 @@ export async function PATCH(request: NextRequest) {
       );
     }
 
+    const VALID_CLIENT_TYPES = ["recurrente", "indeciso", "sospechoso_fraude", null];
+
     const updateData: Record<string, unknown> = {};
     if (typeof is_automated === "boolean") {
       updateData.is_automated = is_automated;
-      // Si se activa el bot, limpiar el estado de "necesita ayuda"
       if (is_automated === true) {
         updateData.needs_help = false;
         updateData.help_reason = null;
       }
+    }
+
+    if (client_type !== undefined) {
+      if (!VALID_CLIENT_TYPES.includes(client_type)) {
+        return NextResponse.json(
+          { error: `Tipo de cliente inválido: ${client_type}` },
+          { status: 400 }
+        );
+      }
+      updateData.client_type = client_type;
     }
 
     if (Object.keys(updateData).length === 0) {

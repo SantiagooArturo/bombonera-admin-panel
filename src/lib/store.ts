@@ -1,4 +1,4 @@
-import type { Reservation, BlockedSlot, AutomatedNumber, User, Invoice } from "./types";
+import type { Reservation, BlockedSlot, AutomatedNumber, User, Invoice, ClientType } from "./types";
 
 // API-backed store that syncs with Firebase via Next.js API routes
 type Listener = () => void;
@@ -208,6 +208,26 @@ class Store {
       return true;
     } catch (error) {
       console.error("Error toggling user automation:", error);
+      return false;
+    }
+  }
+
+  async updateUserClientType(userId: string, clientType: ClientType) {
+    try {
+      const res = await fetch("/api/users", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ id: userId, client_type: clientType }),
+      });
+      if (!res.ok) throw new Error("Failed to update");
+
+      this.users = this.users.map((u) =>
+        u.id === userId ? { ...u, client_type: clientType } : u
+      );
+      this.notify();
+      return true;
+    } catch (error) {
+      console.error("Error updating client type:", error);
       return false;
     }
   }
