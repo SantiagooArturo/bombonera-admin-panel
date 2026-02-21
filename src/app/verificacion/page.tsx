@@ -22,6 +22,7 @@ export default function VerificacionPage() {
     const [invoices, setInvoices] = useState<Invoice[]>([]);
     const [loadingData, setLoadingData] = useState(false);
     const [showModal, setShowModal] = useState(false);
+    const [emittingInvoiceId, setEmittingInvoiceId] = useState<string | null>(null);
 
     // Filter states
     const [filterText, setFilterText] = useState("");
@@ -109,14 +110,18 @@ export default function VerificacionPage() {
     const handleEmitTransferInvoice = async (transfer: Transfer) => {
         if (!selectedReservation) return;
 
-        // Optimistic UI or Loading state could be added here
-        const success = await store.emitInvoice(selectedReservation, { id: transfer.id, amount: transfer.amount || 0 });
-        if (success) {
-            toast("Boleta emitida correctamente", "success");
-            const newInvoices = await store.fetchInvoices({ reservation_id: selectedReservation.id });
-            setInvoices(newInvoices || []);
-        } else {
-            toast("Error al emitir boleta", "error");
+        setEmittingInvoiceId(transfer.id);
+        try {
+            const success = await store.emitInvoice(selectedReservation, { id: transfer.id, amount: transfer.amount || 0 });
+            if (success) {
+                toast("Boleta emitida correctamente", "success");
+                const newInvoices = await store.fetchInvoices({ reservation_id: selectedReservation.id });
+                setInvoices(newInvoices || []);
+            } else {
+                toast("Error al emitir boleta", "error");
+            }
+        } finally {
+            setEmittingInvoiceId(null);
         }
     };
 
@@ -436,7 +441,30 @@ export default function VerificacionPage() {
                                                 </h4>
 
                                                 {loadingData && transfers.length === 0 ? (
-                                                    <div className="p-8 text-center text-gray-500 bg-gray-50 rounded-xl">Cargando pagos...</div>
+                                                    <div className="space-y-4">
+                                                        {[1, 2].map((i) => (
+                                                            <div key={i} className="flex flex-col md:flex-row gap-4 p-5 rounded-2xl border-2 border-gray-200 bg-white animate-pulse">
+                                                                {/* Skeleton: voucher image */}
+                                                                <div className="w-full md:w-40 flex-shrink-0">
+                                                                    <div className="rounded-xl bg-gray-200 aspect-[3/4]" />
+                                                                </div>
+                                                                {/* Skeleton: info */}
+                                                                <div className="flex-1 flex flex-col justify-between py-1">
+                                                                    <div>
+                                                                        <div className="flex items-center justify-between mb-3">
+                                                                            <div className="h-7 w-28 bg-gray-200 rounded" />
+                                                                            <div className="h-5 w-32 bg-gray-200 rounded" />
+                                                                        </div>
+                                                                        <div className="h-4 w-48 bg-gray-200 rounded mb-2" />
+                                                                        <div className="h-4 w-36 bg-gray-200 rounded" />
+                                                                    </div>
+                                                                    <div className="mt-4">
+                                                                        <div className="h-10 w-40 bg-gray-200 rounded-xl" />
+                                                                    </div>
+                                                                </div>
+                                                            </div>
+                                                        ))}
+                                                    </div>
                                                 ) : transfers.length > 0 ? (
                                                     <div className="space-y-4">
                                                         {transfers.map((transfer) => (
@@ -565,10 +593,20 @@ export default function VerificacionPage() {
                                                                                 ) : (
                                                                                     <button
                                                                                         onClick={() => handleEmitTransferInvoice(transfer)}
-                                                                                        className="w-full py-3 px-4 rounded-xl font-bold text-sm shadow-sm transition-all active:scale-[0.98] flex items-center justify-center gap-2 bg-gray-900 text-white hover:bg-gray-800"
+                                                                                        disabled={emittingInvoiceId === transfer.id}
+                                                                                        className="w-full py-3 px-4 rounded-xl font-bold text-sm shadow-sm transition-all active:scale-[0.98] flex items-center justify-center gap-2 bg-gray-900 text-white hover:bg-gray-800 disabled:opacity-60 disabled:cursor-not-allowed"
                                                                                     >
-                                                                                        <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" /></svg>
-                                                                                        Emitir Boleta
+                                                                                        {emittingInvoiceId === transfer.id ? (
+                                                                                            <>
+                                                                                                <svg className="w-5 h-5 animate-spin" fill="none" viewBox="0 0 24 24"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" /><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" /></svg>
+                                                                                                Emitiendo...
+                                                                                            </>
+                                                                                        ) : (
+                                                                                            <>
+                                                                                                <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" /></svg>
+                                                                                                Emitir Boleta
+                                                                                            </>
+                                                                                        )}
                                                                                     </button>
                                                                                 );
                                                                             })()
@@ -596,7 +634,22 @@ export default function VerificacionPage() {
                                                 </h4>
 
                                                 <div className="bg-white rounded-2xl border border-gray-200 divide-y divide-gray-100 overflow-hidden shadow-sm">
-                                                    {invoices.length > 0 ? (
+                                                    {loadingData ? (
+                                                        <div className="divide-y divide-gray-100">
+                                                            {[1].map((i) => (
+                                                                <div key={i} className="p-4 flex items-center justify-between animate-pulse">
+                                                                    <div className="flex-1">
+                                                                        <div className="flex items-center gap-2 mb-2">
+                                                                            <div className="w-5 h-5 bg-gray-200 rounded" />
+                                                                            <div className="h-5 w-32 bg-gray-200 rounded" />
+                                                                        </div>
+                                                                        <div className="h-4 w-52 bg-gray-200 rounded" />
+                                                                    </div>
+                                                                    <div className="h-9 w-36 bg-gray-200 rounded-lg" />
+                                                                </div>
+                                                            ))}
+                                                        </div>
+                                                    ) : invoices.length > 0 ? (
                                                         invoices.map((inv) => (
                                                             <div key={inv.id} className="p-4 flex items-center justify-between hover:bg-gray-50 transition-colors">
                                                                 <div>

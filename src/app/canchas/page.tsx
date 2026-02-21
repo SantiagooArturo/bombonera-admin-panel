@@ -124,6 +124,7 @@ export default function CanchasPage() {
   } | null>(null);
   const [unblockId, setUnblockId] = useState<string | null>(null);
   const [blockReason, setBlockReason] = useState("Mantenimiento");
+  const [detailReservation, setDetailReservation] = useState<Reservation | null>(null);
 
   const courtType = FIELD_TO_COURT_TYPE[selectedField];
   const days = useMemo(() => getDaysForWeek(weekOffset), [weekOffset]);
@@ -393,8 +394,8 @@ export default function CanchasPage() {
                           ? "Pagado"
                           : "Pendiente";
                       colorClasses = isPaid
-                        ? "bg-green-50 border-green-300 text-green-800"
-                        : "bg-amber-50 border-amber-300 text-amber-800";
+                        ? "bg-green-50 border-green-300 text-green-800 hover:bg-green-100 cursor-pointer"
+                        : "bg-amber-50 border-amber-300 text-amber-800 hover:bg-amber-100 cursor-pointer";
                     } else if (cell.status === "bloqueada") {
                       label = "Bloqueado";
                       colorClasses =
@@ -410,9 +411,10 @@ export default function CanchasPage() {
                         key={`${day.id}-${slot}`}
                         type="button"
                         onClick={() =>
-                          handleCellClick(day, slot, day.isWeekend)
+                          cell.status === "reservada"
+                            ? setDetailReservation(cell.reservation!)
+                            : handleCellClick(day, slot, day.isWeekend)
                         }
-                        disabled={cell.status === "reservada"}
                         style={{
                           gridRow:
                             rowSpan > 1 ? `span ${rowSpan}` : undefined,
@@ -447,6 +449,128 @@ export default function CanchasPage() {
           </div>
         </div>
       </div>
+
+      {/* Modal detalle reserva */}
+      {detailReservation && (() => {
+        const res = detailReservation;
+        const total = res.total_price || 0;
+        const paid = res.amount_paid ?? 0;
+        const remaining = Math.max(total - paid, 0);
+        const pct = total > 0 ? Math.min((paid / total) * 100, 100) : 0;
+        const fullyPaid = paid >= total;
+        const isPartial = res.status === "paid" && paid > 0 && paid < total;
+        const courtLabel: Record<string, string> = {
+          court_6v6: "Voley 6v6",
+          court_5v5: "Voley 5v5",
+          voley_6v6: "Voley 6v6",
+          voley_basket_6v6: "Multiusos 6v6",
+          voley_5v5: "Voley 5v5",
+          voley_basket_5v5: "Multiusos 5v5",
+        };
+        const statusLabel = isPartial ? "Pago Parcial" : res.status === "paid" ? "Pagado" : res.status === "pending" ? "Pendiente" : "Cancelado";
+        const statusColors = isPartial
+          ? "bg-amber-100 text-amber-700"
+          : res.status === "paid"
+          ? "bg-green-100 text-green-700"
+          : res.status === "pending"
+          ? "bg-amber-100 text-amber-700"
+          : "bg-red-100 text-red-700";
+        const timeStart = res.time_slots?.[0] || "?";
+        const timeEnd = res.time_slots?.length > 0 ? `${parseInt(res.time_slots[res.time_slots.length - 1]) + 1}:00` : "?";
+
+        return (
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4" onClick={() => setDetailReservation(null)}>
+            <div className="bg-white rounded-2xl shadow-2xl max-w-md w-full overflow-hidden" onClick={(e) => e.stopPropagation()}>
+              {/* Header */}
+              <div className="bg-bombonera-700 px-6 py-5 flex items-center justify-between">
+                <div>
+                  <h3 className="text-lg font-bold text-white">Detalle de Reserva</h3>
+                  <p className="text-bombonera-200 text-sm mt-0.5">Campo {res.field || selectedField}</p>
+                </div>
+                <button onClick={() => setDetailReservation(null)} className="text-white/70 hover:text-white transition-colors">
+                  <svg className="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg>
+                </button>
+              </div>
+
+              <div className="p-6 space-y-5">
+                {/* Info principal */}
+                <div className="space-y-3">
+                  {res.representative_name && (
+                    <div className="flex items-center gap-3">
+                      <div className="w-10 h-10 rounded-full bg-bombonera-100 text-bombonera-700 flex items-center justify-center font-bold text-sm shrink-0">
+                        {res.representative_name.charAt(0).toUpperCase()}
+                      </div>
+                      <div>
+                        <p className="font-bold text-gray-900">{res.representative_name}</p>
+                        {res.phone_number && (
+                          <p className="text-sm text-gray-500">{res.phone_number}</p>
+                        )}
+                      </div>
+                    </div>
+                  )}
+
+                  <div className="grid grid-cols-2 gap-3 text-sm">
+                    <div className="bg-gray-50 rounded-xl px-4 py-3">
+                      <span className="text-xs text-gray-400 uppercase tracking-wide block">Cancha</span>
+                      <span className="font-semibold text-gray-800">{courtLabel[res.court_type] || res.court_type}</span>
+                    </div>
+                    <div className="bg-gray-50 rounded-xl px-4 py-3">
+                      <span className="text-xs text-gray-400 uppercase tracking-wide block">Horario</span>
+                      <span className="font-semibold text-gray-800">{timeStart} - {timeEnd}</span>
+                    </div>
+                    <div className="bg-gray-50 rounded-xl px-4 py-3 col-span-2">
+                      <span className="text-xs text-gray-400 uppercase tracking-wide block">Fecha</span>
+                      <span className="font-semibold text-gray-800">{res.date}</span>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Pagos */}
+                <div className="border-t border-gray-100 pt-5">
+                  <div className="flex items-center gap-5">
+                    <div className="flex flex-col">
+                      <span className="text-xs text-gray-400 uppercase tracking-wide">Total</span>
+                      <span className="text-lg font-bold text-bombonera-700">S/ {total.toFixed(2)}</span>
+                    </div>
+                    {paid > 0 && (
+                      <div className="flex flex-col">
+                        <span className="text-xs text-gray-400 uppercase tracking-wide">Pagado</span>
+                        <span className="text-lg font-semibold text-green-700">S/ {paid.toFixed(2)}</span>
+                      </div>
+                    )}
+                    {paid > 0 && !fullyPaid && (
+                      <div className="flex flex-col">
+                        <span className="text-xs text-gray-400 uppercase tracking-wide">Debe</span>
+                        <span className="text-lg font-semibold text-red-600">S/ {remaining.toFixed(2)}</span>
+                      </div>
+                    )}
+                  </div>
+                  {paid > 0 && !fullyPaid && (
+                    <div className="flex items-center gap-2 mt-3">
+                      <div className="flex-1 h-2.5 bg-gray-200 rounded-full overflow-hidden">
+                        <div className="h-full rounded-full bg-green-500 transition-all" style={{ width: `${pct}%` }} />
+                      </div>
+                      <span className="text-xs text-gray-500 font-medium">{Math.round(pct)}%</span>
+                    </div>
+                  )}
+                </div>
+
+                {/* Estado */}
+                <div className="flex items-center justify-between pt-2">
+                  <span className={`px-4 py-2 rounded-xl text-sm font-bold ${statusColors}`}>
+                    {statusLabel}
+                  </span>
+                  {res.confirmed && (
+                    <span className="text-xs font-semibold px-2.5 py-1 rounded-md bg-green-600 text-white">
+                      ✓ Confirmado
+                    </span>
+                  )}
+                </div>
+              </div>
+            </div>
+          </div>
+        );
+      })()}
 
       {/* Modal bloquear */}
       {blockDialog && (

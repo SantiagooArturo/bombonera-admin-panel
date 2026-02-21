@@ -156,107 +156,159 @@ export default function ReservacionesPage() {
               {filtered.length} reserva{filtered.length !== 1 ? "s" : ""} encontrada{filtered.length !== 1 ? "s" : ""}
             </p>
 
-            <div className="space-y-4">
+            <div className="space-y-5">
               {filtered.length === 0 ? (
-                <div className="bg-white rounded-2xl border border-gray-200 p-12 text-center shadow-sm">
+                <div className="bg-white rounded-3xl border border-gray-200 p-14 text-center shadow-sm">
                   <p className="text-body-lg text-gray-400">
                     No se encontraron reservas con los filtros seleccionados
                   </p>
                 </div>
               ) : (
                 filtered.map((res) => (
-                  <div key={res.id} className="bg-white rounded-2xl border border-gray-200 p-6 shadow-sm">
-                    <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4">
-                      <div className="flex items-start gap-4">
-                        <div
-                          className={`w-16 h-16 rounded-xl flex items-center justify-center text-white font-bold text-lg shrink-0 ${
-                            res.status === "paid"
-                              ? "bg-blue-600"
-                              : res.status === "pending"
-                              ? "bg-amber-500"
-                              : "bg-gray-400"
-                          }`}
-                        >
-                          {res.field ? `#${res.field}` : "—"}
-                        </div>
-                        <div>
-                          <p className="text-body-lg font-bold text-gray-900">
-                            {COURT_LABELS[res.court_type] || res.court_type}
-                            {res.field ? ` — Campo ${res.field}` : ""}
-                          </p>
-                          <p className="text-body text-gray-600 mt-1">
-                            {formatDate(res.date)} · {res.time_slots?.[0] || "?"} -{" "}
-                            {res.time_slots?.length > 0
-                              ? parseInt(res.time_slots[res.time_slots.length - 1]) + 1
-                              : "?"}
-                            :00
-                          </p>
-                          <div className="flex items-center gap-4 mt-2 flex-wrap">
+                  <div key={res.id} className="bg-white rounded-3xl border border-gray-200 p-7 shadow-sm hover:shadow-md transition-shadow">
+                    <div className="flex flex-col gap-5">
+                      {/* Header: campo badge + info + status badge */}
+                      <div className="flex items-start justify-between gap-4">
+                        <div className="flex items-start gap-5">
+                          <div
+                            className={`w-14 h-14 rounded-2xl flex items-center justify-center text-white font-bold text-base shrink-0 shadow-sm ${
+                              res.status === "paid" && res.auto_confirmed && (res.amount_paid ?? 0) < (res.total_price || 0)
+                                ? "bg-blue-400"
+                                : res.status === "paid"
+                                ? "bg-blue-600"
+                                : res.status === "pending"
+                                ? "bg-amber-500"
+                                : "bg-gray-400"
+                            }`}
+                          >
+                            {res.field ? `#${res.field}` : "—"}
+                          </div>
+                          <div className="min-w-0">
+                            <p className="text-body-lg font-bold text-gray-900 leading-tight">
+                              {COURT_LABELS[res.court_type] || res.court_type}
+                              {res.field ? ` — Campo ${res.field}` : ""}
+                            </p>
+                            <p className="text-body text-gray-500 mt-1.5">
+                              {formatDate(res.date)} · {res.time_slots?.[0] || "?"} -{" "}
+                              {res.time_slots?.length > 0
+                                ? parseInt(res.time_slots[res.time_slots.length - 1]) + 1
+                                : "?"}
+                              :00
+                            </p>
                             {res.phone_number && (
-                              <span className="text-body text-gray-500">
-                                Tel: <span className="font-semibold text-gray-700">{res.phone_number}</span>
-                              </span>
-                            )}
-                            <span className="text-body font-bold text-bombonera-700">
-                              S/ {(res.total_price || 0).toFixed(2)}
-                            </span>
-                            {res.amount_paid !== undefined && res.amount_paid > 0 && (
-                              <span className={`text-body font-semibold px-2 py-0.5 rounded ${
-                                res.amount_paid >= (res.total_price || 0)
-                                  ? "bg-green-100 text-green-700"
-                                  : res.amount_paid >= (res.reservation_price ?? (res.total_price || 0) / 2)
-                                  ? "bg-blue-100 text-blue-700"
-                                  : "bg-amber-100 text-amber-700"
-                              }`}>
-                                Pagado: S/ {res.amount_paid.toFixed(2)}
-                              </span>
-                            )}
-                            {res.confirmed && (
-                              <span className="text-body font-semibold px-2 py-0.5 rounded bg-green-600 text-white">
-                                ✓ Confirmado
-                              </span>
+                              <div className="flex items-center gap-2 mt-2">
+                                <span className="text-body text-gray-500">
+                                  Tel: <span className="font-semibold text-gray-700">{res.phone_number}</span>
+                                </span>
+                                <span className={`text-xs font-semibold px-2 py-0.5 rounded-full ${
+                                  res.auto_confirmed
+                                    ? "bg-purple-100 text-purple-700"
+                                    : "bg-gray-100 text-gray-600"
+                                }`}>
+                                  {res.auto_confirmed ? "Recurrente" : "Nuevo"}
+                                </span>
+                              </div>
                             )}
                           </div>
                         </div>
+                        {/* Status badge alineado a la derecha */}
+                        {(() => {
+                          const paid = res.amount_paid ?? 0;
+                          const total = res.total_price || 0;
+                          const isAutoConfirmed = res.status === "paid" && res.auto_confirmed && paid < total;
+                          const isPartial = res.status === "paid" && paid > 0 && paid < total && !res.auto_confirmed;
+                          const label = isAutoConfirmed
+                            ? "Confirmado - Por cobrar"
+                            : isPartial ? "Pago Parcial" : (STATUS_LABELS[res.status] || res.status);
+                          const colors = isAutoConfirmed
+                            ? "bg-blue-100 text-blue-700"
+                            : isPartial
+                            ? "bg-amber-100 text-amber-700"
+                            : res.status === "paid"
+                            ? "bg-green-100 text-green-700"
+                            : res.status === "pending"
+                            ? "bg-amber-100 text-amber-700"
+                            : "bg-red-100 text-red-700";
+                          return (
+                            <span className={`px-4 py-2 rounded-xl text-sm font-bold shrink-0 ${colors}`}>
+                              {label}
+                            </span>
+                          );
+                        })()}
                       </div>
 
-                      <div className="flex items-center gap-3">
-                        <span
-                          className={`px-5 py-3 rounded-xl text-body font-bold ${
-                            res.status === "paid"
-                              ? "bg-blue-100 text-blue-700"
-                              : res.status === "pending"
-                              ? "bg-amber-100 text-amber-700"
-                              : "bg-red-100 text-red-700"
-                          }`}
-                        >
-                          {STATUS_LABELS[res.status] || res.status}
-                        </span>
+                      {/* Sección de pago */}
+                      {(() => {
+                        const total = res.total_price || 0;
+                        const paid = res.amount_paid ?? 0;
+                        const remaining = Math.max(total - paid, 0);
+                        const pct = total > 0 ? Math.min((paid / total) * 100, 100) : 0;
+                        const fullyPaid = paid >= total;
+                        const showDebt = !fullyPaid && (paid > 0 || res.auto_confirmed);
+                        return (
+                          <div className="bg-gray-50 rounded-2xl px-5 py-4 space-y-3">
+                            <div className="flex items-center gap-6">
+                              <div className="flex flex-col">
+                                <span className="text-xs text-gray-400 uppercase tracking-wide">Total</span>
+                                <span className="text-body font-bold text-bombonera-700">S/ {total.toFixed(2)}</span>
+                              </div>
+                              {paid > 0 && (
+                                <div className="flex flex-col">
+                                  <span className="text-xs text-gray-400 uppercase tracking-wide">Pagado</span>
+                                  <span className="text-body font-semibold text-green-700">S/ {paid.toFixed(2)}</span>
+                                </div>
+                              )}
+                              {showDebt && (
+                                <div className="flex flex-col">
+                                  <span className="text-xs text-gray-400 uppercase tracking-wide">Debe</span>
+                                  <span className="text-body font-semibold text-red-600">S/ {remaining.toFixed(2)}</span>
+                                </div>
+                              )}
+                              {res.confirmed && (
+                                <span className="text-xs font-semibold px-2.5 py-1 rounded-lg bg-green-600 text-white ml-auto">
+                                  ✓ Confirmado
+                                </span>
+                              )}
+                            </div>
+                            {showDebt && (
+                              <div className="flex items-center gap-2">
+                                <div className="w-40 h-2 bg-gray-200 rounded-full overflow-hidden">
+                                  <div
+                                    className="h-full rounded-full bg-green-500 transition-all"
+                                    style={{ width: `${pct}%` }}
+                                  />
+                                </div>
+                                <span className="text-xs text-gray-500 font-medium">{Math.round(pct)}%</span>
+                              </div>
+                            )}
+                          </div>
+                        );
+                      })()}
 
-                        {res.status === "pending" && (
-                          <>
-                            <button
-                              onClick={() => setReminderModal({ reservation: res })}
-                              disabled={sendingReminder === res.id}
-                              className="px-5 py-3 text-body font-bold rounded-xl bg-green-600 text-white hover:bg-green-700 disabled:bg-green-400 transition-colors min-h-[48px]"
-                            >
-                              {sendingReminder === res.id ? "Enviando..." : "Recordar Pago"}
-                            </button>
-                            <button
-                              onClick={() => setConfirmAction({ type: "pay", id: res.id })}
-                              className="px-5 py-3 text-body font-bold rounded-xl bg-blue-600 text-white hover:bg-blue-700 transition-colors min-h-[48px]"
-                            >
-                              Marcar Pagado
-                            </button>
-                            <button
-                              onClick={() => setConfirmAction({ type: "cancel", id: res.id })}
-                              className="px-5 py-3 text-body font-bold rounded-xl bg-red-100 text-red-700 hover:bg-red-200 transition-colors min-h-[48px]"
-                            >
-                              Cancelar
-                            </button>
-                          </>
-                        )}
-                      </div>
+                      {/* Botones de acción */}
+                      {(res.status === "pending" || (res.status === "paid" && res.auto_confirmed && (res.amount_paid ?? 0) < (res.total_price || 0))) && (
+                        <div className="flex items-center gap-3 pt-1">
+                          <button
+                            onClick={() => setReminderModal({ reservation: res })}
+                            disabled={sendingReminder === res.id}
+                            className="px-5 py-3 text-body font-bold rounded-xl bg-green-600 text-white hover:bg-green-700 disabled:bg-green-400 transition-colors min-h-[48px]"
+                          >
+                            {sendingReminder === res.id ? "Enviando..." : "Recordar Pago"}
+                          </button>
+                          <button
+                            onClick={() => setConfirmAction({ type: "pay", id: res.id })}
+                            className="px-5 py-3 text-body font-bold rounded-xl bg-blue-600 text-white hover:bg-blue-700 transition-colors min-h-[48px]"
+                          >
+                            Marcar Pagado
+                          </button>
+                          <button
+                            onClick={() => setConfirmAction({ type: "cancel", id: res.id })}
+                            className="px-5 py-3 text-body font-bold rounded-xl bg-red-100 text-red-700 hover:bg-red-200 transition-colors min-h-[48px]"
+                          >
+                            Cancelar
+                          </button>
+                        </div>
+                      )}
                     </div>
                   </div>
                 ))

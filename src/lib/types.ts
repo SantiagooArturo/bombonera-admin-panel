@@ -26,6 +26,8 @@ export interface Reservation {
   representative_name?: string;
   /** Si el cliente ya llegó a la cancha. */
   arrived?: boolean;
+  /** Si la reserva fue auto-confirmada (cliente recurrente). */
+  auto_confirmed?: boolean;
 }
 
 export interface BlockedSlot {
