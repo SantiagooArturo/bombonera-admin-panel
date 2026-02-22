@@ -106,7 +106,7 @@ function UsuariosContent() {
   const [resetting, setResetting] = useState(false);
   const [search, setSearch] = useState(searchParams.get("search") ?? "");
   const [filterNeedsHelp, setFilterNeedsHelp] = useState(searchParams.get("help") === "true");
-  const [filterClientType, setFilterClientType] = useState<ClientType | "all">(
+  const [filterClientType] = useState<ClientType | "all">(
     (searchParams.get("type") as ClientType) || "all"
   );
 

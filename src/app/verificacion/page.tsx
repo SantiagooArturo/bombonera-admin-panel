@@ -25,13 +25,18 @@ function VerificacionContent() {
     const sidebar = usePaymentSidebar();
 
     const [filterText, setFilterText] = useState(searchParams.get("search") ?? "");
-    const [filterStatus, setFilterStatus] = useState<"all" | "pending" | "paid" | "cancelled">(
-        (searchParams.get("status") as "pending" | "paid" | "cancelled") || "all"
+    const [filterStatus, setFilterStatus] = useState<"all" | "pending" | "unverified" | "cancelled">(
+        (searchParams.get("status") as "pending" | "unverified" | "cancelled") || "all"
     );
+    const [unverifiedResIds, setUnverifiedResIds] = useState<Set<string>>(new Set());
     const [autoOpenHandled, setAutoOpenHandled] = useState(false);
 
     useEffect(() => {
         store.fetchReservations();
+        fetch("/api/dashboard")
+            .then((r) => r.json())
+            .then((data) => setUnverifiedResIds(new Set(data.unverifiedReservationIds || [])))
+            .catch(() => {});
     }, [store]);
 
     useEffect(() => {
@@ -52,7 +57,11 @@ function VerificacionContent() {
     );
 
     const filteredReservations = sortedReservations.filter((r) => {
-        if (filterStatus !== "all" && r.status !== filterStatus) return false;
+        if (filterStatus === "unverified") {
+            if (!unverifiedResIds.has(r.id)) return false;
+        } else if (filterStatus !== "all" && r.status !== filterStatus) {
+            return false;
+        }
         if (filterText) {
             const search = filterText.toLowerCase();
             return (
@@ -88,18 +97,18 @@ function VerificacionContent() {
                     />
                     <div className="flex gap-2 flex-wrap">
                         {([
-                            { value: "all", label: "Todos" },
-                            { value: "pending", label: "Por Cobrar" },
-                            { value: "paid", label: "Pagado" },
-                            { value: "cancelled", label: "Cancelado" },
-                        ] as const).map((opt) => (
+                            { value: "all" as const, label: "Todos" },
+                            { value: "pending" as const, label: "Por Cobrar" },
+                            { value: "unverified" as const, label: "Por Validar" },
+                            { value: "cancelled" as const, label: "Cancelado" },
+                        ]).map((opt) => (
                             <button
                                 key={opt.value}
                                 onClick={() => setFilterStatus(opt.value)}
                                 className={`px-4 py-2 rounded-lg text-sm font-bold transition-all ${
                                     filterStatus === opt.value
-                                        ? opt.value === "paid"
-                                            ? "bg-green-100 text-green-700 border-2 border-green-300"
+                                        ? opt.value === "unverified"
+                                            ? "bg-purple-100 text-purple-700 border-2 border-purple-300"
                                             : opt.value === "pending"
                                                 ? "bg-amber-100 text-amber-700 border-2 border-amber-300"
                                                 : opt.value === "cancelled"

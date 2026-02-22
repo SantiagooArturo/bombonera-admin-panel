@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo } from "react";
+import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import ClientLayout from "@/components/ClientLayout";
 import { useStore } from "@/lib/hooks";
@@ -32,9 +32,15 @@ export default function DashboardPage() {
   const loadedUsers = store.isLoaded("users");
   const loaded = loadedRes && loadedUsers;
 
+  const [dashStats, setDashStats] = useState({ unverifiedTransfers: 0, pendingInvoices: 0 });
+
   useEffect(() => {
     store.fetchReservations();
     store.fetchUsers();
+    fetch("/api/dashboard")
+      .then((r) => r.json())
+      .then(setDashStats)
+      .catch(() => {});
   }, [store]);
 
   const todayReservations = useMemo(
@@ -42,10 +48,12 @@ export default function DashboardPage() {
     [reservations, today]
   );
 
-  const pendingCount = todayReservations.filter((r) => r.status === "pending").length;
   const paidCount = todayReservations.filter((r) => r.status === "paid").length;
-  const todayRevenue = todayReservations
+  const collected = todayReservations
     .filter((r) => r.status === "paid")
+    .reduce((sum, r) => sum + r.total_price, 0);
+  const outstanding = todayReservations
+    .filter((r) => r.status === "pending")
     .reduce((sum, r) => sum + r.total_price, 0);
   const arrivedCount = todayReservations.filter((r) => r.arrived).length;
 
@@ -56,16 +64,44 @@ export default function DashboardPage() {
 
     const unpaid = reservations.filter((r) => r.status === "pending").length;
     if (unpaid > 0) {
-      list.push({ label: "Reservas por cobrar", count: unpaid, href: "/verificacion?status=pending", dotColor: "bg-blue-500" });
+      list.push({
+        label: "Reservas por cobrar",
+        count: unpaid,
+        href: "/verificacion?status=pending",
+        dotColor: "bg-amber-500",
+      });
+    }
+
+    if (dashStats.unverifiedTransfers > 0) {
+      list.push({
+        label: "Transferencias por validar",
+        count: dashStats.unverifiedTransfers,
+        href: "/verificacion?status=unverified",
+        dotColor: "bg-purple-500",
+      });
+    }
+
+    if (dashStats.pendingInvoices > 0) {
+      list.push({
+        label: "Boletas por emitir",
+        count: dashStats.pendingInvoices,
+        href: "/verificacion",
+        dotColor: "bg-blue-500",
+      });
     }
 
     const suspicious = users.filter((u) => u.client_type === "sospechoso_fraude").length;
     if (suspicious > 0) {
-      list.push({ label: "Usuarios sospechosos de fraude", count: suspicious, href: "/usuarios?type=sospechoso_fraude", dotColor: "bg-red-500" });
+      list.push({
+        label: "Usuarios sospechosos de fraude",
+        count: suspicious,
+        href: "/usuarios?type=sospechoso_fraude",
+        dotColor: "bg-red-500",
+      });
     }
 
     return list;
-  }, [reservations, users]);
+  }, [reservations, users, dashStats]);
 
   const hasPendingWork = usersNeedingHelp.length > 0 || tasks.length > 0;
 
@@ -97,17 +133,7 @@ export default function DashboardPage() {
                   }
                 />
                 <Stat
-                  label="Pendientes"
-                  value={pendingCount}
-                  iconColor="text-amber-500"
-                  icon={
-                    <svg className="w-9 h-9" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M12 6v6h4.5m4.5 0a9 9 0 1 1-18 0 9 9 0 0 1 18 0Z" />
-                    </svg>
-                  }
-                />
-                <Stat
-                  label="Pagados"
+                  label="Pagadas"
                   value={paidCount}
                   iconColor="text-emerald-500"
                   icon={
@@ -117,12 +143,22 @@ export default function DashboardPage() {
                   }
                 />
                 <Stat
-                  label="Ingreso hoy"
-                  value={`S/ ${todayRevenue.toFixed(0)}`}
-                  iconColor="text-blue-500"
+                  label="Cobrado"
+                  value={`S/ ${collected.toFixed(0)}`}
+                  iconColor="text-emerald-500"
                   icon={
                     <svg className="w-9 h-9" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M2.25 18.75a60.07 60.07 0 0 1 15.797 2.101c.727.198 1.453-.342 1.453-1.096V18.75M3.75 4.5v.75A.75.75 0 0 1 3 6h-.75m0 0v-.375c0-.621.504-1.125 1.125-1.125H20.25M2.25 6v9m18-10.5v.75c0 .414.336.75.75.75h.75m-1.5-1.5h.375c.621 0 1.125.504 1.125 1.125v9.75c0 .621-.504 1.125-1.125 1.125h-.375m1.5-1.5H21a.75.75 0 0 0-.75.75v.75m0 0H3.75m0 0h-.375a1.125 1.125 0 0 1-1.125-1.125V15m1.5 1.5v-.75A.75.75 0 0 0 3 15h-.75M15 10.5a3 3 0 1 1-6 0 3 3 0 0 1 6 0Zm3 0h.008v.008H18V10.5Zm-12 0h.008v.008H6V10.5Z" />
+                    </svg>
+                  }
+                />
+                <Stat
+                  label="Por cobrar"
+                  value={`S/ ${outstanding.toFixed(0)}`}
+                  iconColor="text-amber-500"
+                  icon={
+                    <svg className="w-9 h-9" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M12 6v6h4.5m4.5 0a9 9 0 1 1-18 0 9 9 0 0 1 18 0Z" />
                     </svg>
                   }
                 />
@@ -170,7 +206,7 @@ export default function DashboardPage() {
                   })}
                   {tasks.map((task) => (
                     <Link
-                      key={task.href}
+                      key={task.label}
                       href={task.href}
                       className="flex items-center gap-3 px-6 py-4 hover:bg-gray-50 transition-colors group"
                     >
