@@ -177,7 +177,7 @@ export default function DashboardPage() {
             {hasPendingWork && (
               <div className="bg-white rounded-2xl border border-gray-200 shadow-sm overflow-hidden">
                 <div className="px-6 py-4 border-b border-gray-100">
-                  <h2 className="text-base font-bold text-gray-900">Pendiente</h2>
+                  <h2 className="text-base font-bold text-gray-900">Pendientes</h2>
                 </div>
                 <div className="divide-y divide-gray-100">
                   {usersNeedingHelp.map((u) => {
