@@ -1,6 +1,7 @@
 "use client";
 
-import { useEffect, useState, useMemo } from "react";
+import { Suspense, useEffect, useState, useMemo } from "react";
+import { useSearchParams } from "next/navigation";
 import Link from "next/link";
 import ClientLayout, { useToastContext } from "@/components/ClientLayout";
 import { useStore } from "@/lib/hooks";
@@ -86,8 +87,13 @@ function SortHeader({
 // ─── Page ───────────────────────────────────────────────────────────────────
 
 export default function UsuariosPage() {
+  return <Suspense><UsuariosContent /></Suspense>;
+}
+
+function UsuariosContent() {
   const store = useStore();
   const toast = useToastContext();
+  const searchParams = useSearchParams();
   const users = store.getUsers();
   const loaded = store.isLoaded("users");
   const [sortBy, setSortBy] = useState<SortKey | null>(null);
@@ -98,8 +104,11 @@ export default function UsuariosPage() {
   const [editingNameValue, setEditingNameValue] = useState("");
   const [resetConfirmId, setResetConfirmId] = useState<string | null>(null);
   const [resetting, setResetting] = useState(false);
-  const [search, setSearch] = useState("");
-  const [filterNeedsHelp, setFilterNeedsHelp] = useState(false);
+  const [search, setSearch] = useState(searchParams.get("search") ?? "");
+  const [filterNeedsHelp, setFilterNeedsHelp] = useState(searchParams.get("help") === "true");
+  const [filterClientType, setFilterClientType] = useState<ClientType | "all">(
+    (searchParams.get("type") as ClientType) || "all"
+  );
 
   useEffect(() => {
     store.fetchUsers();
@@ -184,9 +193,9 @@ export default function UsuariosPage() {
   const needsHelpCount = useMemo(() => users.filter(needsAttention).length, [users]);
 
   const sortedUsers = useMemo(() => {
-    let list = filterNeedsHelp
-      ? filteredUsers.filter(needsAttention)
-      : filteredUsers;
+    let list = filteredUsers;
+    if (filterNeedsHelp) list = list.filter(needsAttention);
+    if (filterClientType !== "all") list = list.filter((u) => u.client_type === filterClientType);
 
     list = [...list].sort((a, b) => {
       const ha = needsAttention(a) ? 0 : 1;
@@ -205,7 +214,7 @@ export default function UsuariosPage() {
       return sortDir === "asc" ? cmp : -cmp;
     });
     return list;
-  }, [filteredUsers, sortBy, sortDir, filterNeedsHelp]);
+  }, [filteredUsers, sortBy, sortDir, filterNeedsHelp, filterClientType]);
 
   return (
     <ClientLayout>

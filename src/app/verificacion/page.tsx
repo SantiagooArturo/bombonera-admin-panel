@@ -25,7 +25,9 @@ function VerificacionContent() {
     const sidebar = usePaymentSidebar();
 
     const [filterText, setFilterText] = useState(searchParams.get("search") ?? "");
-    const [filterStatus, setFilterStatus] = useState<"all" | "pending" | "paid" | "cancelled">("all");
+    const [filterStatus, setFilterStatus] = useState<"all" | "pending" | "paid" | "cancelled">(
+        (searchParams.get("status") as "pending" | "paid" | "cancelled") || "all"
+    );
     const [autoOpenHandled, setAutoOpenHandled] = useState(false);
 
     useEffect(() => {

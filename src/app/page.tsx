@@ -1,10 +1,10 @@
 "use client";
 
-import { useEffect } from "react";
+import { useEffect, useMemo } from "react";
+import Link from "next/link";
 import ClientLayout from "@/components/ClientLayout";
 import { useStore } from "@/lib/hooks";
-
-
+import type { User } from "@/lib/types";
 
 function formatDate(dateStr: string) {
   const d = new Date(dateStr + "T12:00:00");
@@ -15,97 +15,182 @@ function formatDate(dateStr: string) {
   });
 }
 
+function getUserName(u: User) {
+  return u.custom_name || u.contact_name || u.last_representative_name || "Sin nombre";
+}
+
+function getUserPhone(u: User) {
+  return u.phone_number || u.chat_id || "";
+}
+
 export default function DashboardPage() {
   const store = useStore();
   const reservations = store.getReservations();
+  const users = store.getUsers();
   const today = new Date().toISOString().split("T")[0];
-  const loaded = store.isLoaded("reservations");
+  const loadedRes = store.isLoaded("reservations");
+  const loadedUsers = store.isLoaded("users");
+  const loaded = loadedRes && loadedUsers;
 
   useEffect(() => {
     store.fetchReservations();
+    store.fetchUsers();
   }, [store]);
 
-  const todayReservations = reservations.filter(
-    (r) => r.date === today && r.status !== "cancelled"
+  const todayReservations = useMemo(
+    () => reservations.filter((r) => r.date === today && r.status !== "cancelled"),
+    [reservations, today]
   );
-  const pendingCount = todayReservations.filter(
-    (r) => r.status === "pending"
-  ).length;
-  const paidCount = todayReservations.filter(
-    (r) => r.status === "paid"
-  ).length;
+
+  const pendingCount = todayReservations.filter((r) => r.status === "pending").length;
+  const paidCount = todayReservations.filter((r) => r.status === "paid").length;
   const todayRevenue = todayReservations
     .filter((r) => r.status === "paid")
     .reduce((sum, r) => sum + r.total_price, 0);
-  const pendingRevenue = todayReservations
-    .filter((r) => r.status === "pending")
-    .reduce((sum, r) => sum + r.total_price, 0);
+  const arrivedCount = todayReservations.filter((r) => r.arrived).length;
+
+  const usersNeedingHelp = useMemo(() => users.filter((u) => u.needs_help), [users]);
+
+  const tasks = useMemo(() => {
+    const list: { label: string; count: number; href: string; dotColor: string }[] = [];
+
+    const unpaid = reservations.filter((r) => r.status === "pending").length;
+    if (unpaid > 0) {
+      list.push({ label: "Reservas por cobrar", count: unpaid, href: "/verificacion?status=pending", dotColor: "bg-blue-500" });
+    }
+
+    const suspicious = users.filter((u) => u.client_type === "sospechoso_fraude").length;
+    if (suspicious > 0) {
+      list.push({ label: "Usuarios sospechosos de fraude", count: suspicious, href: "/usuarios?type=sospechoso_fraude", dotColor: "bg-red-500" });
+    }
+
+    return list;
+  }, [reservations, users]);
+
+  const hasPendingWork = usersNeedingHelp.length > 0 || tasks.length > 0;
 
   return (
     <ClientLayout>
-      <div className="p-6 md:p-10 max-w-6xl">
+      <div className="p-6 md:p-10 max-w-5xl">
         <div className="mb-10">
-          <h1 className="text-heading-lg font-bold text-gray-900">
-            Bienvenido
-          </h1>
-          <p className="text-body-lg text-gray-500 mt-1">
-            {formatDate(today)} — Resumen del día
-          </p>
+          <h1 className="text-heading-lg font-bold text-gray-900">Bienvenido</h1>
+          <p className="text-body-lg text-gray-500 mt-1 capitalize">{formatDate(today)}</p>
         </div>
 
         {!loaded ? (
           <div className="flex items-center justify-center py-20">
-            <div className="text-body-lg text-gray-400 font-medium">
-              Cargando datos...
-            </div>
+            <div className="text-body-lg text-gray-400 font-medium">Cargando datos...</div>
           </div>
         ) : (
           <>
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-5 mb-10">
-              <StatCard
-                label="Reservas Hoy"
-                value={todayReservations.length}
-                color="bg-bombonera-600"
-                icon={
-                  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" className="w-8 h-8">
-                    <path d="M12.75 12.75a.75.75 0 1 1-1.5 0 .75.75 0 0 1 1.5 0ZM7.5 15.75a.75.75 0 1 0 0-1.5.75.75 0 0 0 0 1.5ZM8.25 17.25a.75.75 0 1 1-1.5 0 .75.75 0 0 1 1.5 0ZM9.75 15.75a.75.75 0 1 0 0-1.5.75.75 0 0 0 0 1.5ZM10.5 17.25a.75.75 0 1 1-1.5 0 .75.75 0 0 1 1.5 0ZM12 15.75a.75.75 0 1 0 0-1.5.75.75 0 0 0 0 1.5ZM12.75 17.25a.75.75 0 1 1-1.5 0 .75.75 0 0 1 1.5 0Z" />
-                    <path fillRule="evenodd" d="M6.75 2.25A.75.75 0 0 1 7.5 3v1.5h9V3A.75.75 0 0 1 18 3v1.5h.75a3 3 0 0 1 3 3v11.25a3 3 0 0 1-3 3H5.25a3 3 0 0 1-3-3V7.5a3 3 0 0 1 3-3H6V3a.75.75 0 0 1 .75-.75Zm13.5 9a1.5 1.5 0 0 0-1.5-1.5H5.25a1.5 1.5 0 0 0-1.5 1.5v7.5a1.5 1.5 0 0 0 1.5 1.5h13.5a1.5 1.5 0 0 0 1.5-1.5v-7.5Z" clipRule="evenodd" />
-                  </svg>
-                }
-              />
-              <StatCard
-                label="Pendientes"
-                value={pendingCount}
-                subtitle={`S/ ${pendingRevenue.toFixed(2)}`}
-                color="bg-amber-500"
-                icon={
-                  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" className="w-8 h-8">
-                    <path fillRule="evenodd" d="M12 2.25c-5.385 0-9.75 4.365-9.75 9.75s4.365 9.75 9.75 9.75 9.75-4.365 9.75-9.75S17.385 2.25 12 2.25ZM12.75 6a.75.75 0 0 0-1.5 0v6c0 .414.336.75.75.75h4.5a.75.75 0 0 0 0-1.5h-3.75V6Z" clipRule="evenodd" />
-                  </svg>
-                }
-              />
-              <StatCard
-                label="Pagados"
-                value={paidCount}
-                color="bg-blue-600"
-                icon={
-                  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" className="w-8 h-8">
-                    <path fillRule="evenodd" d="M2.25 12c0-5.385 4.365-9.75 9.75-9.75s9.75 4.365 9.75 9.75-4.365 9.75-9.75 9.75S2.25 17.385 2.25 12Zm13.36-1.814a.75.75 0 1 0-1.22-.872l-3.236 4.53L9.53 12.22a.75.75 0 0 0-1.06 1.06l2.25 2.25a.75.75 0 0 0 1.14-.094l3.75-5.25Z" clipRule="evenodd" />
-                  </svg>
-                }
-              />
-              <StatCard
-                label="Ingreso Hoy"
-                value={`S/ ${todayRevenue.toFixed(0)}`}
-                color="bg-emerald-600"
-                icon={
-                  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" className="w-8 h-8">
-                    <path d="M10.464 8.746c.227-.18.497-.311.786-.394v2.795a2.252 2.252 0 0 1-.786-.393c-.394-.313-.546-.681-.546-1.004 0-.323.152-.691.546-1.004ZM12.75 15.662v-2.824c.347.085.664.228.921.421.427.32.579.686.579.991 0 .305-.152.671-.579.991a2.534 2.534 0 0 1-.921.42Z" />
-                    <path fillRule="evenodd" d="M12 2.25c-5.385 0-9.75 4.365-9.75 9.75s4.365 9.75 9.75 9.75 9.75-4.365 9.75-9.75S17.385 2.25 12 2.25ZM12.75 6a.75.75 0 0 0-1.5 0v.816a3.836 3.836 0 0 0-1.72.756c-.712.566-1.112 1.35-1.112 2.178 0 .829.4 1.612 1.113 2.178.502.4 1.102.647 1.719.756v2.978a2.536 2.536 0 0 1-.921-.421l-.879-.66a.75.75 0 0 0-.9 1.2l.879.66c.533.4 1.169.645 1.821.75V18a.75.75 0 0 0 1.5 0v-.81a4.124 4.124 0 0 0 1.821-.749c.745-.559 1.179-1.344 1.179-2.191 0-.847-.434-1.632-1.179-2.191a4.122 4.122 0 0 0-1.821-.75V8.354c.29.082.559.213.786.393l.415.33a.75.75 0 0 0 .933-1.175l-.415-.33a3.836 3.836 0 0 0-1.719-.755V6Z" clipRule="evenodd" />
-                  </svg>
-                }
-              />
+            {/* Stats */}
+            <div className="bg-white rounded-2xl border border-gray-200 shadow-sm mb-8">
+              <div className="grid grid-cols-2 lg:grid-cols-4 divide-x divide-gray-100">
+                <Stat
+                  label="Reservas hoy"
+                  value={todayReservations.length}
+                  iconColor="text-bombonera-500"
+                  icon={
+                    <svg className="w-9 h-9" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M6.75 3v2.25M17.25 3v2.25M3 18.75V7.5a2.25 2.25 0 0 1 2.25-2.25h13.5A2.25 2.25 0 0 1 21 7.5v11.25m-18 0A2.25 2.25 0 0 0 5.25 21h13.5A2.25 2.25 0 0 0 21 18.75m-18 0v-7.5A2.25 2.25 0 0 1 5.25 9h13.5A2.25 2.25 0 0 1 21 11.25v7.5" />
+                    </svg>
+                  }
+                />
+                <Stat
+                  label="Pendientes"
+                  value={pendingCount}
+                  iconColor="text-amber-500"
+                  icon={
+                    <svg className="w-9 h-9" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M12 6v6h4.5m4.5 0a9 9 0 1 1-18 0 9 9 0 0 1 18 0Z" />
+                    </svg>
+                  }
+                />
+                <Stat
+                  label="Pagados"
+                  value={paidCount}
+                  iconColor="text-emerald-500"
+                  icon={
+                    <svg className="w-9 h-9" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M9 12.75 11.25 15 15 9.75M21 12a9 9 0 1 1-18 0 9 9 0 0 1 18 0Z" />
+                    </svg>
+                  }
+                />
+                <Stat
+                  label="Ingreso hoy"
+                  value={`S/ ${todayRevenue.toFixed(0)}`}
+                  iconColor="text-blue-500"
+                  icon={
+                    <svg className="w-9 h-9" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M2.25 18.75a60.07 60.07 0 0 1 15.797 2.101c.727.198 1.453-.342 1.453-1.096V18.75M3.75 4.5v.75A.75.75 0 0 1 3 6h-.75m0 0v-.375c0-.621.504-1.125 1.125-1.125H20.25M2.25 6v9m18-10.5v.75c0 .414.336.75.75.75h.75m-1.5-1.5h.375c.621 0 1.125.504 1.125 1.125v9.75c0 .621-.504 1.125-1.125 1.125h-.375m1.5-1.5H21a.75.75 0 0 0-.75.75v.75m0 0H3.75m0 0h-.375a1.125 1.125 0 0 1-1.125-1.125V15m1.5 1.5v-.75A.75.75 0 0 0 3 15h-.75M15 10.5a3 3 0 1 1-6 0 3 3 0 0 1 6 0Zm3 0h.008v.008H18V10.5Zm-12 0h.008v.008H6V10.5Z" />
+                    </svg>
+                  }
+                />
+              </div>
+              <div className="border-t border-gray-100 px-6 py-3 flex items-center justify-between text-sm text-gray-500">
+                <span>
+                  Asistencia: <strong className="text-gray-900">{arrivedCount}</strong> de {todayReservations.length}
+                </span>
+                <Link href="/operaciones" className="text-bombonera-600 font-semibold hover:underline">
+                  Ver en vivo →
+                </Link>
+              </div>
             </div>
+
+            {/* Pendientes */}
+            {hasPendingWork && (
+              <div className="bg-white rounded-2xl border border-gray-200 shadow-sm overflow-hidden">
+                <div className="px-6 py-4 border-b border-gray-100">
+                  <h2 className="text-base font-bold text-gray-900">Pendiente</h2>
+                </div>
+                <div className="divide-y divide-gray-100">
+                  {usersNeedingHelp.map((u) => {
+                    const phone = getUserPhone(u);
+                    return (
+                      <Link
+                        key={u.id}
+                        href={`/usuarios?search=${encodeURIComponent(phone)}`}
+                        className="flex items-center gap-3 px-6 py-4 hover:bg-gray-50 transition-colors group"
+                      >
+                        <PulseDot color="bg-orange-500" />
+                        <div className="min-w-0 flex-1">
+                          <p className="text-sm font-semibold text-gray-900">
+                            {getUserName(u)}
+                            <span className="font-normal text-gray-400 ml-2">{phone}</span>
+                          </p>
+                          <p className="text-xs text-gray-500 truncate">
+                            {u.help_reason || "El bot solicitó ayuda humana"}
+                          </p>
+                        </div>
+                        <svg className="w-4 h-4 text-gray-300 group-hover:text-gray-500 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+                        </svg>
+                      </Link>
+                    );
+                  })}
+                  {tasks.map((task) => (
+                    <Link
+                      key={task.href}
+                      href={task.href}
+                      className="flex items-center gap-3 px-6 py-4 hover:bg-gray-50 transition-colors group"
+                    >
+                      <PulseDot color={task.dotColor} />
+                      <span className="text-sm font-semibold text-gray-900 flex-1">{task.label}</span>
+                      <span className="text-sm font-bold text-gray-400 tabular-nums">{task.count}</span>
+                      <svg className="w-4 h-4 text-gray-300 group-hover:text-gray-500 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+                      </svg>
+                    </Link>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {!hasPendingWork && (
+              <div className="bg-white rounded-2xl border border-gray-200 shadow-sm px-6 py-10 text-center">
+                <p className="text-gray-400 font-medium">Sin tareas pendientes</p>
+              </div>
+            )}
           </>
         )}
       </div>
@@ -113,31 +198,33 @@ export default function DashboardPage() {
   );
 }
 
-function StatCard({
+function Stat({
   label,
   value,
-  subtitle,
-  color,
+  iconColor,
   icon,
 }: {
   label: string;
   value: string | number;
-  subtitle?: string;
-  color: string;
+  iconColor?: string;
   icon: React.ReactNode;
 }) {
   return (
-    <div className="bg-white rounded-2xl border border-gray-200 p-6 shadow-sm">
-      <div className="flex items-start justify-between mb-4">
-        <div className={`w-14 h-14 rounded-xl ${color} text-white flex items-center justify-center`}>
-          {icon}
-        </div>
+    <div className="px-5 py-5 flex items-center gap-4">
+      <div className={`shrink-0 ${iconColor || "text-gray-400"}`}>{icon}</div>
+      <div>
+        <p className="text-xs font-medium text-gray-500">{label}</p>
+        <p className="text-2xl font-bold leading-none text-gray-900 mt-1">{value}</p>
       </div>
-      <p className="text-display font-bold text-gray-900 leading-none">{value}</p>
-      <p className="text-body text-gray-500 mt-2 font-medium">{label}</p>
-      {subtitle && (
-        <p className="text-body text-amber-600 font-semibold mt-1">{subtitle}</p>
-      )}
     </div>
+  );
+}
+
+function PulseDot({ color }: { color: string }) {
+  return (
+    <span className="relative flex h-2.5 w-2.5 shrink-0">
+      <span className={`animate-ping absolute inline-flex h-full w-full rounded-full opacity-75 ${color}`} />
+      <span className={`relative inline-flex rounded-full h-2.5 w-2.5 ${color}`} />
+    </span>
   );
 }
