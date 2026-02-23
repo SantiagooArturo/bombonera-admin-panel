@@ -98,7 +98,7 @@ export function isReservationActive(r: Reservation): boolean {
 }
 
 // Usuarios: colección users. Atributos denormalizados para evitar queries anidadas.
-export type ClientType = "recurrente" | "sospechoso_fraude" | null;
+export type ClientType = "casual" | "indeciso" | "recurrente" | "sospechoso_fraude" | null;
 
 export interface User {
   id: string; // document id = chat_id normalizado (número WA)
