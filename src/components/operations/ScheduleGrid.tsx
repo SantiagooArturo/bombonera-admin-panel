@@ -1,7 +1,7 @@
 "use client";
 
 import { useMemo, useEffect, useRef } from "react";
-import { TIME_SLOTS, type Reservation, type CourtType, type BlockedSlot } from "@/lib/types";
+import { TIME_SLOTS, type Reservation, type CourtType, type BlockedSlot, isReservationActive } from "@/lib/types";
 import { OccupiedCellContent, EmptyCellContent, BlockedCellContent } from "./GridCell";
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
@@ -79,7 +79,7 @@ export default function ScheduleGrid({
     // field → slot → reservation
     const fieldSlotMap = new Map<number, Map<string, Reservation>>();
     for (const r of reservations) {
-      if (r.status === "cancelled") continue;
+      if (!isReservationActive(r)) continue;
       const effectiveField = r.field ?? autoAssignments.get(r.id) ?? null;
       if (effectiveField == null) continue;
       if (!fieldSlotMap.has(effectiveField))

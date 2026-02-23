@@ -4,7 +4,7 @@ import { useEffect, useState, useMemo, useCallback } from "react";
 import ClientLayout, { useToastContext } from "@/components/ClientLayout";
 import { useStore } from "@/lib/hooks";
 
-import { TIME_SLOTS, type Reservation, type BlockedSlot } from "@/lib/types";
+import { TIME_SLOTS, type Reservation, type BlockedSlot, isReservationActive } from "@/lib/types";
 import ScheduleGrid from "@/components/operations/ScheduleGrid";
 import PaymentSidebar from "@/components/verificacion/PaymentSidebar";
 import { usePaymentSidebar } from "@/components/verificacion/usePaymentSidebar";
@@ -93,7 +93,7 @@ export default function OperacionesPage() {
       ]);
       if (resResponse.ok) {
         const data: Reservation[] = await resResponse.json();
-        setReservations(data.filter((r) => r.status !== "cancelled" || r.field));
+        setReservations(data.filter(isReservationActive));
       }
       if (blockedResponse.ok) {
         setBlockedSlots(await blockedResponse.json());

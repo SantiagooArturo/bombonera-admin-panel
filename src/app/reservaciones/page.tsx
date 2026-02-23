@@ -127,6 +127,7 @@ export default function ReservacionesPage() {
                 <option value="pending">Pendiente</option>
                 <option value="paid">Pagado</option>
                 <option value="cancelled">Cancelado</option>
+                <option value="expired">Expirado</option>
               </select>
             </div>
             {(filterDate || filterCourt || filterStatus) && (

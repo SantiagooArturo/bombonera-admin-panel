@@ -1,6 +1,6 @@
 export type CourtType = "voley_6v6" | "voley_basket_6v6" | "voley_5v5" | "voley_basket_5v5";
 
-export type ReservationStatus = "pending" | "paid" | "cancelled";
+export type ReservationStatus = "pending" | "paid" | "cancelled" | "expired";
 
 export interface Reservation {
   id: string;
@@ -84,7 +84,18 @@ export const STATUS_LABELS: Record<ReservationStatus, string> = {
   pending: "Pendiente",
   paid: "Pagado",
   cancelled: "Cancelado",
+  expired: "Expirado",
 };
+
+export const PENDING_EXPIRY_MS = 30 * 60 * 1000;
+
+/** Reserva activa = paid, o pending con menos de 30 min de antigüedad */
+export function isReservationActive(r: Reservation): boolean {
+  if (r.status === "paid") return true;
+  if (r.status !== "pending") return false;
+  const created = new Date(r.created_at).getTime();
+  return Date.now() - created < PENDING_EXPIRY_MS;
+}
 
 // Usuarios: colección users. Atributos denormalizados para evitar queries anidadas.
 export type ClientType = "recurrente" | "sospechoso_fraude" | null;

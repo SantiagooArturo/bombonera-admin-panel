@@ -9,6 +9,7 @@ import {
   TIME_SLOTS,
   CourtType,
   type Reservation,
+  isReservationActive,
 } from "@/lib/types";
 
 // ─── Constants ──────────────────────────────────────────────────────────────
@@ -25,7 +26,6 @@ const DAY_NAMES = [
   "Domingo",
 ];
 
-const PENDING_EXPIRY_MS = 30 * 60 * 1000;
 
 // Mapeo campo → tipo de cancha (inverso de COURT_FIELDS)
 const FIELD_TO_COURT_TYPE: Record<number, CourtType> = {};
@@ -99,12 +99,6 @@ function formatTime12h(time24h: string): string {
   return `${hour - 12}:${min} pm`;
 }
 
-function isReservationActive(r: Reservation): boolean {
-  if (r.status === "paid") return true;
-  if (r.status !== "pending") return false;
-  const created = new Date(r.created_at).getTime();
-  return Date.now() - created < PENDING_EXPIRY_MS;
-}
 
 // ─── Component ──────────────────────────────────────────────────────────────
 

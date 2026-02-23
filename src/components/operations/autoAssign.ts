@@ -1,4 +1,4 @@
-import { COURT_FIELDS, type Reservation } from "@/lib/types";
+import { COURT_FIELDS, type Reservation, isReservationActive } from "@/lib/types";
 
 /**
  * Auto-asigna campos visualmente a reservas que no tienen campo asignado.
@@ -18,7 +18,7 @@ export function computeAutoAssignments(
   const occupied = new Set<string>();
 
   for (const r of reservations) {
-    if (r.field != null && r.status !== "cancelled") {
+    if (r.field != null && isReservationActive(r)) {
       for (const slot of r.time_slots ?? []) {
         occupied.add(`${slot}:${r.field}`);
       }
@@ -27,7 +27,7 @@ export function computeAutoAssignments(
 
   // Procesar reservas sin campo (orden determinista por created_at)
   const unassigned = reservations
-    .filter((r) => r.field == null && r.status !== "cancelled")
+    .filter((r) => r.field == null && isReservationActive(r))
     .sort((a, b) => (a.created_at ?? "").localeCompare(b.created_at ?? ""));
 
   for (const r of unassigned) {
