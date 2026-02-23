@@ -332,7 +332,7 @@ function RegisterPaymentForm({
 // ─── Transfer Card ───────────────────────────────────────────────────────────
 
 function TransferCard({
-  transfer, invoice, emittingInvoiceId, onVerify, onAttachInvoice, onRevoke, onViewImage, onHover,
+  transfer, invoice, emittingInvoiceId, onVerify, onAttachInvoice, onRevoke, onViewImage, onHover, chatId,
 }: {
   transfer: Transfer;
   invoice: Invoice | undefined;
@@ -342,9 +342,11 @@ function TransferCard({
   onRevoke: (transferId: string) => void;
   onViewImage: (url: string) => void;
   onHover: (hovering: boolean) => void;
+  chatId: string;
 }) {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [dragOver, setDragOver] = useState(false);
+  const [wspStatus, setWspStatus] = useState<"idle" | "sending" | "sent">("idle");
   const isValidated = transfer.verified || transfer.source === "manual";
   const canAttach = isValidated && !invoice;
 
@@ -456,14 +458,47 @@ function TransferCard({
                 <p className="text-lg font-bold text-gray-900">S/ {invoice.amount.toFixed(2)}</p>
                 <p className="text-xs text-gray-500 mt-0.5">{new Date(invoice.created_at).toLocaleDateString("es-PE")}</p>
               </div>
-              <a
-                href={`/api/proxy-file?url=${encodeURIComponent(invoice.file_url)}`}
-                download={`boleta_${invoice.id}.pdf`}
-                className="w-full py-2.5 px-4 rounded-xl font-bold text-sm bg-blue-50 border-2 border-blue-100 text-blue-700 hover:bg-blue-100 flex items-center justify-center gap-2 transition-colors"
-              >
-                <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" /></svg>
-                Descargar PDF
-              </a>
+              <div className="flex gap-2">
+                <a
+                  href={`/api/proxy-file?url=${encodeURIComponent(invoice.file_url)}`}
+                  download={`boleta_${invoice.id}.pdf`}
+                  className="flex-1 py-2.5 px-3 rounded-xl font-bold text-sm bg-blue-50 border-2 border-blue-100 text-blue-700 hover:bg-blue-100 flex items-center justify-center gap-2 transition-colors"
+                >
+                  <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" /></svg>
+                  Descargar
+                </a>
+                <button
+                  onClick={async () => {
+                    if (wspStatus !== "idle") return;
+                    setWspStatus("sending");
+                    try {
+                      const res = await fetch("/api/invoices/send", {
+                        method: "POST",
+                        headers: { "Content-Type": "application/json" },
+                        body: JSON.stringify({ chat_id: chatId, file_url: invoice.file_url }),
+                      });
+                      if (!res.ok) throw new Error();
+                      setWspStatus("sent");
+                    } catch {
+                      setWspStatus("idle");
+                    }
+                  }}
+                  disabled={wspStatus !== "idle"}
+                  className={`flex-1 py-2.5 px-3 rounded-xl font-bold text-sm flex items-center justify-center gap-2 transition-all ${
+                    wspStatus === "sent"
+                      ? "bg-green-50 border-2 border-green-200 text-green-700"
+                      : "bg-green-600 text-white hover:bg-green-700 border-2 border-green-600 hover:border-green-700"
+                  } disabled:opacity-80`}
+                >
+                  {wspStatus === "sending" ? (
+                    <><svg className="w-4 h-4 animate-spin" fill="none" viewBox="0 0 24 24"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" /><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" /></svg>Enviando</>
+                  ) : wspStatus === "sent" ? (
+                    <><svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" /></svg>Enviado</>
+                  ) : (
+                    <><svg className="w-4 h-4" fill="currentColor" viewBox="0 0 24 24"><path d={WSP_ICON_PATH} /></svg>Enviar</>
+                  )}
+                </button>
+              </div>
             </div>
           ) : (
             <div className="space-y-3">
@@ -714,6 +749,7 @@ export default function PaymentSidebar({
                   onRevoke={onRevokeManualPayment}
                   onViewImage={setViewingImage}
                   onHover={(h) => setHoveredTransferId(h ? transfer.id : null)}
+                  chatId={reservation.chat_id}
                 />
               );
             })

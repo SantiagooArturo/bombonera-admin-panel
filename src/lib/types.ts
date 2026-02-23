@@ -112,8 +112,10 @@ export interface User {
   needs_help?: boolean;
   /** Razón por la que se solicitó ayuda humana. */
   help_reason?: string;
+  casual: "Casual",
 }
 
+  indeciso: "Indeciso",
 export const CLIENT_TYPE_LABELS: Record<string, string> = {
   recurrente: "Recurrente",
   sospechoso_fraude: "Peligro de fraude",

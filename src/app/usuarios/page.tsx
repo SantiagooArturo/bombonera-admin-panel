@@ -17,7 +17,9 @@ type SortKey = "reservation_count" | "balance" | "client_type";
 type SortDir = "asc" | "desc";
 
 const CLIENT_TYPE_ORDER: (ClientType | "null")[] = [
+  "casual",
   "recurrente",
+  "indeciso",
   "sospechoso_fraude",
   "null",
 ];
@@ -163,7 +165,7 @@ function UsuariosContent() {
     setUpdatingClientType(userId);
     const success = await store.updateUserClientType(userId, newType);
     if (success) {
-      const label = newType ? CLIENT_TYPE_LABELS[newType] ?? newType : "Casual";
+      const label = newType ? CLIENT_TYPE_LABELS[newType] ?? newType : "Nuevo";
       toast(`Tipo actualizado: ${label}`, "success");
     } else {
       toast("Error al actualizar tipo de cliente", "error");
@@ -464,11 +466,17 @@ function UsuariosContent() {
                                   ? "bg-red-50 text-red-700 border-red-200"
                                   : user.client_type === "recurrente"
                                   ? "bg-green-50 text-green-700 border-green-200"
+                                  : user.client_type === "casual"
+                                  ? "bg-blue-50 text-blue-700 border-blue-200"
+                                  : user.client_type === "indeciso"
+                                  ? "bg-yellow-50 text-yellow-700 border-yellow-200"
                                   : "bg-gray-50 text-gray-600 border-gray-200"
                               } disabled:opacity-50`}
                             >
-                              <option value="">Casual</option>
+                              <option value="">Nuevo</option>
+                              <option value="casual">Casual</option>
                               <option value="recurrente">Recurrente</option>
+                              <option value="indeciso">Indeciso</option>
                               <option value="sospechoso_fraude">Peligro de fraude</option>
                             </select>
                           </td>
@@ -561,7 +569,7 @@ function UsuariosContent() {
               </li>
             </ul>
             <p className="text-sm text-gray-500 mb-6">
-              Si el usuario vuelve a escribir, se creará automáticamente como &quot;Casual&quot;.
+              Si el usuario vuelve a escribir, se creará automáticamente como &quot;Nuevo&quot;.
             </p>
             <div className="flex gap-3 justify-end">
               <button
