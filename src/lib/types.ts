@@ -37,6 +37,19 @@ export interface BlockedSlot {
   date: string;
   time_slot: string;
   reason: string;
+  rule_id?: string;
+  created_at: string;
+}
+
+export interface BlockRule {
+  id: string;
+  fields: number[];
+  time_from: string;
+  time_to: string;
+  mode: "single" | "recurring";
+  /** Fechas concretas que cubre esta regla. */
+  dates: string[];
+  reason: string;
   created_at: string;
 }
 

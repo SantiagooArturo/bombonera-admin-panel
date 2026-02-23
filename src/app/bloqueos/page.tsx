@@ -3,16 +3,11 @@
 import { useState, useEffect, useMemo, useCallback } from "react";
 import ClientLayout, { useToastContext } from "@/components/ClientLayout";
 import { useStore } from "@/lib/hooks";
-import { TIME_SLOTS, COURT_FIELDS, type CourtType, type BlockedSlot } from "@/lib/types";
+import { TIME_SLOTS, COURT_FIELDS } from "@/lib/types";
 
 // ─── Helpers ────────────────────────────────────────────────────────────────
 
 const ALL_FIELDS = Object.values(COURT_FIELDS).flat().sort((a, b) => a - b);
-
-const FIELD_COURT_TYPE: Record<number, CourtType> = {};
-for (const [ct, fields] of Object.entries(COURT_FIELDS)) {
-  for (const f of fields) FIELD_COURT_TYPE[f] = ct as CourtType;
-}
 
 const WEEKDAY_LABELS = [
   { id: 0, short: "Dom", long: "Domingo" },
@@ -92,13 +87,13 @@ export default function BloqueosPage() {
   const [reason, setReason] = useState(REASONS[0]);
   const [submitting, setSubmitting] = useState(false);
 
-  // Existing blocks state
-  const blockedSlots = store.getBlockedSlots();
-  const blockedLoaded = store.isLoaded("blockedSlots");
-  const [deletingIds, setDeletingIds] = useState<Set<string>>(new Set());
+  // Existing rules
+  const blockRules = store.getBlockRules();
+  const rulesLoaded = store.isLoaded("blockRules");
+  const [deletingRuleId, setDeletingRuleId] = useState<string | null>(null);
 
   useEffect(() => {
-    store.fetchBlockedSlots();
+    store.fetchBlockRules();
   }, [store]);
 
   // ── Computed preview ──────────────────────────────────────────────────
@@ -139,68 +134,43 @@ export default function BloqueosPage() {
     if (!canSubmit) return;
     setSubmitting(true);
 
-    let created = 0;
-    let failed = 0;
-
-    for (const date of datesToBlock) {
-      for (const field of selectedFields) {
-        for (const slot of slotsToBlock) {
-          const result = await store.addBlockedSlot({
-            court_type: FIELD_COURT_TYPE[field],
-            field,
-            date,
-            time_slot: slot,
-            reason,
-          });
-          if (result) created++;
-          else failed++;
-        }
-      }
-    }
+    const result = await store.addBlockRule({
+      fields: selectedFields,
+      time_from: timeFrom,
+      time_to: timeTo,
+      mode,
+      dates: datesToBlock,
+      reason,
+    });
 
     setSubmitting(false);
 
-    if (created > 0) {
-      toast(`${created} horario${created > 1 ? "s" : ""} bloqueado${created > 1 ? "s" : ""}`, "success");
+    if (result?.success) {
+      toast("Bloqueo creado correctamente", "success");
       setSelectedFields([]);
       setRecurringWeekdays([]);
-    }
-    if (failed > 0) {
-      toast(`${failed} bloqueo${failed > 1 ? "s" : ""} fallaron`, "error");
+    } else {
+      toast("Error al crear bloqueo", "error");
     }
   }
 
-  // ── Delete ────────────────────────────────────────────────────────────
+  // ── Delete rule ──────────────────────────────────────────────────────
 
-  const handleDelete = useCallback(async (id: string) => {
-    setDeletingIds((prev) => new Set(prev).add(id));
-    const ok = await store.removeBlockedSlot(id);
+  const handleDeleteRule = useCallback(async (ruleId: string) => {
+    if (!confirm("¿Eliminar este bloqueo y todos sus horarios?")) return;
+    setDeletingRuleId(ruleId);
+    const ok = await store.removeBlockRule(ruleId);
     if (ok) toast("Bloqueo eliminado", "success");
     else toast("Error al eliminar", "error");
-    setDeletingIds((prev) => {
-      const next = new Set(prev);
-      next.delete(id);
-      return next;
-    });
+    setDeletingRuleId(null);
   }, [store, toast]);
 
-  // ── Grouped blocks for display ────────────────────────────────────────
+  // ── Sorted rules for display ──────────────────────────────────────────
 
-  const upcomingBlocks = useMemo(() => {
-    const today = formatDateISO(new Date());
-    return [...blockedSlots]
-      .filter((b) => b.date >= today)
-      .sort((a, b) => a.date.localeCompare(b.date) || a.time_slot.localeCompare(b.time_slot) || a.field - b.field);
-  }, [blockedSlots]);
-
-  const groupedBlocks = useMemo(() => {
-    const groups: Record<string, BlockedSlot[]> = {};
-    for (const b of upcomingBlocks) {
-      if (!groups[b.date]) groups[b.date] = [];
-      groups[b.date].push(b);
-    }
-    return Object.entries(groups).sort(([a], [b]) => a.localeCompare(b));
-  }, [upcomingBlocks]);
+  const sortedRules = useMemo(
+    () => [...blockRules].sort((a, b) => b.created_at.localeCompare(a.created_at)),
+    [blockRules]
+  );
 
   // ── Time options for "hasta" (only after "desde") ─────────────────────
 
@@ -442,18 +412,48 @@ export default function BloqueosPage() {
         <div>
           <h2 className="text-2xl font-bold text-gray-900 mb-4">Bloqueos Activos</h2>
 
-          {!blockedLoaded ? (
+          {!rulesLoaded ? (
             <div className="text-center py-12 text-gray-400 text-lg">Cargando...</div>
-          ) : upcomingBlocks.length === 0 ? (
+          ) : sortedRules.length === 0 ? (
             <div className="bg-white rounded-2xl border border-gray-200 shadow-sm p-12 text-center">
               <p className="text-gray-400 text-lg font-medium">No hay bloqueos programados</p>
               <p className="text-gray-300 text-sm mt-1">Usa el formulario de arriba para bloquear horarios.</p>
             </div>
           ) : (
-            <div className="space-y-4">
-              {groupedBlocks.map(([date, blocks]) => (
-                <DateBlockGroup key={date} date={date} blocks={blocks} deletingIds={deletingIds} onDelete={handleDelete} />
-              ))}
+            <div className="space-y-3">
+              {sortedRules.map((rule) => {
+                const isDeleting = deletingRuleId === rule.id;
+                const datesSorted = [...rule.dates].sort();
+                const dateLabel = rule.mode === "recurring" && datesSorted.length > 1
+                  ? `${formatDateDisplay(datesSorted[0])} → ${formatDateDisplay(datesSorted[datesSorted.length - 1])} (${datesSorted.length} días)`
+                  : formatDateDisplay(datesSorted[0] || "");
+
+                return (
+                  <div key={rule.id} className="bg-white rounded-2xl border border-gray-200 shadow-sm flex items-center justify-between px-6 py-4 gap-4">
+                    <div className="min-w-0">
+                      <p className="font-bold text-gray-900">
+                        Cancha{rule.fields.length > 1 ? "s" : ""} {rule.fields.sort((a, b) => a - b).join(", ")}
+                        <span className="text-gray-300 mx-1.5">·</span>
+                        <span className="font-semibold text-gray-700">
+                          {formatHour12(rule.time_from)} – {formatHour12(rule.time_to)}
+                        </span>
+                      </p>
+                      <p className="text-sm text-gray-500 mt-0.5">
+                        {dateLabel}
+                        <span className="text-gray-300 mx-1.5">·</span>
+                        <span className="text-gray-400">{rule.reason}</span>
+                      </p>
+                    </div>
+                    <button
+                      onClick={() => handleDeleteRule(rule.id)}
+                      disabled={isDeleting}
+                      className="px-4 py-2 rounded-lg text-sm font-bold text-red-600 hover:bg-red-50 border border-red-200 hover:border-red-300 transition-colors disabled:opacity-40 shrink-0"
+                    >
+                      {isDeleting ? "Eliminando..." : "Eliminar"}
+                    </button>
+                  </div>
+                );
+              })}
             </div>
           )}
         </div>
@@ -462,61 +462,3 @@ export default function BloqueosPage() {
   );
 }
 
-// ─── Date Block Group ───────────────────────────────────────────────────────
-
-function DateBlockGroup({
-  date,
-  blocks,
-  deletingIds,
-  onDelete,
-}: {
-  date: string;
-  blocks: BlockedSlot[];
-  deletingIds: Set<string>;
-  onDelete: (id: string) => void;
-}) {
-  const [expanded, setExpanded] = useState(false);
-
-  return (
-    <div className="bg-white rounded-2xl border border-gray-200 shadow-sm overflow-hidden">
-      <button
-        onClick={() => setExpanded(!expanded)}
-        className="w-full flex items-center justify-between px-6 py-4 hover:bg-gray-50 transition-colors text-left"
-      >
-        <div className="flex items-center gap-3">
-          <span className="text-lg font-bold text-gray-900 capitalize">{formatDateDisplay(date)}</span>
-          <span className="text-sm font-medium text-gray-400 bg-gray-100 px-2.5 py-1 rounded-lg">
-            {blocks.length} bloqueo{blocks.length !== 1 ? "s" : ""}
-          </span>
-        </div>
-        <svg className={`w-5 h-5 text-gray-400 transition-transform ${expanded ? "rotate-180" : ""}`} fill="none" viewBox="0 0 24 24" stroke="currentColor">
-          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
-        </svg>
-      </button>
-
-      {expanded && (
-        <div className="border-t border-gray-100 divide-y divide-gray-100">
-          {blocks.map((block) => (
-            <div key={block.id} className="flex items-center justify-between px-6 py-3 hover:bg-gray-50">
-              <div className="flex items-center gap-4">
-                <span className="font-bold text-gray-700 min-w-[80px]">Cancha {block.field}</span>
-                <span className="text-gray-500">{formatHour12(block.time_slot)}</span>
-                <span className="text-xs text-gray-400 bg-gray-100 px-2 py-0.5 rounded">{block.reason}</span>
-              </div>
-              <button
-                onClick={() => onDelete(block.id)}
-                disabled={deletingIds.has(block.id)}
-                className="text-red-400 hover:text-red-600 hover:bg-red-50 p-2 rounded-lg transition-colors disabled:opacity-30"
-                title="Eliminar bloqueo"
-              >
-                <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
-                </svg>
-              </button>
-            </div>
-          ))}
-        </div>
-      )}
-    </div>
-  );
-}

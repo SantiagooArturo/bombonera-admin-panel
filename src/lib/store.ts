@@ -1,4 +1,4 @@
-import type { Reservation, BlockedSlot, AutomatedNumber, User, Invoice, ClientType } from "./types";
+import type { Reservation, BlockedSlot, BlockRule, AutomatedNumber, User, Invoice, ClientType } from "./types";
 
 // API-backed store that syncs with Firebase via Next.js API routes
 type Listener = () => void;
@@ -6,11 +6,12 @@ type Listener = () => void;
 class Store {
   private reservations: Reservation[] = [];
   private blockedSlots: BlockedSlot[] = [];
+  private blockRules: BlockRule[] = [];
   private automatedNumbers: AutomatedNumber[] = [];
   private users: User[] = [];
   private invoices: Invoice[] = [];
   private listeners: Set<Listener> = new Set();
-  private loaded = { reservations: false, blockedSlots: false, automatedNumbers: false, users: false, invoices: false };
+  private loaded = { reservations: false, blockedSlots: false, blockRules: false, automatedNumbers: false, users: false, invoices: false };
 
   subscribe(listener: Listener) {
     this.listeners.add(listener);
@@ -160,6 +161,56 @@ class Store {
       return true;
     } catch (error) {
       console.error("Error removing blocked slot:", error);
+      return false;
+    }
+  }
+
+  // Block Rules
+  getBlockRules() {
+    return this.blockRules;
+  }
+
+  async fetchBlockRules() {
+    try {
+      const cleanup = !this.loaded.blockRules ? "1" : "0";
+      const res = await fetch(`/api/block-rules?cleanup=${cleanup}`);
+      if (!res.ok) throw new Error("Failed to fetch");
+      this.blockRules = await res.json();
+      this.loaded.blockRules = true;
+      this.notify();
+    } catch (error) {
+      console.error("Error fetching block rules:", error);
+    }
+  }
+
+  async addBlockRule(rule: { fields: number[]; time_from: string; time_to: string; mode: string; dates: string[]; reason: string }) {
+    try {
+      const res = await fetch("/api/block-rules", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(rule),
+      });
+      if (!res.ok) throw new Error("Failed to create");
+      const data = await res.json();
+      await this.fetchBlockRules();
+      await this.fetchBlockedSlots();
+      return data;
+    } catch (error) {
+      console.error("Error creating block rule:", error);
+      return null;
+    }
+  }
+
+  async removeBlockRule(id: string) {
+    try {
+      const res = await fetch(`/api/block-rules?id=${id}`, { method: "DELETE" });
+      if (!res.ok) throw new Error("Failed to delete");
+      this.blockRules = this.blockRules.filter((r) => r.id !== id);
+      this.blockedSlots = this.blockedSlots.filter((s) => s.rule_id !== id);
+      this.notify();
+      return true;
+    } catch (error) {
+      console.error("Error removing block rule:", error);
       return false;
     }
   }
