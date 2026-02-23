@@ -16,16 +16,14 @@ import {
 type SortKey = "reservation_count" | "balance" | "client_type";
 type SortDir = "asc" | "desc";
 
-const CLIENT_TYPE_ORDER: (ClientType | "null")[] = [
+const CLIENT_TYPE_ORDER: ClientType[] = [
   "casual",
   "recurrente",
-  "indeciso",
   "sospechoso_fraude",
-  "null",
 ];
 
 function clientTypeSortValue(ct: ClientType): number {
-  const idx = CLIENT_TYPE_ORDER.indexOf(ct ?? "null");
+  const idx = CLIENT_TYPE_ORDER.indexOf(ct);
   return idx >= 0 ? idx : CLIENT_TYPE_ORDER.length;
 }
 
@@ -107,7 +105,7 @@ function UsuariosContent() {
   const [search, setSearch] = useState(searchParams.get("search") ?? "");
   const [filterNeedsHelp, setFilterNeedsHelp] = useState(searchParams.get("help") === "true");
   const [filterClientType] = useState<ClientType | "all">(
-    (searchParams.get("type") as ClientType) || "all"
+    (searchParams.get("type") as ClientType | null) || "all"
   );
 
   useEffect(() => {
@@ -165,8 +163,7 @@ function UsuariosContent() {
     setUpdatingClientType(userId);
     const success = await store.updateUserClientType(userId, newType);
     if (success) {
-      const label = newType ? CLIENT_TYPE_LABELS[newType] ?? newType : "Nuevo";
-      toast(`Tipo actualizado: ${label}`, "success");
+      toast(`Tipo actualizado: ${CLIENT_TYPE_LABELS[newType]}`, "success");
     } else {
       toast("Error al actualizar tipo de cliente", "error");
     }
@@ -455,10 +452,9 @@ function UsuariosContent() {
                           </td>
                           <td className="p-6">
                             <select
-                              value={user.client_type ?? ""}
+                              value={user.client_type}
                               onChange={(e) => {
-                                const val = e.target.value || null;
-                                handleClientTypeChange(user.id, val as ClientType);
+                                handleClientTypeChange(user.id, e.target.value as ClientType);
                               }}
                               disabled={updatingClientType === user.id}
                               className={`px-3 py-1.5 rounded-lg text-base font-medium border-2 cursor-pointer transition-colors ${
@@ -466,17 +462,11 @@ function UsuariosContent() {
                                   ? "bg-red-50 text-red-700 border-red-200"
                                   : user.client_type === "recurrente"
                                   ? "bg-green-50 text-green-700 border-green-200"
-                                  : user.client_type === "casual"
-                                  ? "bg-blue-50 text-blue-700 border-blue-200"
-                                  : user.client_type === "indeciso"
-                                  ? "bg-yellow-50 text-yellow-700 border-yellow-200"
-                                  : "bg-gray-50 text-gray-600 border-gray-200"
+                                  : "bg-blue-50 text-blue-700 border-blue-200"
                               } disabled:opacity-50`}
                             >
-                              <option value="">Nuevo</option>
                               <option value="casual">Casual</option>
                               <option value="recurrente">Recurrente</option>
-                              <option value="indeciso">Indeciso</option>
                               <option value="sospechoso_fraude">Peligro de fraude</option>
                             </select>
                           </td>
