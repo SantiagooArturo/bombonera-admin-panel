@@ -11,6 +11,10 @@
     {
       "path": "/api/cron/payment-reminder",
       "schedule": "0 14 * * *"
+    },
+    {
+      "path": "/api/cron/recurrent-confirmation",
+      "schedule": "0 15 * * *"
     }
   ]
 }
