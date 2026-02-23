@@ -87,7 +87,7 @@ export const STATUS_LABELS: Record<ReservationStatus, string> = {
 };
 
 // Usuarios: colección users. Atributos denormalizados para evitar queries anidadas.
-export type ClientType = "casual" | "recurrente" | "indeciso" | "sospechoso_fraude" | null;
+export type ClientType = "recurrente" | "sospechoso_fraude" | null;
 
 export interface User {
   id: string; // document id = chat_id normalizado (número WA)
@@ -115,9 +115,7 @@ export interface User {
 }
 
 export const CLIENT_TYPE_LABELS: Record<string, string> = {
-  casual: "Casual",
   recurrente: "Recurrente",
-  indeciso: "Indeciso",
   sospechoso_fraude: "Peligro de fraude",
 };
 

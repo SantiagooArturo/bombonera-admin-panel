@@ -33,7 +33,7 @@ export async function GET() {
         last_dni: typeof data.last_dni === "string" ? data.last_dni : undefined,
         reservation_count: typeof reservationCount === "number" ? reservationCount : 0,
         balance: typeof balance === "number" ? balance : 0,
-        client_type: (clientType === "casual" || clientType === "recurrente" || clientType === "indeciso" || clientType === "sospechoso_fraude"
+        client_type: (clientType === "recurrente" || clientType === "sospechoso_fraude"
           ? clientType
           : null) as ClientType,
         is_automated: typeof isAutomated === "boolean" ? isAutomated : true,
@@ -69,7 +69,7 @@ export async function PATCH(request: NextRequest) {
       );
     }
 
-    const VALID_CLIENT_TYPES = ["casual", "recurrente", "indeciso", "sospechoso_fraude", null];
+    const VALID_CLIENT_TYPES = ["recurrente", "sospechoso_fraude", null];
 
     const updateData: Record<string, unknown> = {};
     if (typeof is_automated === "boolean") {
