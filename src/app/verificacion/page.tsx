@@ -238,7 +238,6 @@ function VerificacionContent() {
                     emittingInvoiceId={sidebar.emittingInvoiceId}
                     paymentLoading={sidebar.paymentLoading}
                     onVerifyTransfer={sidebar.handleVerifyTransfer}
-                    onEmitInvoice={sidebar.handleEmitInvoice}
                     onAttachInvoice={sidebar.handleAttachInvoice}
                     onRevokeManualPayment={sidebar.handleRevokeManualPayment}
                     onRegisterPayment={sidebar.handleRegisterPayment}

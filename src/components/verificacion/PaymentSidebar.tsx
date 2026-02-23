@@ -74,7 +74,6 @@ interface PaymentSidebarProps {
   emittingInvoiceId: string | null;
   paymentLoading: boolean;
   onVerifyTransfer: (transferId: string, currentStatus: boolean) => void;
-  onEmitInvoice: (transfer: Transfer) => void;
   onAttachInvoice: (transfer: Transfer, file: File) => void;
   onRevokeManualPayment: (transferId: string) => void;
   onRegisterPayment: (amount: number, method: PaymentMethod, mediaUrl?: string) => void;
@@ -333,17 +332,15 @@ function RegisterPaymentForm({
 // ─── Transfer Card ───────────────────────────────────────────────────────────
 
 function TransferCard({
-  transfer, invoice, emittingInvoiceId, onVerify, onEmitInvoice, onAttachInvoice, onRevoke, onViewImage, isHovered, onHover,
+  transfer, invoice, emittingInvoiceId, onVerify, onAttachInvoice, onRevoke, onViewImage, onHover,
 }: {
   transfer: Transfer;
   invoice: Invoice | undefined;
   emittingInvoiceId: string | null;
   onVerify: (transferId: string, currentStatus: boolean) => void;
-  onEmitInvoice: (transfer: Transfer) => void;
   onAttachInvoice: (transfer: Transfer, file: File) => void;
   onRevoke: (transferId: string) => void;
   onViewImage: (url: string) => void;
-  isHovered: boolean;
   onHover: (hovering: boolean) => void;
 }) {
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -549,7 +546,6 @@ export default function PaymentSidebar({
   emittingInvoiceId,
   paymentLoading,
   onVerifyTransfer,
-  onEmitInvoice,
   onAttachInvoice,
   onRevokeManualPayment,
   onRegisterPayment,
@@ -714,11 +710,9 @@ export default function PaymentSidebar({
                   invoice={invoice}
                   emittingInvoiceId={emittingInvoiceId}
                   onVerify={onVerifyTransfer}
-                  onEmitInvoice={onEmitInvoice}
                   onAttachInvoice={onAttachInvoice}
                   onRevoke={onRevokeManualPayment}
                   onViewImage={setViewingImage}
-                  isHovered={hoveredTransferId === transfer.id}
                   onHover={(h) => setHoveredTransferId(h ? transfer.id : null)}
                 />
               );

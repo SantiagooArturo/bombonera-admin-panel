@@ -103,7 +103,7 @@ export function usePaymentSidebar(options?: UsePaymentSidebarOptions) {
       const formData = new FormData();
       formData.append("file", file);
       formData.append("reservation_id", selectedReservation.id);
-      formData.append("user_id", selectedReservation.user_id);
+      formData.append("user_id", selectedReservation.chat_id);
       formData.append("phone_number", selectedReservation.phone_number || "");
       formData.append("amount", String(transfer.amount || 0));
       formData.append("court_type", selectedReservation.court_type || "");
