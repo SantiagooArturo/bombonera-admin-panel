@@ -128,6 +128,7 @@ export interface Invoice {
   user_id: string;
   phone_number: string;
   file_url: string;
+  preview_url?: string;
   amount: number;
   court_type: string;
   date: string;

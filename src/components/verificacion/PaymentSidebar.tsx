@@ -1,12 +1,68 @@
 "use client";
 
-import { useState, useRef } from "react";
+import { useState, useRef, useEffect, useCallback } from "react";
 import { Transfer, Invoice, Reservation, PaymentMethod } from "@/lib/types";
+import { renderPdfToDataUrl } from "@/lib/pdf-preview";
 
 // ─── WhatsApp icon (reutilizado) ─────────────────────────────────────────────
 
 const WSP_ICON_PATH =
   "M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.008-.57-.008-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347m-5.421 7.403h-.004a9.87 9.87 0 01-5.031-1.378l-.361-.214-3.741.982.998-3.648-.235-.374a9.86 9.86 0 01-1.51-5.26c.001-5.45 4.436-9.884 9.888-9.884 2.64 0 5.122 1.03 6.988 2.898a9.825 9.825 0 012.893 6.994c-.003 5.45-4.437 9.884-9.885 9.884m8.413-18.297A11.815 11.815 0 0012.05 0C5.495 0 .16 5.335.157 11.892c0 2.096.547 4.142 1.588 5.945L.057 24l6.305-1.654a11.882 11.882 0 005.683 1.448h.005c6.554 0 11.89-5.335 11.893-11.893a11.821 11.821 0 00-3.48-8.413Z";
+
+// ─── PDF Preview ────────────────────────────────────────────────────────────
+
+function PdfPreview({ url, onClickImage }: { url: string; onClickImage: (src: string) => void }) {
+  const [imgSrc, setImgSrc] = useState<string | null>(null);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    let cancelled = false;
+    setLoading(true);
+    renderPdfToDataUrl(url).then((dataUrl) => {
+      if (!cancelled) {
+        setImgSrc(dataUrl);
+        setLoading(false);
+      }
+    });
+    return () => { cancelled = true; };
+  }, [url]);
+
+  if (loading) {
+    return (
+      <div className="rounded-xl border border-gray-200 aspect-[3/4] bg-gray-100 animate-pulse flex items-center justify-center">
+        <svg className="w-8 h-8 text-gray-300 animate-spin" fill="none" viewBox="0 0 24 24">
+          <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+          <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
+        </svg>
+      </div>
+    );
+  }
+
+  if (!imgSrc) {
+    return (
+      <div
+        className="relative group cursor-pointer overflow-hidden rounded-xl border border-gray-200 aspect-[3/4] bg-gray-50 flex flex-col items-center justify-center"
+        onClick={() => window.open(url, "_blank")}
+      >
+        <svg className="w-10 h-10 text-gray-300 mb-2" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" /></svg>
+        <span className="text-sm font-semibold text-gray-400">Error al cargar</span>
+      </div>
+    );
+  }
+
+  return (
+    <div
+      className="relative group cursor-pointer overflow-hidden rounded-xl border border-gray-200 aspect-[3/4] bg-gray-100"
+      onClick={() => onClickImage(imgSrc)}
+    >
+      {/* eslint-disable-next-line @next/next/no-img-element */}
+      <img src={imgSrc} alt="Boleta" className="w-full h-full object-cover transition-transform group-hover:scale-105" />
+      <div className="absolute inset-0 bg-black/0 group-hover:bg-black/20 flex items-center justify-center transition-colors">
+        <span className="text-sm font-bold text-white bg-black/60 px-4 py-2 rounded-lg backdrop-blur-sm opacity-0 group-hover:opacity-100 transition-opacity">Ver boleta</span>
+      </div>
+    </div>
+  );
+}
 
 // ─── Props ───────────────────────────────────────────────────────────────────
 
@@ -19,6 +75,7 @@ interface PaymentSidebarProps {
   paymentLoading: boolean;
   onVerifyTransfer: (transferId: string, currentStatus: boolean) => void;
   onEmitInvoice: (transfer: Transfer) => void;
+  onAttachInvoice: (transfer: Transfer, file: File) => void;
   onRevokeManualPayment: (transferId: string) => void;
   onRegisterPayment: (amount: number, method: PaymentMethod, mediaUrl?: string) => void;
   onClose: () => void;
@@ -276,20 +333,41 @@ function RegisterPaymentForm({
 // ─── Transfer Card ───────────────────────────────────────────────────────────
 
 function TransferCard({
-  transfer, invoice, emittingInvoiceId, onVerify, onEmitInvoice, onRevoke, onViewImage,
+  transfer, invoice, emittingInvoiceId, onVerify, onEmitInvoice, onAttachInvoice, onRevoke, onViewImage, isHovered, onHover,
 }: {
   transfer: Transfer;
   invoice: Invoice | undefined;
   emittingInvoiceId: string | null;
   onVerify: (transferId: string, currentStatus: boolean) => void;
   onEmitInvoice: (transfer: Transfer) => void;
+  onAttachInvoice: (transfer: Transfer, file: File) => void;
   onRevoke: (transferId: string) => void;
   onViewImage: (url: string) => void;
+  isHovered: boolean;
+  onHover: (hovering: boolean) => void;
 }) {
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const [dragOver, setDragOver] = useState(false);
   const isValidated = transfer.verified || transfer.source === "manual";
+  const canAttach = isValidated && !invoice;
+
+  const handleDrop = useCallback((e: React.DragEvent) => {
+    e.preventDefault();
+    setDragOver(false);
+    if (!canAttach) return;
+    const file = e.dataTransfer.files?.[0];
+    if (file) onAttachInvoice(transfer, file);
+  }, [canAttach, onAttachInvoice, transfer]);
 
   return (
-    <div className={`rounded-2xl border-2 transition-all ${transfer.verified ? "border-green-400 bg-green-50/30" : "border-gray-200 bg-white"}`}>
+    <div
+      className={`rounded-2xl border-2 transition-all ${dragOver && canAttach ? "border-blue-400 bg-blue-50/30 ring-2 ring-blue-200" : transfer.verified ? "border-green-400 bg-green-50/30" : "border-gray-200 bg-white"}`}
+      onMouseEnter={() => onHover(true)}
+      onMouseLeave={() => onHover(false)}
+      onDragOver={(e) => { if (canAttach) { e.preventDefault(); setDragOver(true); } }}
+      onDragLeave={() => setDragOver(false)}
+      onDrop={handleDrop}
+    >
       <div className={`grid grid-cols-2 border-b-2 rounded-t-2xl ${transfer.verified ? "border-green-400 bg-green-50/50" : "border-gray-200 bg-gray-50/50"}`}>
         <div className="px-5 py-2.5 text-xs font-bold text-gray-500 uppercase tracking-wider">Pago</div>
         <div className={`px-5 py-2.5 text-xs font-bold text-gray-500 uppercase tracking-wider border-l-2 ${transfer.verified ? "border-green-400" : "border-gray-200"}`}>Boleta asociada</div>
@@ -297,11 +375,11 @@ function TransferCard({
 
       <div className="grid grid-cols-2">
         {/* COLUMNA IZQUIERDA: PAGO */}
-        <div className="p-5 space-y-4">
+        <div className="p-4 space-y-3">
           <div className="w-full">
             {transfer.media_url ? (
               <div
-                className="relative group cursor-pointer overflow-hidden rounded-xl border border-gray-200 aspect-[4/3] bg-gray-100"
+                className="relative group cursor-pointer overflow-hidden rounded-xl border border-gray-200 aspect-[3/4] bg-gray-100"
                 onClick={() => onViewImage(transfer.media_url!)}
               >
                 {/* eslint-disable-next-line @next/next/no-img-element */}
@@ -311,106 +389,122 @@ function TransferCard({
                 </div>
               </div>
             ) : (
-              <div className="rounded-xl bg-gray-50 border-2 border-dashed border-gray-200 flex flex-col items-center justify-center p-6 text-center aspect-[4/3]">
+              <div className="rounded-xl bg-gray-50 border-2 border-dashed border-gray-200 flex flex-col items-center justify-center p-6 text-center aspect-[3/4]">
                 {transfer.source === "manual" ? (
                   <>
                     <svg className="w-10 h-10 text-gray-300 mb-2" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M17 9V7a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2m2 4h10a2 2 0 002-2v-6a2 2 0 00-2-2H9a2 2 0 00-2 2v6a2 2 0 002 2zm7-5a2 2 0 11-4 0 2 2 0 014 0z" /></svg>
                     <span className="text-sm font-semibold text-gray-400">Pago en Caja</span>
-                    <span className="text-xs text-gray-300 mt-1">Sin voucher digital</span>
                   </>
                 ) : (
                   <>
                     <svg className="w-10 h-10 text-amber-300 mb-2" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" /></svg>
                     <span className="text-sm font-semibold text-gray-400">Sin imagen</span>
-                    <span className="text-xs text-gray-300 mt-1">No adjuntó captura</span>
                   </>
                 )}
               </div>
             )}
           </div>
 
-          <div className="space-y-1.5">
-            <p className="text-2xl font-bold text-gray-900">S/ {transfer.amount?.toFixed(2)}</p>
-            <p className="text-base text-gray-600">{formatTransferDate(transfer.created_at)}</p>
-            <p className="text-base text-gray-600">{formatTransferTime(transfer.created_at)}</p>
-            <p className="text-base text-gray-600">{transfer.source === "manual" ? "Pagado: en caja" : "Pagado: vía digital"}</p>
-            <p className={`text-base font-semibold ${transfer.verified ? "text-green-600" : "text-amber-600"}`}>
+          <div>
+            <p className="text-lg font-bold text-gray-900">S/ {transfer.amount?.toFixed(2)}</p>
+            <p className="text-xs text-gray-500 mt-0.5">
+              {formatTransferDate(transfer.created_at)} · {formatTransferTime(transfer.created_at)}
+              <span className="text-gray-300 mx-1">·</span>
+              {transfer.source === "manual" ? "en caja" : "digital"}
+            </p>
+            <p className={`text-xs font-semibold mt-1 ${transfer.verified ? "text-green-600" : "text-amber-600"}`}>
               {transfer.verified ? "Validado" : transfer.source === "manual" ? "Cobro manual" : "Pendiente validación"}
             </p>
           </div>
 
-          <div>
-            {transfer.source !== "manual" ? (
-              <button
-                onClick={() => onVerify(transfer.id, !!transfer.verified)}
-                className={`w-full py-3 px-4 rounded-xl font-bold text-sm transition-all active:scale-[0.98] flex items-center justify-center gap-2 ${
-                  transfer.verified
-                    ? "bg-white border-2 border-gray-200 text-gray-600 hover:border-red-200 hover:text-red-500"
-                    : "bg-green-600 text-white hover:bg-green-700 shadow-sm"
-                }`}
-              >
-                {transfer.verified ? (
-                  <><svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg>Deshacer</>
-                ) : (
-                  <><svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" /></svg>Validar Pago</>
-                )}
-              </button>
-            ) : (
-              <button
-                onClick={() => onRevoke(transfer.id)}
-                className="w-full py-3 px-4 rounded-xl font-bold text-sm transition-all active:scale-[0.98] flex items-center justify-center gap-2 bg-white border-2 border-red-100 text-red-600 hover:bg-red-50"
-              >
-                <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg>
-                Eliminar pago
-              </button>
-            )}
-          </div>
+          {transfer.source !== "manual" ? (
+            <button
+              onClick={() => onVerify(transfer.id, !!transfer.verified)}
+              className={`w-full py-2.5 px-4 rounded-xl font-bold text-sm transition-all active:scale-[0.98] flex items-center justify-center gap-2 ${
+                transfer.verified
+                  ? "bg-white border-2 border-gray-200 text-gray-600 hover:border-red-200 hover:text-red-500"
+                  : "bg-green-600 text-white hover:bg-green-700 shadow-sm"
+              }`}
+            >
+              {transfer.verified ? (
+                <><svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg>Deshacer</>
+              ) : (
+                <><svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" /></svg>Validar Pago</>
+              )}
+            </button>
+          ) : (
+            <button
+              onClick={() => onRevoke(transfer.id)}
+              className="w-full py-2.5 px-4 rounded-xl font-bold text-sm transition-all active:scale-[0.98] flex items-center justify-center gap-2 bg-white border-2 border-red-100 text-red-600 hover:bg-red-50"
+            >
+              <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg>
+              Eliminar pago
+            </button>
+          )}
         </div>
 
         {/* COLUMNA DERECHA: BOLETA */}
-        <div className={`p-5 border-l-2 flex flex-col justify-center ${transfer.verified ? "border-green-400" : "border-gray-200"}`}>
+        <div className={`p-4 border-l-2 flex flex-col justify-center ${transfer.verified ? "border-green-400" : "border-gray-200"}`}>
           {!isValidated ? (
             <div className="text-center py-8">
               <svg className="w-12 h-12 mx-auto mb-3 text-gray-200" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" /></svg>
               <p className="text-sm font-semibold text-gray-400">Valida el pago primero</p>
-              <p className="text-xs text-gray-300 mt-1">para poder emitir una boleta</p>
             </div>
           ) : invoice ? (
-            <div className="space-y-4">
-              <div className="flex items-center gap-2">
-                <div className="w-10 h-10 rounded-lg bg-blue-100 flex items-center justify-center flex-shrink-0">
-                  <svg className="w-5 h-5 text-blue-600" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" /></svg>
-                </div>
-                <div>
-                  <p className="font-bold text-gray-900">Boleta de Venta</p>
-                  <p className="text-sm text-gray-500">Emitida el {new Date(invoice.created_at).toLocaleDateString("es-PE")}</p>
-                </div>
+            <div className="space-y-3">
+              <div className="w-full">
+                <PdfPreview url={invoice.file_url} onClickImage={onViewImage} />
               </div>
-              <p className="text-2xl font-bold text-gray-900">S/ {invoice.amount.toFixed(2)}</p>
-              <button
-                onClick={() => window.open(invoice.file_url, "_blank")}
-                className="w-full py-3 px-4 rounded-xl font-bold text-sm bg-blue-50 border-2 border-blue-100 text-blue-700 hover:bg-blue-100 flex items-center justify-center gap-2 transition-colors"
+              <div>
+                <p className="text-lg font-bold text-gray-900">S/ {invoice.amount.toFixed(2)}</p>
+                <p className="text-xs text-gray-500 mt-0.5">{new Date(invoice.created_at).toLocaleDateString("es-PE")}</p>
+              </div>
+              <a
+                href={`/api/proxy-file?url=${encodeURIComponent(invoice.file_url)}`}
+                download={`boleta_${invoice.id}.pdf`}
+                className="w-full py-2.5 px-4 rounded-xl font-bold text-sm bg-blue-50 border-2 border-blue-100 text-blue-700 hover:bg-blue-100 flex items-center justify-center gap-2 transition-colors"
               >
-                <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" /></svg>
+                <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" /></svg>
                 Descargar PDF
-              </button>
+              </a>
             </div>
           ) : (
-            <div className="space-y-4">
-              <div className="text-center py-4">
-                <svg className="w-12 h-12 mx-auto mb-3 text-gray-200" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" /></svg>
-                <p className="text-sm font-semibold text-gray-400">Sin boleta emitida</p>
+            <div className="space-y-3">
+              <div className="rounded-xl bg-gray-50 border-2 border-dashed border-gray-200 flex flex-col items-center justify-center p-6 text-center aspect-[3/4]">
+                <svg className="w-10 h-10 text-gray-300 mb-2" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" /></svg>
+                <span className="text-sm font-semibold text-gray-400">Sin boleta</span>
               </div>
+
+              <input
+                ref={fileInputRef}
+                type="file"
+                accept=".pdf"
+                className="hidden"
+                onChange={(e) => {
+                  const f = e.target.files?.[0];
+                  if (f) onAttachInvoice(transfer, f);
+                  e.target.value = "";
+                }}
+              />
               <button
-                onClick={() => onEmitInvoice(transfer)}
+                onClick={() => fileInputRef.current?.click()}
                 disabled={emittingInvoiceId === transfer.id}
-                className="w-full py-3 px-4 rounded-xl font-bold text-sm bg-gray-900 text-white hover:bg-gray-800 flex items-center justify-center gap-2 transition-colors disabled:opacity-60 disabled:cursor-not-allowed shadow-sm"
+                className="w-full py-2.5 px-4 rounded-xl font-bold text-sm bg-gray-900 text-white hover:bg-gray-800 flex items-center justify-center gap-2 transition-colors disabled:opacity-60 disabled:cursor-not-allowed shadow-sm"
               >
                 {emittingInvoiceId === transfer.id ? (
-                  <><svg className="w-5 h-5 animate-spin" fill="none" viewBox="0 0 24 24"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" /><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" /></svg>Emitiendo...</>
+                  <><svg className="w-4 h-4 animate-spin" fill="none" viewBox="0 0 24 24"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" /><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" /></svg>Subiendo...</>
                 ) : (
-                  <><svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" /></svg>Emitir Boleta</>
+                  <><svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.172 7l-6.586 6.586a2 2 0 102.828 2.828l6.414-6.586a4 4 0 00-5.656-5.656l-6.415 6.585a6 6 0 108.486 8.486L20.5 13" /></svg>Adjuntar Boleta</>
                 )}
+              </button>
+
+              <button
+                disabled
+                title="Disponible próximamente (pendiente credenciales SUNAT)"
+                className="w-full py-2.5 px-4 rounded-xl font-bold text-sm bg-gray-100 text-gray-400 flex items-center justify-center gap-2 cursor-not-allowed border border-gray-200"
+              >
+                <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" /></svg>
+                Emitir Boleta
               </button>
             </div>
           )}
@@ -456,12 +550,44 @@ export default function PaymentSidebar({
   paymentLoading,
   onVerifyTransfer,
   onEmitInvoice,
+  onAttachInvoice,
   onRevokeManualPayment,
   onRegisterPayment,
   onClose,
   onToggleArrived,
 }: PaymentSidebarProps) {
   const [viewingImage, setViewingImage] = useState<string | null>(null);
+  const [hoveredTransferId, setHoveredTransferId] = useState<string | null>(null);
+
+  // Ctrl+V / paste: adjuntar boleta desde clipboard
+  useEffect(() => {
+    const handlePaste = (e: ClipboardEvent) => {
+      const file = Array.from(e.clipboardData?.files || []).find(
+        (f) => f.type === "application/pdf"
+      );
+      if (!file) return;
+
+      const eligibleTransfers = transfers.filter(
+        (t) => (t.verified || t.source === "manual") && !invoices.find((inv) => inv.transfer_id === t.id)
+      );
+      if (eligibleTransfers.length === 0) return;
+
+      let target: Transfer | undefined;
+      if (eligibleTransfers.length === 1) {
+        target = eligibleTransfers[0];
+      } else if (hoveredTransferId) {
+        target = eligibleTransfers.find((t) => t.id === hoveredTransferId);
+      }
+
+      if (target) {
+        e.preventDefault();
+        onAttachInvoice(target, file);
+      }
+    };
+
+    window.addEventListener("paste", handlePaste);
+    return () => window.removeEventListener("paste", handlePaste);
+  }, [transfers, invoices, hoveredTransferId, onAttachInvoice]);
   const [arrivedLoading, setArrivedLoading] = useState(false);
 
   const totalPrice = reservation.total_price || 0;
@@ -589,8 +715,11 @@ export default function PaymentSidebar({
                   emittingInvoiceId={emittingInvoiceId}
                   onVerify={onVerifyTransfer}
                   onEmitInvoice={onEmitInvoice}
+                  onAttachInvoice={onAttachInvoice}
                   onRevoke={onRevokeManualPayment}
                   onViewImage={setViewingImage}
+                  isHovered={hoveredTransferId === transfer.id}
+                  onHover={(h) => setHoveredTransferId(h ? transfer.id : null)}
                 />
               );
             })

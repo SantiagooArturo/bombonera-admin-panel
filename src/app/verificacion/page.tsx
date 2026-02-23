@@ -239,6 +239,7 @@ function VerificacionContent() {
                     paymentLoading={sidebar.paymentLoading}
                     onVerifyTransfer={sidebar.handleVerifyTransfer}
                     onEmitInvoice={sidebar.handleEmitInvoice}
+                    onAttachInvoice={sidebar.handleAttachInvoice}
                     onRevokeManualPayment={sidebar.handleRevokeManualPayment}
                     onRegisterPayment={sidebar.handleRegisterPayment}
                     onClose={sidebar.close}

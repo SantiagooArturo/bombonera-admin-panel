@@ -90,6 +90,44 @@ export function usePaymentSidebar(options?: UsePaymentSidebarOptions) {
     }
   }, [store, toast, selectedReservation]);
 
+  const handleAttachInvoice = useCallback(async (transfer: Transfer, file: File) => {
+    if (!selectedReservation) return;
+
+    if (file.type !== "application/pdf") {
+      toast("Solo se permiten archivos PDF", "error");
+      return;
+    }
+
+    setEmittingInvoiceId(transfer.id);
+    try {
+      const formData = new FormData();
+      formData.append("file", file);
+      formData.append("reservation_id", selectedReservation.id);
+      formData.append("user_id", selectedReservation.user_id);
+      formData.append("phone_number", selectedReservation.phone_number || "");
+      formData.append("amount", String(transfer.amount || 0));
+      formData.append("court_type", selectedReservation.court_type || "");
+      formData.append("date", selectedReservation.date || "");
+      formData.append("transfer_id", transfer.id);
+
+      const res = await fetch("/api/invoices/attach", { method: "POST", body: formData });
+      const data = await res.json();
+
+      if (data.success) {
+        toast("Boleta adjuntada correctamente", "success");
+        const newInvoices = await store.fetchInvoices({ reservation_id: selectedReservation.id });
+        setInvoices(newInvoices || []);
+      } else {
+        toast(data.error || "Error al adjuntar boleta", "error");
+      }
+    } catch (err) {
+      console.error("Error attaching invoice:", err);
+      toast("Error inesperado al adjuntar boleta", "error");
+    } finally {
+      setEmittingInvoiceId(null);
+    }
+  }, [store, toast, selectedReservation]);
+
   const handleRevokeManualPayment = useCallback(async (transferId: string) => {
     if (!selectedReservation) return;
     if (!confirm("¿Estás seguro de revocar (eliminar) este pago manual?")) return;
@@ -154,6 +192,7 @@ export function usePaymentSidebar(options?: UsePaymentSidebarOptions) {
     close,
     handleVerifyTransfer,
     handleEmitInvoice,
+    handleAttachInvoice,
     handleRevokeManualPayment,
     handleRegisterPayment,
   };
