@@ -494,7 +494,11 @@ class Store {
     }
   }
 
-  async emitInvoice(reservation: Reservation, transfer?: { id: string; amount: number }) {
+  async emitInvoice(
+    reservation: Reservation,
+    transfer: { id: string; amount: number } | undefined,
+    params: { tipo_comprobante: "boleta" | "factura"; doc_num: string }
+  ) {
     try {
       const amountToBill = transfer?.amount || reservation.total_price;
 
@@ -511,6 +515,8 @@ class Store {
           time_slots: reservation.time_slots,
           representative_name: reservation.representative_name,
           transfer_id: transfer?.id,
+          tipo_comprobante: params.tipo_comprobante,
+          doc_num: params.doc_num,
         }),
       });
       const result = await res.json();
@@ -541,6 +547,38 @@ class Store {
     } catch (error) {
       console.error("Error emitting invoice:", error);
       return null;
+    }
+  }
+
+  async updateReservationDni(id: string, dni: string) {
+    try {
+      const res = await fetch("/api/reservations", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ id, dni }),
+      });
+      if (!res.ok) throw new Error("Failed to update DNI");
+      this.reservations = this.reservations.map((r) => (r.id === id ? { ...r, dni } : r));
+      this.notify();
+      return true;
+    } catch (error) {
+      console.error("Error updating reservation DNI:", error);
+      return false;
+    }
+  }
+
+  async deleteReservationHard(id: string) {
+    try {
+      const res = await fetch(`/api/reservations?id=${encodeURIComponent(id)}`, {
+        method: "DELETE",
+      });
+      if (!res.ok) throw new Error("Failed to delete reservation");
+      this.reservations = this.reservations.filter((r) => r.id !== id);
+      this.notify();
+      return true;
+    } catch (error) {
+      console.error("Error deleting reservation:", error);
+      return false;
     }
   }
 

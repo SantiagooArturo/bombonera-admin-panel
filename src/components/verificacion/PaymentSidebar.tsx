@@ -74,11 +74,20 @@ interface PaymentSidebarProps {
   emittingInvoiceId: string | null;
   paymentLoading: boolean;
   onVerifyTransfer: (transferId: string, currentStatus: boolean) => void;
+  onEmitInvoice: (
+    transfer: Transfer,
+    params: { tipo_comprobante: "boleta" | "factura"; doc_num: string }
+  ) => void;
   onAttachInvoice: (transfer: Transfer, file: File) => void;
+  onUpdateDni: (dni: string) => Promise<boolean>;
+  onCancelReservation: () => Promise<boolean>;
   onRevokeManualPayment: (transferId: string) => void;
   onRegisterPayment: (amount: number, method: PaymentMethod, mediaUrl?: string) => void;
+  cancellingReservation?: boolean;
   onClose: () => void;
   onToggleArrived?: (resId: string, arrived: boolean) => void;
+  onExtendReservation?: () => void;
+  extendingReservation?: boolean;
 }
 
 // ─── Sub-components ──────────────────────────────────────────────────────────
@@ -332,12 +341,16 @@ function RegisterPaymentForm({
 // ─── Transfer Card ───────────────────────────────────────────────────────────
 
 function TransferCard({
-  transfer, invoice, emittingInvoiceId, onVerify, onAttachInvoice, onRevoke, onViewImage, onHover, chatId,
+  transfer, invoice, emittingInvoiceId, onVerify, onEmitInvoice, onAttachInvoice, onRevoke, onViewImage, onHover, chatId,
 }: {
   transfer: Transfer;
   invoice: Invoice | undefined;
   emittingInvoiceId: string | null;
   onVerify: (transferId: string, currentStatus: boolean) => void;
+  onEmitInvoice: (
+    transfer: Transfer,
+    params: { tipo_comprobante: "boleta" | "factura"; doc_num: string }
+  ) => void;
   onAttachInvoice: (transfer: Transfer, file: File) => void;
   onRevoke: (transferId: string) => void;
   onViewImage: (url: string) => void;
@@ -346,6 +359,9 @@ function TransferCard({
 }) {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [dragOver, setDragOver] = useState(false);
+  const [showEmitModal, setShowEmitModal] = useState(false);
+  const [docType, setDocType] = useState<"boleta" | "factura">("boleta");
+  const [docNumber, setDocNumber] = useState("");
   const [wspStatus, setWspStatus] = useState<"idle" | "sending" | "sent">("idle");
   const isValidated = transfer.verified || transfer.source === "manual";
   const canAttach = isValidated && !invoice;
@@ -531,9 +547,13 @@ function TransferCard({
               </button>
 
               <button
-                disabled
-                title="Disponible próximamente (pendiente credenciales SUNAT)"
-                className="w-full py-2.5 px-4 rounded-xl font-bold text-sm bg-gray-100 text-gray-400 flex items-center justify-center gap-2 cursor-not-allowed border border-gray-200"
+                onClick={() => {
+                  setDocType("boleta");
+                  setDocNumber("");
+                  setShowEmitModal(true);
+                }}
+                disabled={emittingInvoiceId === transfer.id}
+                className="w-full py-2.5 px-4 rounded-xl font-bold text-sm bg-green-600 text-white hover:bg-green-700 flex items-center justify-center gap-2 border border-green-700 disabled:opacity-60 disabled:cursor-not-allowed"
               >
                 <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" /></svg>
                 Emitir Boleta
@@ -542,6 +562,75 @@ function TransferCard({
           )}
         </div>
       </div>
+
+      {showEmitModal && (
+        <div className="fixed inset-0 z-[70] bg-black/40 flex items-center justify-center p-4">
+          <div className="w-full max-w-md rounded-2xl bg-white shadow-2xl p-5 space-y-4">
+            <div className="flex items-center justify-between">
+              <h4 className="text-lg font-bold text-gray-900">Emitir comprobante</h4>
+              <button onClick={() => setShowEmitModal(false)} className="p-1 text-gray-400 hover:text-gray-700">
+                <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                </svg>
+              </button>
+            </div>
+
+            <div className="grid grid-cols-2 gap-2">
+              <button
+                onClick={() => setDocType("boleta")}
+                className={`py-2 rounded-lg border-2 font-semibold ${
+                  docType === "boleta" ? "border-blue-500 bg-blue-50 text-blue-700" : "border-gray-200 text-gray-600"
+                }`}
+              >
+                Con DNI
+              </button>
+              <button
+                onClick={() => setDocType("factura")}
+                className={`py-2 rounded-lg border-2 font-semibold ${
+                  docType === "factura" ? "border-blue-500 bg-blue-50 text-blue-700" : "border-gray-200 text-gray-600"
+                }`}
+              >
+                Con RUC
+              </button>
+            </div>
+
+            <input
+              type="text"
+              value={docNumber}
+              onChange={(e) => {
+                const onlyDigits = e.target.value.replace(/\D/g, "");
+                setDocNumber(docType === "factura" ? onlyDigits.slice(0, 11) : onlyDigits.slice(0, 8));
+              }}
+              placeholder={docType === "factura" ? "RUC (11 dígitos)" : "DNI (8 dígitos)"}
+              className="w-full rounded-xl border-2 border-gray-200 bg-gray-50 px-4 py-3 font-semibold text-gray-800 focus:border-blue-500 focus:outline-none"
+            />
+
+            <div className="flex gap-3">
+              <button
+                onClick={() => setShowEmitModal(false)}
+                className="flex-1 py-2.5 px-4 rounded-xl border-2 border-gray-300 text-gray-700 font-semibold hover:bg-gray-100"
+              >
+                Cancelar
+              </button>
+              <button
+                onClick={() => {
+                  const isValid = docType === "factura" ? docNumber.length === 11 : docNumber.length === 8;
+                  if (!isValid) return;
+                  onEmitInvoice(transfer, {
+                    tipo_comprobante: docType,
+                    doc_num: docNumber,
+                  });
+                  setShowEmitModal(false);
+                }}
+                disabled={emittingInvoiceId === transfer.id || (docType === "factura" ? docNumber.length !== 11 : docNumber.length !== 8)}
+                className="flex-1 py-2.5 px-4 rounded-xl bg-green-600 text-white font-semibold hover:bg-green-700 disabled:opacity-60"
+              >
+                {emittingInvoiceId === transfer.id ? "Emitiendo..." : "Emitir"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
@@ -581,14 +670,22 @@ export default function PaymentSidebar({
   emittingInvoiceId,
   paymentLoading,
   onVerifyTransfer,
+  onEmitInvoice,
   onAttachInvoice,
+  onUpdateDni,
+  onCancelReservation,
   onRevokeManualPayment,
   onRegisterPayment,
+  cancellingReservation = false,
   onClose,
   onToggleArrived,
+  onExtendReservation,
+  extendingReservation = false,
 }: PaymentSidebarProps) {
   const [viewingImage, setViewingImage] = useState<string | null>(null);
   const [hoveredTransferId, setHoveredTransferId] = useState<string | null>(null);
+  const [editingDni, setEditingDni] = useState(false);
+  const [dniValue, setDniValue] = useState(reservation.dni || "");
 
   // Ctrl+V / paste: adjuntar boleta desde clipboard
   useEffect(() => {
@@ -619,6 +716,10 @@ export default function PaymentSidebar({
     window.addEventListener("paste", handlePaste);
     return () => window.removeEventListener("paste", handlePaste);
   }, [transfers, invoices, hoveredTransferId, onAttachInvoice]);
+  useEffect(() => {
+    setDniValue(reservation.dni || "");
+    setEditingDni(false);
+  }, [reservation.id, reservation.dni]);
   const [arrivedLoading, setArrivedLoading] = useState(false);
 
   const totalPrice = reservation.total_price || 0;
@@ -696,20 +797,78 @@ export default function PaymentSidebar({
                   </span>
                 </a>
               )}
+              <div className="flex items-center gap-2 mt-1">
+                <span className="text-sm text-gray-500">DNI:</span>
+                {editingDni ? (
+                  <>
+                    <input
+                      type="text"
+                      value={dniValue}
+                      onChange={(e) => setDniValue(e.target.value.replace(/\D/g, "").slice(0, 8))}
+                      placeholder="(opcional)"
+                      className="w-32 rounded-lg border border-gray-200 px-2 py-1 text-sm font-semibold text-gray-700 focus:outline-none focus:border-blue-500"
+                    />
+                    <button
+                      onClick={async () => {
+                        const ok = await onUpdateDni(dniValue);
+                        if (ok) setEditingDni(false);
+                      }}
+                      className="text-xs px-2 py-1 rounded-md bg-blue-600 text-white hover:bg-blue-700"
+                    >
+                      Guardar
+                    </button>
+                  </>
+                ) : (
+                  <>
+                    <span className={`text-sm font-semibold ${reservation.dni ? "text-gray-800" : "text-gray-400"}`}>
+                      {reservation.dni || "(vacío)"}
+                    </span>
+                    <button
+                      onClick={() => setEditingDni(true)}
+                      className="p-1 rounded-md hover:bg-gray-100 text-gray-500 hover:text-gray-700"
+                      title="Editar DNI"
+                    >
+                      <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
+                      </svg>
+                    </button>
+                  </>
+                )}
+              </div>
             </div>
-            {onToggleArrived && !isCancelled && (
-              <button
-                onClick={handleArrivedToggle}
-                disabled={arrivedLoading}
-                className={`px-5 py-2.5 rounded-xl font-bold text-sm transition-all disabled:opacity-50 shrink-0 ${
-                  arrived
-                    ? "bg-green-500 text-white shadow-md hover:bg-green-600"
-                    : "bg-blue-600 text-white shadow-sm hover:bg-blue-700"
-                }`}
-              >
-                {arrivedLoading ? "..." : arrived ? "✓ Ya llegó" : "Marcar llegada"}
-              </button>
-            )}
+            <div className="flex flex-col items-end gap-2 shrink-0">
+              {!isCancelled && (
+                <button
+                  onClick={onCancelReservation}
+                  disabled={cancellingReservation}
+                  className="px-5 py-2.5 rounded-xl font-bold text-sm transition-all disabled:opacity-50 bg-red-600 text-white shadow-sm hover:bg-red-700"
+                >
+                  {cancellingReservation ? "Cancelando..." : "Cancelar reserva"}
+                </button>
+              )}
+              {onExtendReservation && !isCancelled && (
+                <button
+                  onClick={onExtendReservation}
+                  disabled={extendingReservation}
+                  className="px-5 py-2.5 rounded-xl font-bold text-sm transition-all disabled:opacity-50 bg-indigo-600 text-white shadow-sm hover:bg-indigo-700"
+                >
+                  {extendingReservation ? "Extender..." : "Extender +1h"}
+                </button>
+              )}
+              {onToggleArrived && !isCancelled && (
+                <button
+                  onClick={handleArrivedToggle}
+                  disabled={arrivedLoading}
+                  className={`px-5 py-2.5 rounded-xl font-bold text-sm transition-all disabled:opacity-50 ${
+                    arrived
+                      ? "bg-green-500 text-white shadow-md hover:bg-green-600"
+                      : "bg-blue-600 text-white shadow-sm hover:bg-blue-700"
+                  }`}
+                >
+                  {arrivedLoading ? "..." : arrived ? "✓ Ya llegó" : "Marcar llegada"}
+                </button>
+              )}
+            </div>
           </div>
 
           {/* Resumen financiero */}
@@ -745,6 +904,7 @@ export default function PaymentSidebar({
                   invoice={invoice}
                   emittingInvoiceId={emittingInvoiceId}
                   onVerify={onVerifyTransfer}
+                  onEmitInvoice={onEmitInvoice}
                   onAttachInvoice={onAttachInvoice}
                   onRevoke={onRevokeManualPayment}
                   onViewImage={setViewingImage}

@@ -9,7 +9,7 @@ for (const [ct, fields] of Object.entries(COURT_FIELDS)) {
 
 function getTimeSlotsInRange(from: string, to: string): string[] {
   const startIdx = TIME_SLOTS.indexOf(from);
-  const endIdx = TIME_SLOTS.indexOf(to);
+  const endIdx = to === "23:00" ? TIME_SLOTS.length : TIME_SLOTS.indexOf(to);
   if (startIdx === -1 || endIdx === -1 || startIdx >= endIdx) return [];
   return TIME_SLOTS.slice(startIdx, endIdx);
 }

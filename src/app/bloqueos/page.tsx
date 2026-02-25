@@ -60,7 +60,7 @@ function getDatesInRange(from: string, to: string, weekdays: number[]): string[]
 
 function getTimeSlotsInRange(from: string, to: string): string[] {
   const startIdx = TIME_SLOTS.indexOf(from);
-  const endIdx = TIME_SLOTS.indexOf(to);
+  const endIdx = to === "23:00" ? TIME_SLOTS.length : TIME_SLOTS.indexOf(to);
   if (startIdx === -1 || endIdx === -1 || startIdx >= endIdx) return [];
   return TIME_SLOTS.slice(startIdx, endIdx);
 }
@@ -176,7 +176,8 @@ export default function BloqueosPage() {
 
   const timeToOptions = useMemo(() => {
     const fromIdx = TIME_SLOTS.indexOf(timeFrom);
-    return TIME_SLOTS.filter((_, i) => i > fromIdx);
+    if (fromIdx === -1) return [];
+    return [...TIME_SLOTS.filter((_, i) => i > fromIdx), "23:00"];
   }, [timeFrom]);
 
   useEffect(() => {

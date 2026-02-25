@@ -6,6 +6,7 @@ const FACTILIZA_BASE_URL = process.env.FACTILIZA_BASE_URL!;
 const FACTILIZA_TOKEN = process.env.FACTILIZA_TOKEN!;
 const FACTILIZA_RUC = process.env.FACTILIZA_RUC!;
 const FACTILIZA_SERIE = process.env.FACTILIZA_SERIE || "B098";
+const FACTILIZA_SERIE_FACTURA = process.env.FACTILIZA_SERIE_FACTURA || "F001";
 
 const COURT_DESCRIPTIONS: Record<string, string> = {
   voley_6v6: "Alquiler cancha voley 6v6",
@@ -58,6 +59,8 @@ export async function POST(request: NextRequest) {
       time_slots,
       representative_name,
       transfer_id,
+      tipo_comprobante,
+      doc_num,
     } = body;
 
     if (!reservation_id || !user_id) {
@@ -66,6 +69,19 @@ export async function POST(request: NextRequest) {
         { status: 400 }
       );
     }
+
+    const tipoComprobante: "boleta" | "factura" =
+      tipo_comprobante === "factura" ? "factura" : "boleta";
+    const cleanDoc = String(doc_num || "").replace(/\D/g, "");
+    if (tipoComprobante === "factura" && cleanDoc.length !== 11) {
+      return NextResponse.json({ error: "RUC inválido para factura" }, { status: 400 });
+    }
+    if (tipoComprobante === "boleta" && cleanDoc.length !== 8) {
+      return NextResponse.json({ error: "DNI inválido para boleta" }, { status: 400 });
+    }
+
+    const tipoDocSunat = tipoComprobante === "factura" ? "01" : "03";
+    const serieSunat = tipoComprobante === "factura" ? FACTILIZA_SERIE_FACTURA : FACTILIZA_SERIE;
 
     // 1. Obtener siguiente correlativo (atómico con transacción)
     const counterRef = db.collection("config").doc("invoice_counter");
@@ -107,14 +123,15 @@ export async function POST(request: NextRequest) {
     // 6. Armar request para Factiliza
     const factilizaBody = {
       tipo_Operacion: "0101",
-      tipo_Doc: "03", // Boleta
-      serie: FACTILIZA_SERIE,
+      tipo_Doc: tipoDocSunat,
+      serie: serieSunat,
       correlativo: String(correlativo),
       tipo_Moneda: "PEN",
       fecha_Emision: fechaEmision,
       empresa_Ruc: FACTILIZA_RUC,
-      cliente_Tipo_Doc: "0", // 0 = Sin documento (boleta simplificada)
-      cliente_Num_Doc: "00000000",
+      cliente_Tipo_Doc:
+        tipoComprobante === "factura" ? "6" : "1",
+      cliente_Num_Doc: cleanDoc,
       cliente_Razon_Social: clienteName,
       cliente_Direccion: "LIMA",
       monto_Oper_Gravadas: baseImponible,
@@ -189,8 +206,8 @@ export async function POST(request: NextRequest) {
       },
       body: JSON.stringify({
         empresa_Ruc: FACTILIZA_RUC,
-        tipo_Doc: "03",
-        serie: FACTILIZA_SERIE,
+        tipo_Doc: tipoDocSunat,
+        serie: serieSunat,
         correlativo: String(correlativo),
       }),
     });
@@ -206,7 +223,7 @@ export async function POST(request: NextRequest) {
     const pdfBuffer = Buffer.from(await pdfRes.arrayBuffer());
 
     // 9. Subir PDF a Firebase Storage
-    const serieCorrelativo = `${FACTILIZA_SERIE}-${correlativo}`;
+    const serieCorrelativo = `${serieSunat}-${correlativo}`;
     const storagePath = `invoices/${serieCorrelativo}.pdf`;
     const file = bucket.file(storagePath);
     const downloadToken = randomUUID();
@@ -232,7 +249,8 @@ export async function POST(request: NextRequest) {
       court_type: court_type || "",
       date: date || "",
       transfer_id: transfer_id || null,
-      serie: FACTILIZA_SERIE,
+      serie: serieSunat,
+      tipo_doc: tipoDocSunat,
       correlativo,
       serie_correlativo: serieCorrelativo,
       factiliza_hash: emitData.data?.hash || null,

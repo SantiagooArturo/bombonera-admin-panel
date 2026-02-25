@@ -7,6 +7,7 @@ import type { Reservation, Transfer, Invoice, PaymentMethod } from "@/lib/types"
 
 interface UsePaymentSidebarOptions {
   onReservationUpdated?: (resId: string, patch: Partial<Reservation>) => void;
+  onReservationDeleted?: (resId: string) => void;
 }
 
 export function usePaymentSidebar(options?: UsePaymentSidebarOptions) {
@@ -19,6 +20,7 @@ export function usePaymentSidebar(options?: UsePaymentSidebarOptions) {
   const [loadingData, setLoadingData] = useState(false);
   const [emittingInvoiceId, setEmittingInvoiceId] = useState<string | null>(null);
   const [paymentLoading, setPaymentLoading] = useState(false);
+  const [cancellingReservation, setCancellingReservation] = useState(false);
 
   const isOpen = selectedReservation !== null;
 
@@ -68,27 +70,68 @@ export function usePaymentSidebar(options?: UsePaymentSidebarOptions) {
     }
   }, [store, toast]);
 
-  const handleEmitInvoice = useCallback(async (transfer: Transfer) => {
+  const handleEmitInvoice = useCallback(async (
+    transfer: Transfer,
+    params: { tipo_comprobante: "boleta" | "factura"; doc_num: string }
+  ) => {
     if (!selectedReservation) {
       toast("No hay reserva seleccionada", "error");
       return;
     }
     setEmittingInvoiceId(transfer.id);
     try {
-      const result = await store.emitInvoice(selectedReservation, { id: transfer.id, amount: transfer.amount || 0 });
+      const result = await store.emitInvoice(
+        selectedReservation,
+        { id: transfer.id, amount: transfer.amount || 0 },
+        params
+      );
       if (result) {
-        toast("Boleta emitida correctamente", "success");
+        toast("Comprobante emitido correctamente", "success");
         const newInvoices = await store.fetchInvoices({ reservation_id: selectedReservation.id });
         setInvoices(newInvoices || []);
       } else {
-        toast("Error al emitir boleta", "error");
+        toast("Error al emitir comprobante", "error");
       }
     } catch {
-      toast("Error inesperado al emitir boleta", "error");
+      toast("Error inesperado al emitir comprobante", "error");
     } finally {
       setEmittingInvoiceId(null);
     }
   }, [store, toast, selectedReservation]);
+
+  const handleUpdateDni = useCallback(async (dni: string) => {
+    if (!selectedReservation) return false;
+    const clean = dni.replace(/\D/g, "").slice(0, 8);
+    if (clean && clean.length !== 8) {
+      toast("El DNI debe tener 8 dígitos", "error");
+      return false;
+    }
+    const ok = await store.updateReservationDni(selectedReservation.id, clean);
+    if (ok) {
+      setSelectedReservation((prev) => (prev ? { ...prev, dni: clean } : prev));
+      toast("DNI actualizado", "success");
+      return true;
+    }
+    toast("No se pudo actualizar el DNI", "error");
+    return false;
+  }, [selectedReservation, store, toast]);
+
+  const handleCancelReservation = useCallback(async () => {
+    if (!selectedReservation) return false;
+    const confirmed = confirm("¿Eliminar esta reserva y todos sus pagos/boletas?");
+    if (!confirmed) return false;
+    setCancellingReservation(true);
+    const ok = await store.deleteReservationHard(selectedReservation.id);
+    setCancellingReservation(false);
+    if (!ok) {
+      toast("No se pudo eliminar la reserva", "error");
+      return false;
+    }
+    options?.onReservationDeleted?.(selectedReservation.id);
+    toast("Reserva eliminada", "success");
+    close();
+    return true;
+  }, [selectedReservation, store, toast, close, options]);
 
   const handleAttachInvoice = useCallback(async (transfer: Transfer, file: File) => {
     if (!selectedReservation) return;
@@ -187,11 +230,14 @@ export function usePaymentSidebar(options?: UsePaymentSidebarOptions) {
     loadingData,
     emittingInvoiceId,
     paymentLoading,
+    cancellingReservation,
     isOpen,
     open,
     close,
     handleVerifyTransfer,
     handleEmitInvoice,
+    handleUpdateDni,
+    handleCancelReservation,
     handleAttachInvoice,
     handleRevokeManualPayment,
     handleRegisterPayment,

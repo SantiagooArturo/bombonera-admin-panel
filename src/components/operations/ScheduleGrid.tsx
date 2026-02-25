@@ -50,6 +50,8 @@ export interface ScheduleGridProps {
   isToday: boolean;
   onSelectReservation: (reservation: Reservation) => void;
   onSelectBlocked: (blockedSlot: BlockedSlot) => void;
+  onSelectEmpty: (field: number, timeSlot: string) => void;
+  maxHeight?: string;
 }
 
 // ─── Component ──────────────────────────────────────────────────────────────
@@ -62,6 +64,8 @@ export default function ScheduleGrid({
   isToday,
   onSelectReservation,
   onSelectBlocked,
+  onSelectEmpty,
+  maxHeight = "calc(100vh - 220px)",
 }: ScheduleGridProps) {
   const currentRowRef = useRef<HTMLTableRowElement>(null);
 
@@ -150,7 +154,7 @@ export default function ScheduleGrid({
   return (
     <div
       className="overflow-auto rounded-xl border border-gray-200 bg-white shadow-sm"
-      style={{ maxHeight: "calc(100vh - 220px)" }}
+      style={{ maxHeight }}
     >
       <table className="w-full border-collapse text-sm">
         <thead>
@@ -226,7 +230,11 @@ export default function ScheduleGrid({
 
                   if (cell.type === "empty") {
                     return (
-                      <td key={field} className="border-b border-l border-gray-300 p-1 h-[52px]">
+                      <td
+                        key={field}
+                        onClick={() => onSelectEmpty(field, slot)}
+                        className="border-b border-l border-gray-300 p-1 h-[52px] cursor-pointer hover:bg-green-50 transition-colors"
+                      >
                         <EmptyCellContent />
                       </td>
                     );

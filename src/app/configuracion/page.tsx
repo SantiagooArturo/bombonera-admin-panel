@@ -88,7 +88,14 @@ export default function ConfiguracionPage() {
 
   async function handleEmitInvoice(reservation: Reservation) {
     setInvoiceModal({ step: "loading", reservation });
-    const result = await store.emitInvoice(reservation);
+    const result = await store.emitInvoice(
+      reservation,
+      undefined,
+      {
+        tipo_comprobante: "boleta",
+        doc_num: reservation.dni || "00000000",
+      }
+    );
     if (result) {
       setInvoiceModal({
         step: "preview",

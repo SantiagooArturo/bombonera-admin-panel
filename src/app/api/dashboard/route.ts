@@ -9,9 +9,10 @@ export async function GET() {
   try {
     const db = getDb();
 
-    const [transfersSnap, invoicesSnap] = await Promise.all([
+    const [transfersSnap, invoicesSnap, reservationsSnap] = await Promise.all([
       db.collection("transfers").where("status", "in", ["applied", "partial"]).get(),
       db.collection("invoices").get(),
+      db.collection("reservations").where("status", "in", ["pending", "paid"]).get(),
     ]);
 
     const invoicedTransferIds = new Set(
@@ -21,12 +22,19 @@ export async function GET() {
     let unverifiedTransfers = 0;
     let pendingInvoices = 0;
     const unverifiedReservationIds = new Set<string>();
+    const activeReservationIds = new Set(reservationsSnap.docs.map((d) => d.id));
 
     for (const doc of transfersSnap.docs) {
       const data = doc.data();
+      const reservationId = data.reservation_id as string | undefined;
+      const hasActiveReservation = !!reservationId && activeReservationIds.has(reservationId);
+
+      // Ignorar transferencias huérfanas de pruebas (sin reserva activa)
+      if (!hasActiveReservation) continue;
+
       if (!data.verified) {
         unverifiedTransfers++;
-        if (data.reservation_id) unverifiedReservationIds.add(data.reservation_id);
+        unverifiedReservationIds.add(reservationId!);
       } else if (!invoicedTransferIds.has(doc.id)) {
         pendingInvoices++;
       }
