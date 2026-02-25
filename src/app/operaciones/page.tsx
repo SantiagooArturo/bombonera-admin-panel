@@ -4,74 +4,28 @@ import { useEffect, useState, useMemo, useCallback } from "react";
 import ClientLayout, { useToastContext } from "@/components/ClientLayout";
 import { useStore } from "@/lib/hooks";
 
-import { TIME_SLOTS, type Reservation, type BlockedSlot, isReservationActive } from "@/lib/types";
+import { TIME_SLOTS, type Reservation, type BlockedSlot, type User, isReservationActive } from "@/lib/types";
 import ScheduleGrid from "@/components/operations/ScheduleGrid";
 import PaymentSidebar from "@/components/verificacion/PaymentSidebar";
 import { usePaymentSidebar } from "@/components/verificacion/usePaymentSidebar";
 import { computeAutoAssignments } from "@/components/operations/autoAssign";
-
-// ─── Helpers ────────────────────────────────────────────────────────────────
-
-function getCurrentSlot(): string {
-  const hour = new Date().getHours();
-  const slot = `${hour}:00`;
-  return TIME_SLOTS.includes(slot) ? slot : TIME_SLOTS[0];
-}
-
-const MAX_DAY_OFFSET = 7;
-
-function formatDateISO(date: Date): string {
-  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")}`;
-}
-
-function getDateWithOffset(offset: number): Date {
-  const d = new Date();
-  d.setDate(d.getDate() + offset);
-  return d;
-}
-
-function formatHour12(slot: string) {
-  const h = parseInt(slot.split(":")[0]);
-  if (h === 0) return "12 am";
-  if (h < 12) return `${h} am`;
-  if (h === 12) return "12 pm";
-  return `${h - 12} pm`;
-}
-
-function getEndSlotOptions(startSlot: string): string[] {
-  const startIdx = TIME_SLOTS.indexOf(startSlot);
-  if (startIdx === -1) return [];
-  return TIME_SLOTS.slice(startIdx + 1);
-}
-
-function getSlotsInRange(startSlot: string, endSlot: string): string[] {
-  const startIdx = TIME_SLOTS.indexOf(startSlot);
-  const endIdx = TIME_SLOTS.indexOf(endSlot);
-  if (startIdx === -1 || endIdx === -1 || startIdx >= endIdx) return [];
-  return TIME_SLOTS.slice(startIdx, endIdx);
-}
-
-const BLOCK_REASONS = [
-  "Mantenimiento",
-  "Evento privado",
-  "Clima / lluvia",
-  "Otro",
-] as const;
-
-const FIELD_TO_COURT_TYPE: Record<number, Reservation["court_type"]> = {
-  1: "voley_6v6",
-  2: "voley_6v6",
-  3: "voley_6v6",
-  4: "voley_basket_6v6",
-  5: "voley_5v5",
-  6: "voley_5v5",
-  7: "voley_5v5",
-  8: "voley_6v6",
-  9: "voley_basket_5v5",
-  10: "voley_6v6",
-  11: "voley_6v6",
-  12: "voley_6v6",
-};
+import OperationsHeader from "@/features/operaciones/components/OperationsHeader";
+import SlotActionModal from "@/features/operaciones/components/SlotActionModal";
+import UnblockModal from "@/features/operaciones/components/UnblockModal";
+import SendAvailabilityModal from "@/features/operaciones/components/SendAvailabilityModal";
+import {
+  BLOCK_REASONS,
+  FIELD_TO_COURT_TYPE,
+  MAX_DAY_OFFSET,
+  formatDateISO,
+  formatHour12,
+  getCurrentSlot,
+  getDateWithOffset,
+  getEndSlotOptions,
+  getSlotsInRange,
+  getUserName,
+  getUserPhone,
+} from "@/features/operaciones/utils";
 
 // ─── Page ───────────────────────────────────────────────────────────────────
 
@@ -83,6 +37,7 @@ export default function OperacionesPage() {
   const [currentSlot, setCurrentSlot] = useState(getCurrentSlot);
   const [reservations, setReservations] = useState<Reservation[]>([]);
   const [blockedSlots, setBlockedSlots] = useState<BlockedSlot[]>([]);
+  const [users, setUsers] = useState<User[]>([]);
   const [loading, setLoading] = useState(true);
 
   // Unblock dialog
@@ -100,6 +55,9 @@ export default function OperacionesPage() {
   const [manualPhone, setManualPhone] = useState("");
   const [slotActionLoading, setSlotActionLoading] = useState(false);
   const [extendingReservationId, setExtendingReservationId] = useState<string | null>(null);
+  const [sendAvailabilityOpen, setSendAvailabilityOpen] = useState(false);
+  const [sendAvailabilityLoading, setSendAvailabilityLoading] = useState(false);
+  const [availabilityPhone, setAvailabilityPhone] = useState("");
 
   const sidebar = usePaymentSidebar({
     onReservationUpdated: (resId, patch) => {
@@ -114,6 +72,27 @@ export default function OperacionesPage() {
     const interval = setInterval(() => setCurrentSlot(getCurrentSlot()), 30000);
     return () => clearInterval(interval);
   }, []);
+
+  useEffect(() => {
+    let mounted = true;
+    async function loadUsers() {
+      try {
+        if (!store.isLoaded("users")) {
+          await store.fetchUsers();
+        }
+        const data = store.getUsers();
+        if (!mounted) return;
+        const sorted = [...data].sort((a, b) => getUserName(a).localeCompare(getUserName(b), "es"));
+        setUsers(sorted);
+      } catch (error) {
+        console.error("Error loading users:", error);
+      }
+    }
+    loadUsers();
+    return () => {
+      mounted = false;
+    };
+  }, [store]);
 
   const selectedDate = useMemo(() => formatDateISO(getDateWithOffset(dayOffset)), [dayOffset]);
 
@@ -132,6 +111,13 @@ export default function OperacionesPage() {
   const selectedSlots = useMemo(
     () => (slotActionTarget ? getSlotsInRange(slotActionTarget.startSlot, slotActionEndSlot) : []),
     [slotActionTarget, slotActionEndSlot]
+  );
+  const phoneDirectory = useMemo(
+    () =>
+      users
+        .map((u) => ({ phone: getUserPhone(u), name: getUserName(u), dni: (u.last_dni || "").replace(/\D/g, "").slice(0, 8) }))
+        .filter((u) => u.phone.length >= 9),
+    [users]
   );
 
   useEffect(() => {
@@ -229,6 +215,12 @@ export default function OperacionesPage() {
     setManualName("");
     setManualDni("");
     setManualPhone("");
+  }
+
+  function closeSendAvailabilityModal() {
+    setSendAvailabilityOpen(false);
+    setSendAvailabilityLoading(false);
+    setAvailabilityPhone("");
   }
 
   function hasConflicts(field: number, slots: string[]) {
@@ -339,6 +331,53 @@ export default function OperacionesPage() {
     }
   }
 
+  async function handleSendAvailability() {
+    const phone = availabilityPhone.trim().replace(/\D/g, "");
+    if (phone.length < 9) {
+      toast("Ingresa un WhatsApp válido.", "error");
+      return;
+    }
+
+    setSendAvailabilityLoading(true);
+    try {
+      const chatId = phone.startsWith("51") ? phone : `51${phone}`;
+      const res = await fetch("/api/send-availability", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          chat_id: chatId,
+          date: selectedDate,
+        }),
+      });
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        throw new Error(typeof data?.error === "string" ? data.error : "No se pudo enviar");
+      }
+      toast("Disponibilidad enviada por WhatsApp", "success");
+      closeSendAvailabilityModal();
+    } catch (error) {
+      console.error(error);
+      toast(error instanceof Error ? error.message : "No se pudo enviar disponibilidad.", "error");
+    } finally {
+      setSendAvailabilityLoading(false);
+    }
+  }
+
+  function openSendAvailabilityModal() {
+    setAvailabilityPhone("");
+    setSendAvailabilityOpen(true);
+  }
+
+  function handleManualPhoneChange(rawValue: string) {
+    const cleanPhone = rawValue.replace(/\D/g, "").slice(0, 12);
+    setManualPhone(cleanPhone);
+    const match = phoneDirectory.find((u) => u.phone === cleanPhone);
+    if (match) {
+      setManualName(match.name);
+      if (!manualDni && match.dni) setManualDni(match.dni);
+    }
+  }
+
   async function handleExtendReservationOneHour(reservation: Reservation) {
     if (!reservation.field || !reservation.time_slots?.length) {
       toast("No se puede extender esta reserva.", "error");
@@ -403,42 +442,16 @@ export default function OperacionesPage() {
   return (
     <ClientLayout>
       <div className="-mb-24 md:-mb-8 px-2 md:px-3 py-2 h-[calc(100dvh-12px)] flex flex-col">
-        {/* Header */}
-        <div className="mb-2 shrink-0">
-          <div className="flex items-center gap-3">
-            <button
-              onClick={() => setDayOffset((prev) => Math.max(0, prev - 1))}
-              disabled={dayOffset === 0}
-              className="p-2 rounded-lg border border-gray-200 hover:bg-gray-100 disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
-              aria-label="Día anterior"
-            >
-              <svg className="w-5 h-5 text-gray-700" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
-              </svg>
-            </button>
-            <span className="text-body-lg text-gray-700 font-semibold capitalize w-[280px] text-center">
-              {selectedDateLabel}
-            </span>
-            <button
-              onClick={() => setDayOffset((prev) => Math.min(MAX_DAY_OFFSET, prev + 1))}
-              disabled={dayOffset >= MAX_DAY_OFFSET}
-              className="p-2 rounded-lg border border-gray-200 hover:bg-gray-100 disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
-              aria-label="Día siguiente"
-            >
-              <svg className="w-5 h-5 text-gray-700" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
-              </svg>
-            </button>
-            {!isToday && (
-              <button
-                onClick={() => setDayOffset(0)}
-                className="ml-2 px-3 py-1.5 text-sm font-medium text-blue-600 bg-blue-50 rounded-lg hover:bg-blue-100 transition-colors"
-              >
-                Ir a Hoy
-              </button>
-            )}
-          </div>
-        </div>
+        <OperationsHeader
+          dayOffset={dayOffset}
+          selectedDateLabel={selectedDateLabel}
+          isToday={isToday}
+          maxDayOffset={MAX_DAY_OFFSET}
+          onPrevDay={() => setDayOffset((prev) => Math.max(0, prev - 1))}
+          onNextDay={() => setDayOffset((prev) => Math.min(MAX_DAY_OFFSET, prev + 1))}
+          onGoToday={() => setDayOffset(0)}
+          onOpenSendAvailability={openSendAvailabilityModal}
+        />
 
         {/* Grid */}
         <div className={`flex-1 min-h-0 transition-opacity duration-200 ${loading ? "opacity-50 pointer-events-none" : ""}`}>
@@ -480,228 +493,53 @@ export default function OperacionesPage() {
         />
       )}
 
-      {/* Slot Action Modal */}
-      {slotActionTarget && (
-        <>
-          <div className="fixed inset-0 z-40 bg-black/40" onClick={closeSlotActionModal} />
-          <div className="fixed z-50 top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 bg-white rounded-2xl shadow-2xl p-6 w-full max-w-lg space-y-5">
-            <div>
-              <h3 className="text-xl font-bold text-gray-900">Acción rápida</h3>
-              <p className="text-sm text-gray-500 mt-1">
-                Cancha {slotActionTarget.field} · {selectedDate} · desde {formatHour12(slotActionTarget.startSlot)}
-              </p>
-            </div>
+      <SlotActionModal
+        open={Boolean(slotActionTarget)}
+        field={slotActionTarget?.field ?? 0}
+        selectedDate={selectedDate}
+        startSlot={slotActionTarget?.startSlot ?? TIME_SLOTS[0]}
+        endSlotOptions={endSlotOptions}
+        selectedSlotsCount={selectedSlots.length}
+        slotActionEndSlot={slotActionEndSlot}
+        setSlotActionEndSlot={setSlotActionEndSlot}
+        slotActionMode={slotActionMode}
+        setSlotActionMode={setSlotActionMode}
+        blockReasons={BLOCK_REASONS}
+        blockReason={blockReason}
+        setBlockReason={(value) => setBlockReason(value as (typeof BLOCK_REASONS)[number])}
+        customReason={customReason}
+        setCustomReason={setCustomReason}
+        manualPhone={manualPhone}
+        onManualPhoneChange={handleManualPhoneChange}
+        phoneOptions={phoneDirectory}
+        manualName={manualName}
+        setManualName={setManualName}
+        manualDni={manualDni}
+        setManualDni={setManualDni}
+        slotActionLoading={slotActionLoading}
+        formatHour12={formatHour12}
+        onClose={closeSlotActionModal}
+        onSubmit={handleSubmitSlotAction}
+      />
 
-            <div>
-              <p className="text-sm font-semibold text-gray-700 mb-2">¿Qué deseas hacer?</p>
-              <div className="grid grid-cols-2 gap-3">
-                <button
-                  type="button"
-                  onClick={() => setSlotActionMode("manual")}
-                  className={`py-3 rounded-xl font-bold border-2 transition-colors ${
-                    slotActionMode === "manual"
-                      ? "border-blue-500 bg-blue-50 text-blue-700"
-                      : "border-gray-200 text-gray-600 hover:bg-gray-50"
-                  }`}
-                >
-                  Reserva manual
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setSlotActionMode("block")}
-                  className={`py-3 rounded-xl font-bold border-2 transition-colors ${
-                    slotActionMode === "block"
-                      ? "border-red-500 bg-red-50 text-red-700"
-                      : "border-gray-200 text-gray-600 hover:bg-gray-50"
-                  }`}
-                >
-                  Bloquear
-                </button>
-              </div>
-            </div>
+      <UnblockModal
+        target={unblockTarget}
+        unblocking={unblocking}
+        formatHour12={formatHour12}
+        onClose={() => setUnblockTarget(null)}
+        onConfirm={handleUnblock}
+      />
 
-            <div>
-              <label className="block text-sm font-semibold text-gray-700 mb-2">Rango de horario</label>
-              <div className="grid grid-cols-2 gap-3">
-                <div className="rounded-xl border border-gray-200 bg-gray-50 px-4 py-3">
-                  <p className="text-xs text-gray-500">Desde</p>
-                  <p className="font-bold text-gray-900">{formatHour12(slotActionTarget.startSlot)}</p>
-                </div>
-                <div>
-                  <label className="sr-only" htmlFor="end-slot">Hasta</label>
-                  <select
-                    id="end-slot"
-                    value={slotActionEndSlot}
-                    onChange={(e) => setSlotActionEndSlot(e.target.value)}
-                    className="w-full rounded-xl border-2 border-gray-200 bg-gray-50 px-4 py-3 font-bold text-gray-900 focus:border-blue-500 focus:outline-none"
-                  >
-                    {endSlotOptions.map((slot) => (
-                      <option key={slot} value={slot}>
-                        {formatHour12(slot)}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-              </div>
-              <p className="text-xs text-gray-500 mt-2">
-                {selectedSlots.length} hora{selectedSlots.length !== 1 ? "s" : ""} seleccionada
-                {selectedSlots.length !== 1 ? "s" : ""}
-              </p>
-            </div>
-
-            {slotActionMode === "block" ? (
-              <div className="space-y-3">
-                <div>
-                  <label className="block text-sm font-semibold text-gray-700 mb-2">Motivo</label>
-                  <select
-                    value={blockReason}
-                    onChange={(e) => setBlockReason(e.target.value as (typeof BLOCK_REASONS)[number])}
-                    className="w-full rounded-xl border-2 border-gray-200 bg-gray-50 px-4 py-3 font-semibold text-gray-800 focus:border-red-500 focus:outline-none"
-                  >
-                    {BLOCK_REASONS.map((r) => (
-                      <option key={r} value={r}>{r}</option>
-                    ))}
-                  </select>
-                </div>
-                {blockReason === "Otro" && (
-                  <input
-                    type="text"
-                    value={customReason}
-                    onChange={(e) => setCustomReason(e.target.value)}
-                    placeholder="Escribe el motivo"
-                    className="w-full rounded-xl border-2 border-gray-200 bg-gray-50 px-4 py-3 font-semibold text-gray-800 focus:border-red-500 focus:outline-none"
-                  />
-                )}
-              </div>
-            ) : (
-              <div className="space-y-3">
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                  <input
-                    type="text"
-                    value={manualName}
-                    onChange={(e) => setManualName(e.target.value)}
-                    placeholder="Nombre completo"
-                    className="rounded-xl border-2 border-gray-200 bg-gray-50 px-4 py-3 font-semibold text-gray-800 focus:border-blue-500 focus:outline-none"
-                  />
-                  <input
-                    type="text"
-                    value={manualDni}
-                    onChange={(e) => setManualDni(e.target.value.replace(/\D/g, "").slice(0, 8))}
-                    placeholder="DNI (opcional)"
-                    className="rounded-xl border-2 border-gray-200 bg-gray-50 px-4 py-3 font-semibold text-gray-800 focus:border-blue-500 focus:outline-none"
-                  />
-                </div>
-                <p className="text-xs text-gray-400 -mt-1">DNI opcional. Puedes completarlo luego para emitir boleta.</p>
-                <input
-                  type="text"
-                  value={manualPhone}
-                  onChange={(e) => setManualPhone(e.target.value.replace(/\D/g, "").slice(0, 12))}
-                  placeholder="WhatsApp (ej: 987654321)"
-                  className="w-full rounded-xl border-2 border-gray-200 bg-gray-50 px-4 py-3 font-semibold text-gray-800 focus:border-blue-500 focus:outline-none"
-                />
-              </div>
-            )}
-
-            <div className="flex gap-3 pt-1">
-              <button
-                onClick={closeSlotActionModal}
-                disabled={slotActionLoading}
-                className="flex-1 py-3 px-4 font-semibold rounded-xl border-2 border-gray-300 text-gray-700 hover:bg-gray-100 transition-colors text-sm disabled:opacity-50"
-              >
-                Cancelar
-              </button>
-              <button
-                onClick={handleSubmitSlotAction}
-                disabled={slotActionLoading}
-                className={`flex-1 py-3 px-4 font-semibold rounded-xl text-white transition-colors text-sm disabled:opacity-50 ${
-                  slotActionMode === "block" ? "bg-red-600 hover:bg-red-700" : "bg-blue-600 hover:bg-blue-700"
-                }`}
-              >
-                {slotActionLoading
-                  ? "Guardando..."
-                  : slotActionMode === "block"
-                    ? "Bloquear horario"
-                    : "Crear reserva"}
-              </button>
-            </div>
-          </div>
-        </>
-      )}
-
-      {/* Unblock Dialog */}
-      {unblockTarget && (
-        <>
-          <div className="fixed inset-0 z-40 bg-black/40" onClick={() => setUnblockTarget(null)} />
-          <div className="fixed z-50 top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 bg-white rounded-2xl shadow-2xl p-6 w-full max-w-md space-y-4">
-            <div className="flex items-center gap-3">
-              <div className="w-12 h-12 rounded-xl bg-red-100 flex items-center justify-center shrink-0">
-                <svg className="w-6 h-6 text-red-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" />
-                </svg>
-              </div>
-              <div>
-                <h3 className="text-lg font-bold text-gray-900">Horario Bloqueado</h3>
-                <p className="text-sm text-gray-500">{unblockTarget.reason}</p>
-              </div>
-            </div>
-
-            <div className="bg-gray-50 rounded-xl p-4 space-y-2">
-              <div className="flex justify-between text-sm">
-                <span className="text-gray-500">Cancha</span>
-                <span className="font-bold text-gray-800">Cancha {unblockTarget.field}</span>
-              </div>
-              <div className="flex justify-between text-sm">
-                <span className="text-gray-500">Horario</span>
-                <span className="font-bold text-gray-800">{formatHour12(unblockTarget.time_slot)}</span>
-              </div>
-              <div className="flex justify-between text-sm">
-                <span className="text-gray-500">Fecha</span>
-                <span className="font-bold text-gray-800">
-                  {new Date(unblockTarget.date + "T12:00:00").toLocaleDateString("es-PE", {
-                    weekday: "long", day: "numeric", month: "long",
-                  })}
-                </span>
-              </div>
-            </div>
-
-            <p className="text-sm text-gray-500">
-              Solo se desbloqueará este día específico. Si el bloqueo es recurrente, los demás días seguirán bloqueados.
-            </p>
-
-            <div className="flex gap-3">
-              <button
-                onClick={() => setUnblockTarget(null)}
-                disabled={unblocking}
-                className="flex-1 py-3 px-4 font-semibold rounded-xl border-2 border-gray-300 text-gray-700 hover:bg-gray-100 transition-colors text-sm disabled:opacity-50"
-              >
-                Cancelar
-              </button>
-              <button
-                onClick={handleUnblock}
-                disabled={unblocking}
-                className="flex-1 py-3 px-4 font-semibold rounded-xl bg-red-600 text-white hover:bg-red-700 transition-colors text-sm disabled:opacity-50 flex items-center justify-center gap-2"
-              >
-                {unblocking ? (
-                  <>
-                    <svg className="w-5 h-5 animate-spin" fill="none" viewBox="0 0 24 24">
-                      <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
-                      <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
-                    </svg>
-                    Desbloqueando...
-                  </>
-                ) : (
-                  <>
-                    <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 11V7a4 4 0 118 0m-4 8v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2z" />
-                    </svg>
-                    Desbloquear
-                  </>
-                )}
-              </button>
-            </div>
-          </div>
-        </>
-      )}
+      <SendAvailabilityModal
+        open={sendAvailabilityOpen}
+        selectedDate={selectedDate}
+        availabilityPhone={availabilityPhone}
+        setAvailabilityPhone={setAvailabilityPhone}
+        phoneOptions={phoneDirectory}
+        loading={sendAvailabilityLoading}
+        onClose={closeSendAvailabilityModal}
+        onSubmit={handleSendAvailability}
+      />
     </ClientLayout>
   );
 }
