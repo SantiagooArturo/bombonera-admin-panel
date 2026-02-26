@@ -182,7 +182,6 @@ export default function SlotActionModal({
                   className="w-full rounded-xl border-2 border-gray-200 bg-gray-50 px-4 py-3 font-semibold text-gray-800 focus:border-blue-500 focus:outline-none"
                 />
               </div>
-              <p className="text-xs text-gray-400 -mt-1">DNI opcional. Puedes completarlo luego para emitir boleta.</p>
             </div>
           )}
 

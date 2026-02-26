@@ -3,6 +3,7 @@
 import { useState, useRef, useEffect, useCallback } from "react";
 import { Transfer, Invoice, Reservation, PaymentMethod } from "@/lib/types";
 import { renderPdfToDataUrl } from "@/lib/pdf-preview";
+import { calculateReservationPrice } from "@/features/operaciones/utils";
 
 // ─── WhatsApp icon (reutilizado) ─────────────────────────────────────────────
 
@@ -248,22 +249,20 @@ function RegisterPaymentForm({
           <button
             type="button"
             onClick={() => { setMethod("efectivo"); clearFile(); }}
-            className={`flex-1 py-3 rounded-xl font-semibold text-sm border-2 transition-all ${
-              method === "efectivo"
-                ? "border-green-500 bg-green-50 text-green-700"
-                : "border-gray-200 text-gray-500 hover:border-gray-300"
-            }`}
+            className={`flex-1 py-3 rounded-xl font-semibold text-sm border-2 transition-all ${method === "efectivo"
+              ? "border-green-500 bg-green-50 text-green-700"
+              : "border-gray-200 text-gray-500 hover:border-gray-300"
+              }`}
           >
             Efectivo
           </button>
           <button
             type="button"
             onClick={() => setMethod("digital")}
-            className={`flex-1 py-3 rounded-xl font-semibold text-sm border-2 transition-all ${
-              method === "digital"
-                ? "border-blue-500 bg-blue-50 text-blue-700"
-                : "border-gray-200 text-gray-500 hover:border-gray-300"
-            }`}
+            className={`flex-1 py-3 rounded-xl font-semibold text-sm border-2 transition-all ${method === "digital"
+              ? "border-blue-500 bg-blue-50 text-blue-700"
+              : "border-gray-200 text-gray-500 hover:border-gray-300"
+              }`}
           >
             Digital
           </button>
@@ -435,11 +434,10 @@ function TransferCard({
           {transfer.source !== "manual" ? (
             <button
               onClick={() => onVerify(transfer.id, !!transfer.verified)}
-              className={`w-full py-2.5 px-4 rounded-xl font-bold text-sm transition-all active:scale-[0.98] flex items-center justify-center gap-2 ${
-                transfer.verified
-                  ? "bg-white border-2 border-gray-200 text-gray-600 hover:border-red-200 hover:text-red-500"
-                  : "bg-green-600 text-white hover:bg-green-700 shadow-sm"
-              }`}
+              className={`w-full py-2.5 px-4 rounded-xl font-bold text-sm transition-all active:scale-[0.98] flex items-center justify-center gap-2 ${transfer.verified
+                ? "bg-white border-2 border-gray-200 text-gray-600 hover:border-red-200 hover:text-red-500"
+                : "bg-green-600 text-white hover:bg-green-700 shadow-sm"
+                }`}
             >
               {transfer.verified ? (
                 <><svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg>Deshacer</>
@@ -500,11 +498,10 @@ function TransferCard({
                     }
                   }}
                   disabled={wspStatus !== "idle"}
-                  className={`flex-1 py-2.5 px-3 rounded-xl font-bold text-sm flex items-center justify-center gap-2 transition-all ${
-                    wspStatus === "sent"
-                      ? "bg-green-50 border-2 border-green-200 text-green-700"
-                      : "bg-green-600 text-white hover:bg-green-700 border-2 border-green-600 hover:border-green-700"
-                  } disabled:opacity-80`}
+                  className={`flex-1 py-2.5 px-3 rounded-xl font-bold text-sm flex items-center justify-center gap-2 transition-all ${wspStatus === "sent"
+                    ? "bg-green-50 border-2 border-green-200 text-green-700"
+                    : "bg-green-600 text-white hover:bg-green-700 border-2 border-green-600 hover:border-green-700"
+                    } disabled:opacity-80`}
                 >
                   {wspStatus === "sending" ? (
                     <><svg className="w-4 h-4 animate-spin" fill="none" viewBox="0 0 24 24"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" /><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" /></svg>Enviando</>
@@ -578,17 +575,15 @@ function TransferCard({
             <div className="grid grid-cols-2 gap-2">
               <button
                 onClick={() => setDocType("boleta")}
-                className={`py-2 rounded-lg border-2 font-semibold ${
-                  docType === "boleta" ? "border-blue-500 bg-blue-50 text-blue-700" : "border-gray-200 text-gray-600"
-                }`}
+                className={`py-2 rounded-lg border-2 font-semibold ${docType === "boleta" ? "border-blue-500 bg-blue-50 text-blue-700" : "border-gray-200 text-gray-600"
+                  }`}
               >
                 Con DNI
               </button>
               <button
                 onClick={() => setDocType("factura")}
-                className={`py-2 rounded-lg border-2 font-semibold ${
-                  docType === "factura" ? "border-blue-500 bg-blue-50 text-blue-700" : "border-gray-200 text-gray-600"
-                }`}
+                className={`py-2 rounded-lg border-2 font-semibold ${docType === "factura" ? "border-blue-500 bg-blue-50 text-blue-700" : "border-gray-200 text-gray-600"
+                  }`}
               >
                 Con RUC
               </button>
@@ -722,7 +717,10 @@ export default function PaymentSidebar({
   }, [reservation.id, reservation.dni]);
   const [arrivedLoading, setArrivedLoading] = useState(false);
 
-  const totalPrice = reservation.total_price || 0;
+  const calculatedPrice = reservation.field && reservation.time_slots
+    ? calculateReservationPrice(reservation.field, reservation.date, reservation.time_slots)
+    : 0;
+  const totalPrice = reservation.total_price || calculatedPrice;
   const amountPaid = reservation.amount_paid || 0;
   const remaining = Math.max(0, totalPrice - amountPaid);
   const fullyPaid = remaining <= 0;
@@ -859,11 +857,10 @@ export default function PaymentSidebar({
                 <button
                   onClick={handleArrivedToggle}
                   disabled={arrivedLoading}
-                  className={`px-5 py-2.5 rounded-xl font-bold text-sm transition-all disabled:opacity-50 ${
-                    arrived
-                      ? "bg-green-500 text-white shadow-md hover:bg-green-600"
-                      : "bg-blue-600 text-white shadow-sm hover:bg-blue-700"
-                  }`}
+                  className={`px-5 py-2.5 rounded-xl font-bold text-sm transition-all disabled:opacity-50 ${arrived
+                    ? "bg-green-500 text-white shadow-md hover:bg-green-600"
+                    : "bg-blue-600 text-white shadow-sm hover:bg-blue-700"
+                    }`}
                 >
                   {arrivedLoading ? "..." : arrived ? "✓ Ya llegó" : "Marcar llegada"}
                 </button>

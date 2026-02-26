@@ -68,3 +68,28 @@ export function getUserPhone(u: User): string {
 export function getUserName(u: User): string {
   return (u.custom_name || u.contact_name || u.last_representative_name || "Sin nombre").trim();
 }
+
+export function calculateReservationPrice(field: number, dateStr: string, time_slots: string[]): number {
+  if (!time_slots || time_slots.length === 0) return 0;
+
+  const date = new Date(dateStr + "T12:00:00");
+  const day = date.getDay(); // 0 = Domingo, 6 = Sábado
+  const isWeekend = day === 0 || day === 6;
+
+  let total = 0;
+  for (const slot of time_slots) {
+    const hour = parseInt(slot.split(":")[0], 10);
+    const isNight = hour >= 18;
+
+    if (field === 9) {
+      total += isNight ? 60 : 40;
+    } else {
+      if (isNight) {
+        total += 100;
+      } else {
+        total += isWeekend ? 80 : 70;
+      }
+    }
+  }
+  return total;
+}

@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getDb } from "@/lib/firebase-admin";
+import { calculateReservationPrice } from "@/features/operaciones/utils";
 
 export async function GET(request: NextRequest) {
   try {
@@ -102,6 +103,8 @@ export async function POST(request: NextRequest) {
     const lastSlot = String(time_slots[time_slots.length - 1]);
     const endHour = parseInt(lastSlot.split(":")[0], 10) + 1;
 
+    const calculatedPrice = calculateReservationPrice(field, date, time_slots);
+
     const payload = {
       chat_id: cleanChatId || cleanPhone,
       court_type,
@@ -112,8 +115,8 @@ export async function POST(request: NextRequest) {
       slot_keys: time_slots.map((slot: string) => `${dayId}-${slot}`),
       created_at: new Date().toISOString(),
       status: "paid",
-      total_price: 0,
-      reservation_price: 0,
+      total_price: calculatedPrice,
+      reservation_price: calculatedPrice,
       phone_number: cleanPhone,
       amount_paid: 0,
       representative_name: representative_name || "",
@@ -191,6 +194,10 @@ export async function PATCH(request: NextRequest) {
       updateData.time_slots = time_slots;
       updateData.slot_keys = time_slots.map((slot: string) => `${dayId}-${slot}`);
       updateData.time_ranges = [{ start: time_slots[0], end: `${endHour}:00`, slot: `${dayId}-${time_slots[0]}` }];
+
+      const newPrice = calculateReservationPrice(targetField, date, time_slots);
+      updateData.total_price = newPrice;
+      updateData.reservation_price = newPrice;
     }
 
     if (Object.keys(updateData).length === 0) {
