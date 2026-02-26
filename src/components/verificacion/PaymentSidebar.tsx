@@ -340,7 +340,7 @@ function RegisterPaymentForm({
 // ─── Transfer Card ───────────────────────────────────────────────────────────
 
 function TransferCard({
-  transfer, invoice, emittingInvoiceId, onVerify, onEmitInvoice, onAttachInvoice, onRevoke, onViewImage, onHover, chatId,
+  transfer, invoice, emittingInvoiceId, onVerify, onEmitInvoice, onAttachInvoice, onRevoke, onViewImage, onHover, chatId, clientDni,
 }: {
   transfer: Transfer;
   invoice: Invoice | undefined;
@@ -355,6 +355,7 @@ function TransferCard({
   onViewImage: (url: string) => void;
   onHover: (hovering: boolean) => void;
   chatId: string;
+  clientDni?: string | null;
 }) {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [dragOver, setDragOver] = useState(false);
@@ -546,7 +547,7 @@ function TransferCard({
               <button
                 onClick={() => {
                   setDocType("boleta");
-                  setDocNumber("");
+                  setDocNumber(clientDni || "");
                   setShowEmitModal(true);
                 }}
                 disabled={emittingInvoiceId === transfer.id}
@@ -574,14 +575,24 @@ function TransferCard({
 
             <div className="grid grid-cols-2 gap-2">
               <button
-                onClick={() => setDocType("boleta")}
+                onClick={() => {
+                  if (docType !== "boleta") {
+                    setDocType("boleta");
+                    setDocNumber(clientDni || "");
+                  }
+                }}
                 className={`py-2 rounded-lg border-2 font-semibold ${docType === "boleta" ? "border-blue-500 bg-blue-50 text-blue-700" : "border-gray-200 text-gray-600"
                   }`}
               >
                 Con DNI
               </button>
               <button
-                onClick={() => setDocType("factura")}
+                onClick={() => {
+                  if (docType !== "factura") {
+                    setDocType("factura");
+                    setDocNumber("");
+                  }
+                }}
                 className={`py-2 rounded-lg border-2 font-semibold ${docType === "factura" ? "border-blue-500 bg-blue-50 text-blue-700" : "border-gray-200 text-gray-600"
                   }`}
               >
@@ -907,6 +918,7 @@ export default function PaymentSidebar({
                   onViewImage={setViewingImage}
                   onHover={(h) => setHoveredTransferId(h ? transfer.id : null)}
                   chatId={reservation.chat_id}
+                  clientDni={reservation.dni}
                 />
               );
             })
