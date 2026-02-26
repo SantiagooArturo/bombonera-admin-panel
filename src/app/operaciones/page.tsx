@@ -124,8 +124,28 @@ export default function OperacionesPage() {
     sidebar.close();
     setUnblockTarget(null);
     setSlotActionTarget(null);
-  // eslint-disable-next-line react-hooks/exhaustive-deps
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [dayOffset]);
+
+  useEffect(() => {
+    function handleKeyDown(e: KeyboardEvent) {
+      if (document.activeElement) {
+        const tag = document.activeElement.tagName.toLowerCase();
+        if (tag === "input" || tag === "textarea" || tag === "select") return;
+        // ignorar también en caso de tener elementos editables por contenido
+        if (document.activeElement.getAttribute('contenteditable') === 'true') return;
+      }
+
+      if (e.key === "ArrowLeft") {
+        setDayOffset((prev) => Math.max(0, prev - 1));
+      } else if (e.key === "ArrowRight") {
+        setDayOffset((prev) => Math.min(MAX_DAY_OFFSET, prev + 1));
+      }
+    }
+
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, []);
 
   // ── Fetch reservas y bloqueos del día ─────────────────────────────────
 
