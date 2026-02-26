@@ -362,7 +362,8 @@ function TransferCard({
   const [showEmitModal, setShowEmitModal] = useState(false);
   const [docType, setDocType] = useState<"boleta" | "factura">("boleta");
   const [docNumber, setDocNumber] = useState("");
-  const [wspStatus, setWspStatus] = useState<"idle" | "sending" | "sent">("idle");
+  const [wspStatus, setWspStatus] = useState<"idle" | "sending" | "sent" | "error">("idle");
+  const [wspError, setWspError] = useState<string | null>(null);
   const isValidated = transfer.verified || transfer.source === "manual";
   const canAttach = isValidated && !invoice;
 
@@ -484,23 +485,30 @@ function TransferCard({
                 </a>
                 <button
                   onClick={async () => {
-                    if (wspStatus !== "idle") return;
+                    if (wspStatus === "sending" || wspStatus === "sent") return;
                     setWspStatus("sending");
+                    setWspError(null);
                     try {
                       const res = await fetch("/api/invoices/send", {
                         method: "POST",
                         headers: { "Content-Type": "application/json" },
                         body: JSON.stringify({ chat_id: chatId, file_url: invoice.file_url }),
                       });
-                      if (!res.ok) throw new Error();
+                      if (!res.ok) {
+                        const data = await res.json().catch(() => ({}));
+                        throw new Error(typeof data?.error === "string" ? data.error : "No se pudo enviar la boleta.");
+                      }
                       setWspStatus("sent");
-                    } catch {
-                      setWspStatus("idle");
+                    } catch (error) {
+                      setWspStatus("error");
+                      setWspError(error instanceof Error ? error.message : "No se pudo enviar la boleta.");
                     }
                   }}
-                  disabled={wspStatus !== "idle"}
+                  disabled={wspStatus === "sending" || wspStatus === "sent"}
                   className={`flex-1 py-2.5 px-3 rounded-xl font-bold text-sm flex items-center justify-center gap-2 transition-all ${wspStatus === "sent"
                     ? "bg-green-50 border-2 border-green-200 text-green-700"
+                    : wspStatus === "error"
+                    ? "bg-red-50 border-2 border-red-200 text-red-700"
                     : "bg-green-600 text-white hover:bg-green-700 border-2 border-green-600 hover:border-green-700"
                     } disabled:opacity-80`}
                 >
@@ -508,11 +516,16 @@ function TransferCard({
                     <><svg className="w-4 h-4 animate-spin" fill="none" viewBox="0 0 24 24"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" /><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" /></svg>Enviando</>
                   ) : wspStatus === "sent" ? (
                     <><svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" /></svg>Enviado</>
+                  ) : wspStatus === "error" ? (
+                    <><svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v4m0 8v4m8-8h-4M8 12H4" /></svg>Reintentar envío</>
                   ) : (
                     <><svg className="w-4 h-4" fill="currentColor" viewBox="0 0 24 24"><path d={WSP_ICON_PATH} /></svg>Enviar</>
                   )}
                 </button>
               </div>
+              {wspError && (
+                <p className="text-xs text-red-600 font-medium">{wspError}</p>
+              )}
             </div>
           ) : (
             <div className="space-y-3">

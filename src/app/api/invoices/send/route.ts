@@ -17,6 +17,7 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ success: true });
   } catch (error) {
     console.error("Error sending invoice via WhatsApp:", error);
-    return NextResponse.json({ error: "Error al enviar boleta" }, { status: 500 });
+    const errorMessage = error instanceof Error ? error.message : "Error al enviar boleta";
+    return NextResponse.json({ error: errorMessage }, { status: 500 });
   }
 }
