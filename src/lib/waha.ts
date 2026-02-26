@@ -1,10 +1,12 @@
 import { getDb } from "@/lib/firebase-admin";
 
-const CHATBOT_API_URL = process.env.CHATBOT_API_URL || "";
+let rawChatUrl = process.env.CHATBOT_API_URL || "";
+if (rawChatUrl && !rawChatUrl.startsWith("http")) rawChatUrl = `https://${rawChatUrl}`;
+const CHATBOT_API_URL = rawChatUrl;
 
 const WAHA_URL = "https://waha-live-wahaa.dmncie.easypanel.host";
 const WAHA_API_KEY = "MiClaveSegura123";
-const WAHA_SESSION = "session_01kgx7mr4058d2hc98m62jx2cy";
+const WAHA_SESSION = process.env.WAHA_SESSION || "default";
 
 function normalizeChatId(chatId: string): string {
   const raw = (chatId || "").trim();

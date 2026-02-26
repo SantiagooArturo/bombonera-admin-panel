@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 
 const WAHA_URL = "https://waha-live-wahaa.dmncie.easypanel.host";
 const WAHA_API_KEY = "MiClaveSegura123";
+const WAHA_SESSION = process.env.WAHA_SESSION || "default";
 
 export async function POST(request: NextRequest) {
   try {
@@ -25,7 +26,7 @@ export async function POST(request: NextRequest) {
       method: "POST",
       headers,
       body: JSON.stringify({
-        session: "session_01kgx7mr4058d2hc98m62jx2cy",
+        session: WAHA_SESSION,
         chatId: chat_id,
         text: message,
       }),

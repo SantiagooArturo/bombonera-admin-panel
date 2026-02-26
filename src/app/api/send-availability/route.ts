@@ -1,7 +1,9 @@
 import { NextRequest, NextResponse } from "next/server";
 import { resolveWhatsAppTarget } from "@/lib/waha";
 
-const CHATBOT_API_URL = process.env.CHATBOT_API_URL || "";
+let rawUrl = process.env.CHATBOT_API_URL || "";
+if (rawUrl && !rawUrl.startsWith("http")) rawUrl = `https://${rawUrl}`;
+const CHATBOT_API_URL = rawUrl;
 
 export async function POST(request: NextRequest) {
   try {
