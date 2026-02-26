@@ -188,7 +188,7 @@ export default function OperacionesPage() {
           }
           prevCountsRef.current = data;
         }
-      } catch (e) {
+      } catch {
         // fail silently for background polling
       }
     };
