@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, useMemo, useCallback } from "react";
+import { useEffect, useState, useMemo, useCallback, useRef } from "react";
 import ClientLayout, { useToastContext } from "@/components/ClientLayout";
 import { useStore } from "@/lib/hooks";
 
@@ -170,11 +170,32 @@ export default function OperacionesPage() {
     }
   }, [selectedDate]);
 
+  const prevCountsRef = useRef({ reservations: -1, blocks: -1 });
+
   useEffect(() => {
+    // Cuando cambiamos de dia reiniciamos la memoria anterior
+    prevCountsRef.current = { reservations: -1, blocks: -1 };
     loadData(true);
-    const interval = setInterval(() => loadData(false), 30000);
+
+    const checkCount = async () => {
+      try {
+        const res = await fetch(`/api/reservations/count?date=${selectedDate}`);
+        if (res.ok) {
+          const data = await res.json();
+          const p = prevCountsRef.current;
+          if (p.reservations !== -1 && (p.reservations !== data.reservations || p.blocks !== data.blocks)) {
+            loadData(false);
+          }
+          prevCountsRef.current = data;
+        }
+      } catch (e) {
+        // fail silently for background polling
+      }
+    };
+
+    const interval = setInterval(checkCount, 5000);
     return () => clearInterval(interval);
-  }, [loadData]);
+  }, [loadData, selectedDate]);
 
   useEffect(() => {
     if (!slotActionTarget) return;

@@ -731,7 +731,7 @@ export default function PaymentSidebar({
   const calculatedPrice = reservation.field && reservation.time_slots
     ? calculateReservationPrice(reservation.field, reservation.date, reservation.time_slots)
     : 0;
-  const totalPrice = reservation.total_price || calculatedPrice;
+  const totalPrice = calculatedPrice || reservation.total_price || 0;
   const amountPaid = reservation.amount_paid || 0;
   const remaining = Math.max(0, totalPrice - amountPaid);
   const fullyPaid = remaining <= 0;

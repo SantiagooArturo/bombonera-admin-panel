@@ -10,6 +10,21 @@ export async function GET(request: NextRequest) {
     const courtType = searchParams.get("court_type");
     const status = searchParams.get("status");
     const phoneNumber = searchParams.get("phone_number");
+    const id = searchParams.get("id");
+
+    if (id) {
+      const doc = await db.collection("reservations").doc(id).get();
+      if (!doc.exists) {
+        return NextResponse.json({ error: "No encontrada" }, { status: 404 });
+      }
+      return NextResponse.json([{
+        id: doc.id,
+        ...doc.data(),
+        created_at: doc.data()?.created_at?.toDate?.()
+          ? doc.data()?.created_at.toDate().toISOString()
+          : doc.data()?.created_at,
+      }]);
+    }
 
     let query: FirebaseFirestore.Query = db.collection("reservations");
 

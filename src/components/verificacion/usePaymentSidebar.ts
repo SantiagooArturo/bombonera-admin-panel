@@ -30,18 +30,27 @@ export function usePaymentSidebar(options?: UsePaymentSidebarOptions) {
     try {
       await store.syncReservationPayments(reservation.id);
 
-      const [transfersData, invoicesData] = await Promise.all([
+      const [transfersData, invoicesData, freshResReq] = await Promise.all([
         store.fetchTransfers(reservation.id),
         store.fetchInvoices({ reservation_id: reservation.id }),
+        fetch(`/api/reservations?id=${reservation.id}`),
       ]);
       setTransfers(transfersData || []);
       setInvoices(invoicesData || []);
+
+      let freshReservation = reservation;
+      if (freshResReq.ok) {
+        const parsed = await freshResReq.json();
+        if (Array.isArray(parsed) && parsed.length > 0) {
+          freshReservation = parsed[0];
+        }
+      }
 
       const total = (transfersData || []).reduce((sum: number, t: Transfer) => {
         if (t.status === "applied" || t.status === "partial") return sum + (t.amount || 0);
         return sum;
       }, 0);
-      setSelectedReservation((prev) => (prev ? { ...prev, amount_paid: total } : null));
+      setSelectedReservation({ ...freshReservation, amount_paid: total });
     } catch (error) {
       console.error("Error loading sidebar data", error);
       toast("Error al cargar información", "error");
