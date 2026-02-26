@@ -51,12 +51,14 @@ export function formatHour12(slot: string) {
 export function getEndSlotOptions(startSlot: string): string[] {
   const startIdx = TIME_SLOTS.indexOf(startSlot);
   if (startIdx === -1) return [];
-  return TIME_SLOTS.slice(startIdx + 1);
+  const options = TIME_SLOTS.slice(startIdx + 1);
+  options.push("23:00");
+  return options;
 }
 
 export function getSlotsInRange(startSlot: string, endSlot: string): string[] {
   const startIdx = TIME_SLOTS.indexOf(startSlot);
-  const endIdx = TIME_SLOTS.indexOf(endSlot);
+  const endIdx = endSlot === "23:00" ? TIME_SLOTS.length : TIME_SLOTS.indexOf(endSlot);
   if (startIdx === -1 || endIdx === -1 || startIdx >= endIdx) return [];
   return TIME_SLOTS.slice(startIdx, endIdx);
 }
