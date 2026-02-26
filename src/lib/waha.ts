@@ -26,7 +26,7 @@ function buildPhoneCandidates(value: string): string[] {
   } else if (digits.length <= 9) {
     candidates.add(`51${digits}`);
   }
-  return [...candidates];
+  return Array.from(candidates);
 }
 
 export async function resolveWhatsAppTarget(input: string): Promise<{ chatId: string; firebaseId: string }> {
