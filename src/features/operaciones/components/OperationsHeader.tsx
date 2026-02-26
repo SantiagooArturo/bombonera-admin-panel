@@ -9,6 +9,7 @@ type OperationsHeaderProps = {
   onNextDay: () => void;
   onGoToday: () => void;
   onOpenSendAvailability: () => void;
+  showSendButton?: boolean;
 };
 
 export default function OperationsHeader({
@@ -20,11 +21,12 @@ export default function OperationsHeader({
   onNextDay,
   onGoToday,
   onOpenSendAvailability,
+  showSendButton = true,
 }: OperationsHeaderProps) {
   return (
     <div className="mb-2 shrink-0">
-      <div className="flex items-center justify-between gap-3">
-        <div className="flex items-center gap-3">
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <div className="flex items-center gap-2 md:gap-3 min-w-0">
           <button
             onClick={onPrevDay}
             disabled={dayOffset === 0}
@@ -35,7 +37,7 @@ export default function OperationsHeader({
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
             </svg>
           </button>
-          <span className="text-body-lg text-gray-700 font-semibold capitalize w-[280px] text-center">
+          <span className="text-body-lg text-gray-700 font-semibold capitalize w-[160px] md:w-[280px] text-center truncate">
             {selectedDateLabel}
           </span>
           <button
@@ -57,12 +59,14 @@ export default function OperationsHeader({
             </button>
           )}
         </div>
-        <button
-          onClick={onOpenSendAvailability}
-          className="px-4 py-2 rounded-xl bg-emerald-600 text-white font-semibold text-sm hover:bg-emerald-700 transition-colors whitespace-nowrap"
-        >
-          Enviar disponibilidad
-        </button>
+        {showSendButton && (
+          <button
+            onClick={onOpenSendAvailability}
+            className="px-3 md:px-4 py-2 rounded-xl bg-emerald-600 text-white font-semibold text-sm hover:bg-emerald-700 transition-colors whitespace-nowrap ml-auto"
+          >
+            Enviar disponibilidad
+          </button>
+        )}
       </div>
     </div>
   );

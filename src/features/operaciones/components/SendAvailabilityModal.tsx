@@ -28,7 +28,7 @@ export default function SendAvailabilityModal({
   return (
     <>
       <div className="fixed inset-0 z-40 bg-black/40" onClick={onClose} />
-      <div className="fixed z-50 top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 bg-white rounded-2xl shadow-2xl p-6 w-full max-w-lg space-y-5">
+      <div className="fixed z-50 top-1/2 left-0 right-0 mx-auto -translate-y-1/2 bg-white rounded-2xl shadow-2xl p-6 w-[min(92vw,28rem)] space-y-5">
         <div>
           <h3 className="text-xl font-bold text-gray-900">Enviar disponibilidad</h3>
           <p className="text-sm text-gray-500 mt-1">

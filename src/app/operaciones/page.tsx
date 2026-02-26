@@ -441,6 +441,12 @@ export default function OperacionesPage() {
 
   return (
     <ClientLayout>
+      <button
+        onClick={openSendAvailabilityModal}
+        className="fixed top-3 right-3 md:top-4 md:right-4 z-30 px-3 md:px-4 py-2 rounded-xl bg-emerald-600 text-white font-semibold text-sm hover:bg-emerald-700 shadow-lg transition-colors whitespace-nowrap"
+      >
+        Enviar disponibilidad
+      </button>
       <div className="-mb-24 md:-mb-8 px-2 md:px-3 py-2 h-[calc(100dvh-12px)] flex flex-col">
         <OperationsHeader
           dayOffset={dayOffset}
@@ -451,6 +457,7 @@ export default function OperacionesPage() {
           onNextDay={() => setDayOffset((prev) => Math.min(MAX_DAY_OFFSET, prev + 1))}
           onGoToday={() => setDayOffset(0)}
           onOpenSendAvailability={openSendAvailabilityModal}
+          showSendButton={false}
         />
 
         {/* Grid */}
