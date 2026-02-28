@@ -85,9 +85,13 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: "Faltan datos para crear la reserva" }, { status: 400 });
     }
 
-    const cleanPhone = String(phone_number || chat_id).replace(/\D/g, "");
+    const cleanPhone = String(phone_number || "").replace(/\D/g, "");
     const cleanChatId = String(chat_id).replace(/\D/g, "");
     const cleanDni = String(dni || "").replace(/\D/g, "");
+
+    if (!cleanPhone) {
+      return NextResponse.json({ error: "phone_number es obligatorio" }, { status: 400 });
+    }
 
     const blocksSnap = await db
       .collection("blocked-slots")
@@ -121,7 +125,7 @@ export async function POST(request: NextRequest) {
     const calculatedPrice = calculateReservationPrice(field, date, time_slots);
 
     const payload = {
-      chat_id: cleanChatId || cleanPhone,
+      chat_id: cleanChatId,
       court_type,
       field,
       date,
