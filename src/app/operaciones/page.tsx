@@ -529,6 +529,7 @@ export default function OperacionesPage() {
           onVerifyTransfer={sidebar.handleVerifyTransfer}
           onEmitInvoice={sidebar.handleEmitInvoice}
           onAttachInvoice={sidebar.handleAttachInvoice}
+          onDetachInvoice={sidebar.handleDetachInvoice}
           onUpdateDni={sidebar.handleUpdateDni}
           onCancelReservation={sidebar.handleCancelReservation}
           cancellingReservation={sidebar.cancellingReservation}

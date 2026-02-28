@@ -180,6 +180,27 @@ export function usePaymentSidebar(options?: UsePaymentSidebarOptions) {
     }
   }, [store, toast, selectedReservation]);
 
+  const handleDetachInvoice = useCallback(async (invoiceId: string) => {
+    if (!selectedReservation) return false;
+    try {
+      const res = await fetch(`/api/invoices?id=${encodeURIComponent(invoiceId)}`, {
+        method: "DELETE",
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        toast(data?.error || "No se pudo desvincular la boleta", "error");
+        return false;
+      }
+      setInvoices((prev) => prev.filter((inv) => inv.id !== invoiceId));
+      toast("Boleta desvinculada", "success");
+      return true;
+    } catch (error) {
+      console.error("Error detaching invoice:", error);
+      toast("Error inesperado al desvincular boleta", "error");
+      return false;
+    }
+  }, [selectedReservation, toast]);
+
   const handleRevokeManualPayment = useCallback(async (transferId: string) => {
     if (!selectedReservation) return;
     if (!confirm("¿Estás seguro de revocar (eliminar) este pago manual?")) return;
@@ -248,6 +269,7 @@ export function usePaymentSidebar(options?: UsePaymentSidebarOptions) {
     handleUpdateDni,
     handleCancelReservation,
     handleAttachInvoice,
+    handleDetachInvoice,
     handleRevokeManualPayment,
     handleRegisterPayment,
   };

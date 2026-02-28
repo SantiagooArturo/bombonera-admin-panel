@@ -80,6 +80,7 @@ interface PaymentSidebarProps {
     params: { tipo_comprobante: "boleta" | "factura"; doc_num: string }
   ) => void;
   onAttachInvoice: (transfer: Transfer, file: File) => void;
+  onDetachInvoice: (invoiceId: string) => Promise<boolean>;
   onUpdateDni: (dni: string) => Promise<boolean>;
   onCancelReservation: () => Promise<boolean>;
   onRevokeManualPayment: (transferId: string) => void;
@@ -340,7 +341,7 @@ function RegisterPaymentForm({
 // ─── Transfer Card ───────────────────────────────────────────────────────────
 
 function TransferCard({
-  transfer, invoice, emittingInvoiceId, onVerify, onEmitInvoice, onAttachInvoice, onRevoke, onViewImage, onHover, chatId, clientDni,
+  transfer, invoice, emittingInvoiceId, onVerify, onEmitInvoice, onAttachInvoice, onDetachInvoice, onRevoke, onViewImage, onHover, chatId, clientDni,
 }: {
   transfer: Transfer;
   invoice: Invoice | undefined;
@@ -351,6 +352,7 @@ function TransferCard({
     params: { tipo_comprobante: "boleta" | "factura"; doc_num: string }
   ) => void;
   onAttachInvoice: (transfer: Transfer, file: File) => void;
+  onDetachInvoice: (invoiceId: string) => Promise<boolean>;
   onRevoke: (transferId: string) => void;
   onViewImage: (url: string) => void;
   onHover: (hovering: boolean) => void;
@@ -364,6 +366,7 @@ function TransferCard({
   const [docNumber, setDocNumber] = useState("");
   const [wspStatus, setWspStatus] = useState<"idle" | "sending" | "sent" | "error">("idle");
   const [wspError, setWspError] = useState<string | null>(null);
+  const [detachingInvoice, setDetachingInvoice] = useState(false);
   const isValidated = transfer.verified || transfer.source === "manual";
   const canAttach = isValidated && !invoice;
 
@@ -467,8 +470,24 @@ function TransferCard({
             </div>
           ) : invoice ? (
             <div className="space-y-3">
-              <div className="w-full">
+              <div className="w-full relative">
                 <PdfPreview url={invoice.file_url} onClickImage={onViewImage} />
+                {invoice.status === "attached" && (
+                  <button
+                    type="button"
+                    onClick={async () => {
+                      if (detachingInvoice) return;
+                      setDetachingInvoice(true);
+                      await onDetachInvoice(invoice.id);
+                      setDetachingInvoice(false);
+                    }}
+                    disabled={detachingInvoice}
+                    title="Desvincular boleta adjuntada"
+                    className="absolute top-2 right-2 z-10 h-7 w-7 rounded-full bg-gray-900/65 text-white text-sm font-bold hover:bg-gray-900/80 transition-colors disabled:opacity-50"
+                  >
+                    ✕
+                  </button>
+                )}
               </div>
               <div>
                 <p className="text-lg font-bold text-gray-900">S/ {invoice.amount.toFixed(2)}</p>
@@ -691,6 +710,7 @@ export default function PaymentSidebar({
   onVerifyTransfer,
   onEmitInvoice,
   onAttachInvoice,
+  onDetachInvoice,
   onUpdateDni,
   onCancelReservation,
   onRevokeManualPayment,
@@ -927,6 +947,7 @@ export default function PaymentSidebar({
                   onVerify={onVerifyTransfer}
                   onEmitInvoice={onEmitInvoice}
                   onAttachInvoice={onAttachInvoice}
+                  onDetachInvoice={onDetachInvoice}
                   onRevoke={onRevokeManualPayment}
                   onViewImage={setViewingImage}
                   onHover={(h) => setHoveredTransferId(h ? transfer.id : null)}

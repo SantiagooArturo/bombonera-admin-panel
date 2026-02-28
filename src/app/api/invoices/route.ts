@@ -275,6 +275,40 @@ export async function POST(request: NextRequest) {
   }
 }
 
+export async function DELETE(request: NextRequest) {
+  try {
+    const db = getDb();
+    const { searchParams } = new URL(request.url);
+    const id = searchParams.get("id");
+    if (!id) {
+      return NextResponse.json({ error: "Se requiere id" }, { status: 400 });
+    }
+
+    const ref = db.collection("invoices").doc(id);
+    const doc = await ref.get();
+    if (!doc.exists) {
+      return NextResponse.json({ error: "Boleta no encontrada" }, { status: 404 });
+    }
+
+    const data = doc.data() || {};
+    const status = String(data.status || "");
+    const source = String(data.source || "");
+    const isAttached = status === "attached" || source === "manual";
+    if (!isAttached) {
+      return NextResponse.json(
+        { error: "Solo se pueden desvincular boletas adjuntadas manualmente" },
+        { status: 400 }
+      );
+    }
+
+    await ref.delete();
+    return NextResponse.json({ success: true });
+  } catch (error) {
+    console.error("Error deleting invoice:", error);
+    return NextResponse.json({ error: "Error al desvincular boleta" }, { status: 500 });
+  }
+}
+
 // ── Número a letras (español) para la leyenda SUNAT ──
 
 function numberToWords(num: number): string {
