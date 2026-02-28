@@ -423,7 +423,10 @@ function UsuariosContent() {
                                     Requiere atención
                                   </span>
                                   {user.help_reason && (
-                                    <span className="text-xs text-red-600 pl-1 max-w-[200px] truncate" title={user.help_reason}>
+                                    <span
+                                      className="text-xs text-red-700 pl-1 pr-1 max-w-[340px] whitespace-normal break-words leading-snug"
+                                      title={user.help_reason}
+                                    >
                                       {user.help_reason}
                                     </span>
                                   )}
