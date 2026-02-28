@@ -13,6 +13,13 @@ function formatDisplayPhone(phone: string) {
   return digits;
 }
 
+function normalizePeruPhone(raw: string) {
+  const digits = raw.replace(/\D/g, "").slice(0, 11);
+  if (!digits) return "";
+  if (digits.startsWith("51")) return digits;
+  return `51${digits}`.slice(0, 11);
+}
+
 type EditablePhoneSelectProps = {
   label: string;
   value: string;
@@ -54,12 +61,12 @@ export default function EditablePhoneSelect({
       <div className="relative">
         <input
           type="text"
-          value={inputValue}
+          value={formatDisplayPhone(inputValue)}
           onChange={(e) => {
             const raw = e.target.value;
-            setInputValue(raw);
-            const digits = raw.replace(/\D/g, "").slice(0, 12);
-            onChange(digits);
+            const normalized = normalizePeruPhone(raw);
+            setInputValue(normalized);
+            onChange(normalized);
             if (!open) setOpen(true);
           }}
           onFocus={() => setOpen(true)}
@@ -91,8 +98,9 @@ export default function EditablePhoneSelect({
               type="button"
               onMouseDown={(e) => e.preventDefault()}
               onClick={() => {
-                setInputValue(o.phone);
-                onChange(o.phone);
+                const normalized = normalizePeruPhone(o.phone);
+                setInputValue(normalized);
+                onChange(normalized);
                 setOpen(false);
               }}
               className={`w-full text-left px-3 py-2 border-b border-gray-100 last:border-b-0 ${optionActive}`}
