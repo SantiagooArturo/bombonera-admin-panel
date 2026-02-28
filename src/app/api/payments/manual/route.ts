@@ -120,7 +120,6 @@ export async function DELETE(request: NextRequest) {
       const resData = resDoc.data()!;
       const currentAmountPaid = resData.amount_paid || 0;
       const newAmountPaid = Math.max(0, currentAmountPaid - amountToRefund);
-      const totalPrice = resData.total_price || 0;
 
       const update: Record<string, unknown> = {
         amount_paid: newAmountPaid,

@@ -26,7 +26,6 @@ export async function POST(request: NextRequest) {
                 throw new Error("Reservation not found");
             }
             const resData = resDoc.data()!;
-            const totalPrice = resData.total_price || 0;
 
             // 2. Obtener todas las transferencias de esta reserva
             // Nota: en transacción no podemos hacer queries si no son por índice o muy específicas, 
