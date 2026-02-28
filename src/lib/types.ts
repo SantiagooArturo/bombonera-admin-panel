@@ -182,3 +182,19 @@ export const TRANSFER_STATUS_LABELS: Record<TransferStatus, string> = {
   rejected_duplicate: "Duplicado rechazado",
   partial: "Pago parcial",
 };
+
+export type BotHealthIndicator = "green" | "red";
+
+export interface BotHealthStatus {
+  indicator: BotHealthIndicator;
+  status: "ok" | "error" | "unknown";
+  title: string;
+  detail: string;
+  is_stale: boolean;
+  last_run_at: string | null;
+  last_success_at: string | null;
+  last_error_at: string | null;
+  last_error_message: string | null;
+  consecutive_failures: number;
+  cron_schedule: string;
+}
