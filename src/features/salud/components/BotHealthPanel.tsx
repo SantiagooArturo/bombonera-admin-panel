@@ -82,18 +82,18 @@ export function BotHealthPanel() {
 
   return (
     <div className="bg-white rounded-2xl border border-gray-200 shadow-sm p-6">
-      <div className="flex items-start justify-between gap-4">
+      <div className="flex items-start justify-between gap-4 ">
         <div>
           <h2 className="text-xl font-bold text-gray-900">Salud del bot</h2>
-          <p className="text-sm text-gray-500 mt-1">
-            Uso técnico: esta vista es para mantenimiento del software, no para operación diaria de administradores.
+          <p className="text-sm text-gray-500 mt-1 ">
+            Esta vista es para mantenimiento del software, no para operación diaria de administradores.
           </p>
         </div>
         <div className="flex items-center gap-2">
           <button
             onClick={probeNow}
             disabled={probingNow}
-            className="px-3 py-2 rounded-lg bg-bombonera-600 text-white text-sm font-semibold hover:bg-bombonera-700 disabled:opacity-60"
+            className="px-3 py-2 w-36 rounded-lg bg-bombonera-600 text-white text-sm font-semibold hover:bg-bombonera-700 disabled:opacity-60"
           >
             {probingNow ? "Probando..." : "Probar salud ahora"}
           </button>
@@ -107,7 +107,7 @@ export function BotHealthPanel() {
         </div>
       </div>
 
-      <div className="mt-6 rounded-xl border border-gray-100 bg-gray-50 p-4">
+      <div className="mt-6 rounded-xl border border-gray-100 bg-gray-50 p-4 mt-4">
         <div className="flex items-center gap-3">
           <span
             className={`inline-flex h-4 w-4 rounded-full ${isGreen ? "bg-emerald-500" : "bg-red-500"}`}
