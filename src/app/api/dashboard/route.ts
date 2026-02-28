@@ -12,7 +12,7 @@ export async function GET() {
     const [transfersSnap, invoicesSnap, reservationsSnap] = await Promise.all([
       db.collection("transfers").where("status", "in", ["applied", "partial"]).get(),
       db.collection("invoices").get(),
-      db.collection("reservations").where("status", "in", ["pending", "paid"]).get(),
+      db.collection("reservations").where("status", "in", ["pending", "confirmed"]).get(),
     ]);
 
     const invoicedTransferIds = new Set(

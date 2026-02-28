@@ -201,7 +201,7 @@ function VerificacionContent() {
                                         </td>
                                         <td className="p-6 text-center">
                                             <span
-                                                className={`inline-block px-4 py-2 rounded-lg font-bold text-sm ${res.status === "paid"
+                                                className={`inline-block px-4 py-2 rounded-lg font-bold text-sm ${res.status === "confirmed"
                                                     ? "bg-green-100 text-green-700"
                                                     : res.status === "pending"
                                                         ? "bg-amber-100 text-amber-700"
@@ -210,7 +210,7 @@ function VerificacionContent() {
                                             >
                                                 {res.status === "pending" ? "Por Cobrar" : STATUS_LABELS[res.status]}
                                             </span>
-                                            {res.confirmed && res.status !== "paid" && (
+                                            {res.confirmed && res.status !== "confirmed" && (
                                                 <span className="ml-2 inline-block px-2 py-1 rounded bg-blue-100 text-blue-700 text-xs font-bold">
                                                     Parcial
                                                 </span>

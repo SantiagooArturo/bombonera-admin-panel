@@ -48,13 +48,10 @@ export default function DashboardPage() {
     [reservations, today]
   );
 
-  const paidCount = todayReservations.filter((r) => r.status === "paid").length;
-  const collected = todayReservations
-    .filter((r) => r.status === "paid")
-    .reduce((sum, r) => sum + r.total_price, 0);
+  const confirmedCount = todayReservations.filter((r) => r.status === "confirmed").length;
+  const collected = todayReservations.reduce((sum, r) => sum + (r.amount_paid ?? 0), 0);
   const outstanding = todayReservations
-    .filter((r) => r.status === "pending")
-    .reduce((sum, r) => sum + r.total_price, 0);
+    .reduce((sum, r) => sum + Math.max((r.total_price || 0) - (r.amount_paid ?? 0), 0), 0);
   const arrivedCount = todayReservations.filter((r) => r.arrived).length;
 
   const usersNeedingHelp = useMemo(() => users.filter((u) => u.needs_help), [users]);
@@ -62,7 +59,9 @@ export default function DashboardPage() {
   const tasks = useMemo(() => {
     const list: { label: string; count: number; href: string; dotColor: string }[] = [];
 
-    const unpaid = reservations.filter((r) => r.status === "pending").length;
+    const unpaid = reservations.filter(
+      (r) => r.status !== "cancelled" && (r.amount_paid ?? 0) < (r.total_price || 0)
+    ).length;
     if (unpaid > 0) {
       list.push({
         label: "Reservas por cobrar",
@@ -133,8 +132,8 @@ export default function DashboardPage() {
                   }
                 />
                 <Stat
-                  label="Pagadas"
-                  value={paidCount}
+                  label="Confirmadas"
+                  value={confirmedCount}
                   iconColor="text-emerald-500"
                   icon={
                     <svg className="w-9 h-9" fill="none" viewBox="0 0 24 24" stroke="currentColor">

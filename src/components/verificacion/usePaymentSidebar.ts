@@ -234,7 +234,7 @@ export function usePaymentSidebar(options?: UsePaymentSidebarOptions) {
         toast(`Cobro registrado: S/ ${amount.toFixed(2)}`, "success");
         const patch: Partial<Reservation> = {
           amount_paid: result.new_amount_paid,
-          status: result.fully_paid ? "paid" : selectedReservation.status,
+          status: selectedReservation.status === "pending" ? "confirmed" : selectedReservation.status,
           confirmed: true,
         };
         setSelectedReservation((prev) => prev ? { ...prev, ...patch } : null);

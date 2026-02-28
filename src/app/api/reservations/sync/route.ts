@@ -60,24 +60,17 @@ export async function POST(request: NextRequest) {
                 amount_paid: calculatedPaid
             };
 
-            if (calculatedPaid >= totalPrice) {
-                update.status = "paid";
-                if (!resData.confirmed) {
-                    update.confirmed = true;
-                    update.confirmed_at = new Date().toISOString();
-                }
-            } else if (calculatedPaid > 0) {
-                update.status = "pending"; // Parcial
-                update.confirmed = true; // Confirmada si hay algún pago (seña)
+            if (resData.status === "confirmed" || calculatedPaid > 0) {
+                update.status = "confirmed";
+                update.confirmed = true;
                 if (!resData.confirmed_at) {
                     update.confirmed_at = new Date().toISOString();
                 }
             } else {
-                // 0 pagado
+                // Sin pago y no confirmada operativamente.
                 update.status = "pending";
                 update.confirmed = false;
                 update.amount_paid = 0;
-                // update.confirmed_at = FieldValue.delete(); // No borrar si ya estaba
             }
 
             t.update(resRef, update);

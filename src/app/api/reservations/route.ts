@@ -107,7 +107,7 @@ export async function POST(request: NextRequest) {
       .collection("reservations")
       .where("date", "==", date)
       .where("field", "==", field)
-      .where("status", "in", ["pending", "paid"])
+      .where("status", "in", ["pending", "confirmed"])
       .get();
     const hasConflict = reservationsSnap.docs.some((doc) => {
       const data = doc.data();
@@ -133,7 +133,7 @@ export async function POST(request: NextRequest) {
       time_ranges: [{ start: time_slots[0], end: `${endHour}:00`, slot: `${dayId}-${time_slots[0]}` }],
       slot_keys: time_slots.map((slot: string) => `${dayId}-${slot}`),
       created_at: new Date().toISOString(),
-      status: "paid",
+      status: "confirmed",
       total_price: calculatedPrice,
       reservation_price: calculatedPrice,
       phone_number: cleanPhone,
@@ -196,7 +196,7 @@ export async function PATCH(request: NextRequest) {
         .collection("reservations")
         .where("date", "==", date)
         .where("field", "==", targetField)
-        .where("status", "in", ["pending", "paid"])
+        .where("status", "in", ["pending", "confirmed"])
         .get();
       const overlap = reservationsSnap.docs.some((doc) => {
         if (doc.id === id) return false;
@@ -226,13 +226,10 @@ export async function PATCH(request: NextRequest) {
       );
     }
 
-    // Si se marca como pagado, poner amount_paid = total_price
-    if (status === "paid") {
+    // Si se marca como confirmada, reflejar confirmación operativa
+    if (status === "confirmed") {
       const doc = await db.collection("reservations").doc(id).get();
       if (doc.exists) {
-        const data = doc.data();
-        const totalPrice = data?.total_price || 0;
-        updateData.amount_paid = totalPrice;
         updateData.confirmed = true;
         updateData.confirmed_at = new Date().toISOString();
       }

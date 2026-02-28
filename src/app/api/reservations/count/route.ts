@@ -14,7 +14,7 @@ export async function GET(request: NextRequest) {
         const [resCount, blockCount] = await Promise.all([
             db.collection("reservations")
                 .where("date", "==", date)
-                .where("status", "in", ["pending", "paid"])
+                .where("status", "in", ["pending", "confirmed"])
                 .count()
                 .get(),
             db.collection("blocked-slots")

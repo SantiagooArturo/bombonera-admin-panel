@@ -42,9 +42,7 @@ export async function POST(request: NextRequest) {
       confirmed_at: resData.confirmed_at ?? now,
     };
 
-    if (isFullyPaid) {
-      reservationUpdate.status = "paid";
-    }
+    reservationUpdate.status = "confirmed";
 
     await resRef.update(reservationUpdate);
 
@@ -128,18 +126,16 @@ export async function DELETE(request: NextRequest) {
         amount_paid: newAmountPaid,
       };
 
-      // If not fully paid anymore, revert status
-      if (newAmountPaid < totalPrice) {
-        update.status = "pending"; // Or partial logic if you have it
-        // If paid becomes 0, maybe revert confirmed too? 
-        // Let's keep confirmed true if there are other payments, or just leave it.
-        // Assuming simpler logic: if < total, it is pending/partial.
-        // Your system seems to use 'pending' for everything not paid.
+      // El estado operativo confirmado es independiente del monto pagado.
+      if (resData.status === "pending" && newAmountPaid > 0) {
+        update.status = "confirmed";
       }
       // If amount becomes 0
       if (newAmountPaid === 0) {
-        update.confirmed = false;
-        update.confirmed_at = FieldValue.delete();
+        update.confirmed = resData.status === "confirmed";
+        if (resData.status !== "confirmed") {
+          update.confirmed_at = FieldValue.delete();
+        }
       }
 
       t.update(resRef, update);

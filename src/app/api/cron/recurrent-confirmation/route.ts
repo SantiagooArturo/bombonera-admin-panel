@@ -41,7 +41,7 @@ export async function GET(request: NextRequest) {
     const snapshot = await db
       .collection("reservations")
       .where("date", "==", targetDateStr)
-      .where("status", "in", ["pending", "paid"])
+      .where("status", "in", ["pending", "confirmed"])
       .get();
 
     let sent = 0;

@@ -6,7 +6,7 @@ import { sendWhatsAppMessage } from "@/lib/waha";
  * GET /api/cron/recurrent-rebooking
  * Cron que se ejecuta 1 vez al día a las 11pm Lima.
  *
- * Para cada reserva pagada de HOY de un usuario recurrente:
+ * Para cada reserva confirmada de HOY de un usuario recurrente:
  * 1. Crea automáticamente una reserva para la próxima semana (mismo horario, misma cancha).
  * 2. Envía un mensaje preguntando si vendrá la próxima semana a la misma hora.
  *    - Si dice que no → el chatbot cancela la reserva creada.
@@ -31,7 +31,7 @@ export async function GET(request: NextRequest) {
     const snapshot = await db
       .collection("reservations")
       .where("date", "==", todayStr)
-      .where("status", "==", "paid")
+      .where("status", "==", "confirmed")
       .get();
 
     let sent = 0;
@@ -72,7 +72,7 @@ export async function GET(request: NextRequest) {
         .collection("reservations")
         .where("chat_id", "==", chatId)
         .where("date", "==", nextWeekStr)
-        .where("status", "in", ["pending", "paid"])
+        .where("status", "in", ["pending", "confirmed"])
         .get();
 
       const alreadyExists = existingSnap.docs.some((d) => {

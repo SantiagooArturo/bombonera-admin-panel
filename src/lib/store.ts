@@ -62,8 +62,8 @@ class Store {
           ? {
             ...r,
             status,
-            ...(status === "paid"
-              ? { amount_paid: r.total_price, confirmed: true, confirmed_at: new Date().toISOString() }
+            ...(status === "confirmed"
+              ? { confirmed: true, confirmed_at: new Date().toISOString() }
               : {}),
           }
           : r

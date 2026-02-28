@@ -5,7 +5,7 @@ import { sendWhatsAppMessage } from "@/lib/waha";
 /**
  * GET /api/cron/reservation-reminder
  * Cron que se ejecuta cada 5 minutos.
- * Busca reservas confirmadas (paid) cuyo primer time_slot empieza en ~15 min
+ * Busca reservas confirmadas (status=confirmed) cuyo primer time_slot empieza en ~15 min
  * y envía un recordatorio por WhatsApp.
  * Marca la reserva con `reminder_sent: true` para no repetir.
  */
@@ -31,7 +31,7 @@ export async function GET(request: NextRequest) {
     const snapshot = await db
       .collection("reservations")
       .where("date", "==", todayStr)
-      .where("status", "==", "paid")
+      .where("status", "==", "confirmed")
       .get();
 
     let sent = 0;
