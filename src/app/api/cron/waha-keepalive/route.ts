@@ -1,7 +1,11 @@
 import { NextResponse } from "next/server";
 import { recordKeepaliveExecution } from "@/features/salud/services/wahaKeepaliveHealth";
 
-const RAILWAY_CHATBOT_URL = "https://bombonera-booking-agent-production.up.railway.app";
+export const dynamic = "force-dynamic";
+export const revalidate = 0;
+
+const RAILWAY_CHATBOT_URL =
+  (process.env.CHATBOT_API_URL || "https://bombonera-booking-agent-production.up.railway.app").replace(/\/$/, "");
 
 /**
  * GET /api/cron/waha-keepalive
@@ -10,7 +14,11 @@ const RAILWAY_CHATBOT_URL = "https://bombonera-booking-agent-production.up.railw
  */
 export async function GET() {
   try {
-    const response = await fetch(`${RAILWAY_CHATBOT_URL}/chatbot/keepalive/`, { method: "GET" });
+    const response = await fetch(`${RAILWAY_CHATBOT_URL}/chatbot/keepalive/`, {
+      method: "GET",
+      cache: "no-store",
+      headers: { "Cache-Control": "no-store" },
+    });
     const data = await response.json().catch(() => ({}));
     if (!response.ok) {
       await recordKeepaliveExecution({
@@ -22,7 +30,7 @@ export async function GET() {
       });
       return NextResponse.json(
         { success: false, error: data?.message || "Railway keepalive failed" },
-        { status: response.status }
+        { status: response.status, headers: { "Cache-Control": "no-store, max-age=0" } }
       );
     }
 
@@ -34,11 +42,16 @@ export async function GET() {
       console.error("No se pudo guardar estado keepalive (ok):", err);
     });
 
-    return NextResponse.json({
-      success: true,
-      railway_status: data?.status || "ok",
-      detail: data,
-    });
+    return NextResponse.json(
+      {
+        success: true,
+        sent: data?.sent === true || data?.status === "success",
+        target: data?.target || null,
+        railway_status: data?.status || "ok",
+        detail: data,
+      },
+      { headers: { "Cache-Control": "no-store, max-age=0" } }
+    );
   } catch (error) {
     console.error("Error in waha keepalive cron:", error);
     await recordKeepaliveExecution({
@@ -48,7 +61,10 @@ export async function GET() {
     }).catch((err) => {
       console.error("No se pudo guardar estado keepalive (exception):", err);
     });
-    return NextResponse.json({ error: "Error interno" }, { status: 500 });
+    return NextResponse.json(
+      { error: error instanceof Error ? error.message : "Error interno" },
+      { status: 500, headers: { "Cache-Control": "no-store, max-age=0" } }
+    );
   }
 }
 

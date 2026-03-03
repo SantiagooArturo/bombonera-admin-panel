@@ -25,9 +25,15 @@ function VerificacionContent() {
     const sidebar = usePaymentSidebar();
 
     const [filterText, setFilterText] = useState(searchParams.get("search") ?? "");
-    const [filterStatus, setFilterStatus] = useState<"all" | "pending" | "unverified" | "cancelled">(
-        (searchParams.get("status") as "pending" | "unverified" | "cancelled") || "all"
-    );
+    type FilterStatus = "all" | "receivable" | "unverified" | "cancelled";
+    const searchStatus = searchParams.get("status");
+    const initialStatus: FilterStatus =
+        searchStatus === "pending" || searchStatus === "receivable"
+            ? "receivable"
+            : searchStatus === "unverified" || searchStatus === "cancelled"
+                ? (searchStatus as FilterStatus)
+                : "all";
+    const [filterStatus, setFilterStatus] = useState<FilterStatus>(initialStatus);
     const [unverifiedResIds, setUnverifiedResIds] = useState<Set<string>>(new Set());
     const [autoOpenHandled, setAutoOpenHandled] = useState(false);
 
@@ -57,7 +63,11 @@ function VerificacionContent() {
     );
 
     const filteredReservations = sortedReservations.filter((r) => {
-        if (filterStatus === "unverified") {
+        const hasDebt = (r.amount_paid ?? 0) < (r.total_price || 0);
+        if (filterStatus === "receivable") {
+            if (!hasDebt) return false;
+            if (r.status === "cancelled" || r.status === "expired") return false;
+        } else if (filterStatus === "unverified") {
             if (!unverifiedResIds.has(r.id)) return false;
         } else if (filterStatus !== "all" && r.status !== filterStatus) {
             return false;
@@ -98,7 +108,7 @@ function VerificacionContent() {
                     <div className="flex gap-2 flex-wrap">
                         {([
                             { value: "all" as const, label: "Todos" },
-                            { value: "pending" as const, label: "Por Cobrar" },
+                            { value: "receivable" as const, label: "Por Cobrar" },
                             { value: "unverified" as const, label: "Por Validar" },
                             { value: "cancelled" as const, label: "Cancelado" },
                         ]).map((opt) => (
@@ -109,7 +119,7 @@ function VerificacionContent() {
                                     filterStatus === opt.value
                                         ? opt.value === "unverified"
                                             ? "bg-purple-100 text-purple-700 border-2 border-purple-300"
-                                            : opt.value === "pending"
+                                            : opt.value === "receivable"
                                                 ? "bg-amber-100 text-amber-700 border-2 border-amber-300"
                                                 : opt.value === "cancelled"
                                                     ? "bg-red-100 text-red-700 border-2 border-red-300"
@@ -200,21 +210,44 @@ function VerificacionContent() {
                                             </button>
                                         </td>
                                         <td className="p-6 text-center">
-                                            <span
-                                                className={`inline-block px-4 py-2 rounded-lg font-bold text-sm ${res.status === "confirmed"
-                                                    ? "bg-green-100 text-green-700"
-                                                    : res.status === "pending"
-                                                        ? "bg-amber-100 text-amber-700"
-                                                        : "bg-red-100 text-red-700"
-                                                    }`}
-                                            >
-                                                {res.status === "pending" ? "Por Cobrar" : STATUS_LABELS[res.status]}
-                                            </span>
-                                            {res.confirmed && res.status !== "confirmed" && (
-                                                <span className="ml-2 inline-block px-2 py-1 rounded bg-blue-100 text-blue-700 text-xs font-bold">
-                                                    Parcial
-                                                </span>
-                                            )}
+                                            {(() => {
+                                                const total = res.total_price || 0;
+                                                const paid = res.amount_paid || 0;
+                                                const paymentState =
+                                                    paid >= total
+                                                        ? "pagada"
+                                                        : paid > 0
+                                                            ? "parcial"
+                                                            : "por_cobrar";
+                                                return (
+                                                    <div className="inline-flex flex-col items-center gap-1">
+                                                        <span
+                                                            className={`inline-block px-4 py-2 rounded-lg font-bold text-sm ${res.status === "confirmed"
+                                                                ? "bg-green-100 text-green-700"
+                                                                : res.status === "pending"
+                                                                    ? "bg-amber-100 text-amber-700"
+                                                                    : "bg-red-100 text-red-700"
+                                                                }`}
+                                                        >
+                                                            {STATUS_LABELS[res.status]}
+                                                        </span>
+                                                        <span
+                                                            className={`inline-block px-3 py-1 rounded-md font-bold text-xs ${paymentState === "pagada"
+                                                                ? "bg-emerald-100 text-emerald-700"
+                                                                : paymentState === "parcial"
+                                                                    ? "bg-blue-100 text-blue-700"
+                                                                    : "bg-amber-100 text-amber-700"
+                                                                }`}
+                                                        >
+                                                            {paymentState === "pagada"
+                                                                ? "Pagada completa"
+                                                                : paymentState === "parcial"
+                                                                    ? "Pago parcial"
+                                                                    : "Por cobrar"}
+                                                        </span>
+                                                    </div>
+                                                );
+                                            })()}
                                         </td>
                                     </tr>
                                 ))}

@@ -66,11 +66,19 @@ export function BotHealthPanel() {
         method: "GET",
         cache: "no-store",
       });
-      const data = (await response.json().catch(() => ({}))) as { error?: string };
+      const data = (await response.json().catch(() => ({}))) as {
+        error?: string;
+        railway_status?: string;
+        sent?: boolean;
+        target?: string | null;
+      };
       if (!response.ok) {
         throw new Error(data?.error || "Falló la prueba inmediata de conexión.");
       }
-      setProbeMessage("Prueba completada. Se actualizó el estado con la señal más reciente.");
+      const now = new Date().toLocaleTimeString("es-PE", { hour: "2-digit", minute: "2-digit", second: "2-digit" });
+      const sentText = data.sent ? "mensaje enviado" : "no se confirmó envío";
+      const targetText = data.target ? ` a ${data.target}` : "";
+      setProbeMessage(`Prueba completada (${now}): ${sentText}${targetText}. Estado Railway: ${data.railway_status || "ok"}.`);
       await loadStatus();
     } catch (err) {
       setError(err instanceof Error ? err.message : "Error en prueba inmediata");
@@ -95,7 +103,7 @@ export function BotHealthPanel() {
             disabled={probingNow}
             className="px-3 py-2 w-36 rounded-lg bg-bombonera-600 text-white text-sm font-semibold hover:bg-bombonera-700 disabled:opacity-60"
           >
-            {probingNow ? "Probando..." : "Probar salud ahora"}
+            {probingNow ? "Probando..." : "Probar envío ahora"}
           </button>
           <button
             onClick={loadStatus}
