@@ -46,6 +46,7 @@ export interface ScheduleGridProps {
   reservations: Reservation[];
   blockedSlots: BlockedSlot[];
   autoAssignments: Map<string, number>;
+  clientTypeByChatId?: Map<string, string | undefined>;
   currentSlot: string;
   isToday: boolean;
   onSelectReservation: (reservation: Reservation) => void;
@@ -60,6 +61,7 @@ export default function ScheduleGrid({
   reservations,
   blockedSlots,
   autoAssignments,
+  clientTypeByChatId,
   currentSlot,
   isToday,
   onSelectReservation,
@@ -265,7 +267,10 @@ export default function ScheduleGrid({
                       }`}
                       style={{ height: `${span * 52}px` }}
                     >
-                      <OccupiedCellContent reservation={reservation} />
+                      <OccupiedCellContent
+                        reservation={reservation}
+                        clientType={clientTypeByChatId?.get(reservation.chat_id)}
+                      />
                     </td>
                   );
                 })}

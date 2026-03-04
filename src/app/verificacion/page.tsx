@@ -210,44 +210,16 @@ function VerificacionContent() {
                                             </button>
                                         </td>
                                         <td className="p-6 text-center">
-                                            {(() => {
-                                                const total = res.total_price || 0;
-                                                const paid = res.amount_paid || 0;
-                                                const paymentState =
-                                                    paid >= total
-                                                        ? "pagada"
-                                                        : paid > 0
-                                                            ? "parcial"
-                                                            : "por_cobrar";
-                                                return (
-                                                    <div className="inline-flex flex-col items-center gap-1">
-                                                        <span
-                                                            className={`inline-block px-4 py-2 rounded-lg font-bold text-sm ${res.status === "confirmed"
-                                                                ? "bg-green-100 text-green-700"
-                                                                : res.status === "pending"
-                                                                    ? "bg-amber-100 text-amber-700"
-                                                                    : "bg-red-100 text-red-700"
-                                                                }`}
-                                                        >
-                                                            {STATUS_LABELS[res.status]}
-                                                        </span>
-                                                        <span
-                                                            className={`inline-block px-3 py-1 rounded-md font-bold text-xs ${paymentState === "pagada"
-                                                                ? "bg-emerald-100 text-emerald-700"
-                                                                : paymentState === "parcial"
-                                                                    ? "bg-blue-100 text-blue-700"
-                                                                    : "bg-amber-100 text-amber-700"
-                                                                }`}
-                                                        >
-                                                            {paymentState === "pagada"
-                                                                ? "Pagada completa"
-                                                                : paymentState === "parcial"
-                                                                    ? "Pago parcial"
-                                                                    : "Por cobrar"}
-                                                        </span>
-                                                    </div>
-                                                );
-                                            })()}
+                                            <span
+                                                className={`inline-block px-4 py-2 rounded-lg font-bold text-sm ${res.status === "confirmed"
+                                                    ? "bg-green-100 text-green-700"
+                                                    : res.status === "pending"
+                                                        ? "bg-amber-100 text-amber-700"
+                                                        : "bg-red-100 text-red-700"
+                                                    }`}
+                                            >
+                                                {STATUS_LABELS[res.status]}
+                                            </span>
                                         </td>
                                     </tr>
                                 ))}

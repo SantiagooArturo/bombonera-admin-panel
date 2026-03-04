@@ -160,10 +160,12 @@ function RegisterPaymentForm({
   remaining,
   loading,
   onSubmit,
+  isCancelled = false,
 }: {
   remaining: number;
   loading: boolean;
   onSubmit: (amount: number, method: PaymentMethod, mediaUrl?: string) => void;
+  isCancelled?: boolean;
 }) {
   const [open, setOpen] = useState(false);
   const [amount, setAmount] = useState(remaining.toFixed(2));
@@ -174,7 +176,7 @@ function RegisterPaymentForm({
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const parsedAmount = parseFloat(amount);
-  const isValid = !isNaN(parsedAmount) && parsedAmount > 0 && parsedAmount <= remaining + 0.01;
+  const isValid = !isNaN(parsedAmount) && parsedAmount > 0;
   const busy = loading || uploading;
 
   function clearFile() {
@@ -212,17 +214,17 @@ function RegisterPaymentForm({
 
     onSubmit(parsedAmount, method, mediaUrl);
     setOpen(false);
-    setAmount(remaining.toFixed(2));
+    setAmount((remaining > 0 ? remaining : 1).toFixed(2));
     setMethod("efectivo");
     clearFile();
   }
 
-  if (remaining <= 0) return null;
+  if (isCancelled) return null;
 
   if (!open) {
     return (
       <button
-        onClick={() => { setOpen(true); setAmount(remaining.toFixed(2)); }}
+        onClick={() => { setOpen(true); setAmount((remaining > 0 ? remaining : 1).toFixed(2)); }}
         className="w-full py-3 px-4 rounded-xl font-bold text-sm bg-blue-600 text-white hover:bg-blue-700 transition-colors flex items-center justify-center gap-2 shadow-sm"
       >
         <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -311,11 +313,13 @@ function RegisterPaymentForm({
           type="number"
           step="0.01"
           min="0.01"
-          max={remaining}
           value={amount}
           onChange={(e) => setAmount(e.target.value)}
           className="w-full px-4 py-3 text-lg font-bold rounded-xl border-2 border-gray-200 focus:border-blue-500 focus:outline-none bg-gray-50"
         />
+        <p className="text-xs text-gray-400 mt-1">
+          Deuda actual sugerida: S/ {Math.max(remaining, 0).toFixed(2)}. Puedes cobrar un monto mayor si necesitas ajustar deudas previas.
+        </p>
       </div>
 
       <div className="flex gap-3">
@@ -436,7 +440,7 @@ function TransferCard({
             </p>
           </div>
 
-          {transfer.source !== "manual" ? (
+          {transfer.source !== "manual" && (
             <button
               onClick={() => onVerify(transfer.id, !!transfer.verified)}
               className={`w-full py-2.5 px-4 rounded-xl font-bold text-sm transition-all active:scale-[0.98] flex items-center justify-center gap-2 ${transfer.verified
@@ -450,15 +454,14 @@ function TransferCard({
                 <><svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" /></svg>Validar Pago</>
               )}
             </button>
-          ) : (
-            <button
-              onClick={() => onRevoke(transfer.id)}
-              className="w-full py-2.5 px-4 rounded-xl font-bold text-sm transition-all active:scale-[0.98] flex items-center justify-center gap-2 bg-white border-2 border-red-100 text-red-600 hover:bg-red-50"
-            >
-              <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg>
-              Eliminar pago
-            </button>
           )}
+          <button
+            onClick={() => onRevoke(transfer.id)}
+            className="w-full py-2.5 px-4 rounded-xl font-bold text-sm transition-all active:scale-[0.98] flex items-center justify-center gap-2 bg-white border-2 border-red-100 text-red-600 hover:bg-red-50"
+          >
+            <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 14L21 3m0 0h-7m7 0v7M14 10L3 21m0 0h7m-7 0v-7" /></svg>
+            Desvincular pago
+          </button>
         </div>
 
         {/* COLUMNA DERECHA: BOLETA */}
@@ -931,7 +934,12 @@ export default function PaymentSidebar({
 
         {/* Content */}
         <div className="flex-1 overflow-y-auto p-6 space-y-5 bg-gray-50">
-          <RegisterPaymentForm remaining={remaining} loading={paymentLoading} onSubmit={onRegisterPayment} />
+          <RegisterPaymentForm
+            remaining={remaining}
+            loading={paymentLoading}
+            onSubmit={onRegisterPayment}
+            isCancelled={isCancelled}
+          />
 
           {loading && transfers.length === 0 ? (
             <><SkeletonCard /><SkeletonCard /></>

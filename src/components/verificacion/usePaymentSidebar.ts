@@ -203,11 +203,11 @@ export function usePaymentSidebar(options?: UsePaymentSidebarOptions) {
 
   const handleRevokeManualPayment = useCallback(async (transferId: string) => {
     if (!selectedReservation) return;
-    if (!confirm("¿Estás seguro de revocar (eliminar) este pago manual?")) return;
+    if (!confirm("¿Desvincular este pago de la reserva?\n\nEsta acción eliminará el pago y ajustará el monto pagado. Confirma solo si fue vinculado por error.")) return;
 
     const result = await store.revokeManualPayment(transferId, selectedReservation.id);
     if (result?.success) {
-      toast("Pago manual revocado", "success");
+      toast("Pago desvinculado correctamente", "success");
       setTransfers((prev) => prev.filter((t) => t.id !== transferId));
       if (result.refunded) {
         const newPaid = Math.max(0, (selectedReservation.amount_paid || 0) - result.refunded);

@@ -119,6 +119,10 @@ export default function OperacionesPage() {
         .filter((u) => u.phone.length >= 9),
     [users]
   );
+  const clientTypeByChatId = useMemo(
+    () => new Map(users.map((u) => [u.chat_id, u.client_type])),
+    [users]
+  );
 
   useEffect(() => {
     sidebar.close();
@@ -507,6 +511,7 @@ export default function OperacionesPage() {
             reservations={reservations}
             blockedSlots={blockedSlots}
             autoAssignments={autoAssignments}
+            clientTypeByChatId={clientTypeByChatId}
             currentSlot={currentSlot}
             isToday={isToday}
             onSelectReservation={sidebar.open}
