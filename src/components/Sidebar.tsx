@@ -1,7 +1,9 @@
 "use client";
 
 import Link from "next/link";
+import Image from "next/image";
 import { usePathname } from "next/navigation";
+import appIcon from "@/app/icon.png";
 
 const NAV_ITEMS = [
   {
@@ -81,10 +83,15 @@ export default function Sidebar({ collapsed, onToggle }: { collapsed: boolean; o
         <div className={`py-5 border-b border-white/10 ${collapsed ? "px-3" : "px-4"}`}>
           <div className={`flex items-center ${collapsed ? "justify-center" : "justify-between"}`}>
             <div className={`flex items-center ${collapsed ? "" : "gap-3"}`}>
-              <div className="w-10 h-10 rounded-xl bg-bombonera-400 flex items-center justify-center shrink-0">
-                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="white" className="w-6 h-6">
-                  <path fillRule="evenodd" d="M12 2.25c-5.385 0-9.75 4.365-9.75 9.75s4.365 9.75 9.75 9.75 9.75-4.365 9.75-9.75S17.385 2.25 12 2.25ZM8.547 4.505a8.25 8.25 0 1 0 11.672 8.214l-.46-.46Z" clipRule="evenodd" />
-                </svg>
+              <div className="w-10 h-10 rounded-xl overflow-hidden bg-white/10 flex items-center justify-center shrink-0">
+                <Image
+                  src={appIcon}
+                  alt="Logo La Bombonera"
+                  width={40}
+                  height={40}
+                  className="w-full h-full object-cover"
+                  priority
+                />
               </div>
               {!collapsed && (
                 <div className="min-w-0">
