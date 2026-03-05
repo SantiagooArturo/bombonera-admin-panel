@@ -10,10 +10,10 @@ function formatPhone(phone: string): string {
 /** Contenido visual de una celda ocupada por una reserva. */
 export function OccupiedCellContent({
   reservation,
-  clientType,
+  isRecurrent,
 }: {
   reservation: Reservation;
-  clientType?: string;
+  isRecurrent?: boolean;
 }) {
   const paid = reservation.amount_paid ?? 0;
   const total = reservation.total_price ?? 0;
@@ -21,27 +21,8 @@ export function OccupiedCellContent({
   const arrived = reservation.arrived ?? false;
   const fullyPaid = remaining <= 0;
 
-  const clientTypeLabel =
-    clientType === "recurrente"
-      ? "Recurrente"
-      : clientType === "sospechoso_fraude"
-        ? "Riesgo"
-        : clientType === "indeciso"
-          ? "Indeciso"
-          : clientType === "casual"
-            ? "Casual"
-            : "Cliente";
-  const clientTypeClass =
-    clientType === "recurrente"
-      ? "bg-blue-50 text-blue-700 border-blue-100"
-      : clientType === "sospechoso_fraude"
-        ? "bg-red-50 text-red-700 border-red-100"
-        : clientType === "indeciso"
-          ? "bg-purple-50 text-purple-700 border-purple-100"
-          : "bg-gray-50 text-gray-600 border-gray-100";
-
   return (
-    <div className="h-full rounded-lg border-2 border-blue-300 bg-white p-2 flex flex-col justify-center gap-0.5">
+    <div className={`relative h-full rounded-lg border-2 border-blue-300 bg-white p-2 flex flex-col justify-center gap-0.5 ${isRecurrent ? "pb-5" : ""}`}>
       {/* Nombre */}
       <p className="text-xs font-bold text-gray-800 truncate leading-tight">
         {reservation.representative_name || "Sin nombre"}
@@ -64,11 +45,11 @@ export function OccupiedCellContent({
         </div>
       )}
 
-      <div className="mt-0.5">
-        <span className={`inline-flex px-1.5 py-0.5 rounded-md text-[9px] font-semibold border ${clientTypeClass}`}>
-          {clientTypeLabel}
+      {isRecurrent && (
+        <span className="absolute bottom-1 right-1 inline-flex px-1.5 py-0.5 rounded-md text-[9px] font-bold border bg-amber-100 text-amber-800 border-amber-200 shadow-sm">
+          Recurrente
         </span>
-      </div>
+      )}
 
       {/* Info de pago */}
       {fullyPaid ? (

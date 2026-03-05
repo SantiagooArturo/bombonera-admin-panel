@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useRef, useEffect, useCallback } from "react";
-import { Transfer, Invoice, Reservation, PaymentMethod } from "@/lib/types";
+import { Transfer, Invoice, Reservation, PaymentMethod, ClientType, CLIENT_TYPE_LABELS } from "@/lib/types";
 import { renderPdfToDataUrl } from "@/lib/pdf-preview";
 import { calculateReservationPrice } from "@/features/operaciones/utils";
 
@@ -85,6 +85,10 @@ interface PaymentSidebarProps {
   onCancelReservation: () => Promise<boolean>;
   onRevokeManualPayment: (transferId: string) => void;
   onRegisterPayment: (amount: number, method: PaymentMethod, mediaUrl?: string) => void;
+  clientType: ClientType;
+  clientTypeLoading?: boolean;
+  clientTypeUpdating?: boolean;
+  onUpdateClientType: (clientType: ClientType) => Promise<boolean>;
   cancellingReservation?: boolean;
   onClose: () => void;
   onToggleArrived?: (resId: string, arrived: boolean) => void;
@@ -718,6 +722,10 @@ export default function PaymentSidebar({
   onCancelReservation,
   onRevokeManualPayment,
   onRegisterPayment,
+  clientType,
+  clientTypeLoading = false,
+  clientTypeUpdating = false,
+  onUpdateClientType,
   cancellingReservation = false,
   onClose,
   onToggleArrived,
@@ -821,8 +829,8 @@ export default function PaymentSidebar({
 
         {/* Client Info */}
         <div className="px-6 py-4 border-b border-gray-200 bg-white shrink-0">
-          <div className="flex items-center justify-between gap-4">
-            <div className="space-y-1">
+          <div className="flex items-stretch justify-between gap-4">
+            <div className="flex flex-col justify-center space-y-1">
               <p className="text-lg font-bold text-gray-900">
                 {reservation.representative_name || "Sin nombre"}
               </p>
@@ -881,42 +889,74 @@ export default function PaymentSidebar({
                 )}
               </div>
             </div>
-            <div className="flex flex-col items-end gap-2 shrink-0">
-              {!isCancelled && (
-                <button
-                  onClick={onCancelReservation}
-                  disabled={cancellingReservation}
-                  className="px-5 py-2.5 rounded-xl font-bold text-sm transition-all disabled:opacity-50 bg-red-600 text-white shadow-sm hover:bg-red-700"
-                >
-                  {cancellingReservation ? "Cancelando..." : "Cancelar reserva"}
-                </button>
-              )}
-              {onExtendReservation && !isCancelled && (
-                <button
-                  onClick={onExtendReservation}
-                  disabled={extendingReservation}
-                  className="px-5 py-2.5 rounded-xl font-bold text-sm transition-all disabled:opacity-50 bg-indigo-600 text-white shadow-sm hover:bg-indigo-700"
-                >
-                  {extendingReservation ? "Extender..." : "Extender +1h"}
-                </button>
-              )}
-              {onToggleArrived && !isCancelled && (
-                <button
-                  onClick={handleArrivedToggle}
-                  disabled={arrivedLoading}
-                  className={`px-5 py-2.5 rounded-xl font-bold text-sm transition-all disabled:opacity-50 ${arrived
-                    ? "bg-green-500 text-white shadow-md hover:bg-green-600"
-                    : "bg-blue-600 text-white shadow-sm hover:bg-blue-700"
-                    }`}
-                >
-                  {arrivedLoading ? "..." : arrived ? "✓ Ya llegó" : "Marcar llegada"}
-                </button>
-              )}
+            <div className="flex flex-col items-end gap-4 shrink-0 min-w-[260px]">
+              <div className="w-full flex flex-wrap items-center gap-2">
+                {onToggleArrived && !isCancelled && !arrived && (
+                  <button
+                    onClick={handleArrivedToggle}
+                    disabled={arrivedLoading}
+                    className="px-4 py-2.5 rounded-xl font-bold text-sm transition-all disabled:opacity-50 bg-blue-600 text-white shadow-sm hover:bg-blue-700"
+                  >
+                    {arrivedLoading ? "..." : "Marcar llegada"}
+                  </button>
+                )}
+                {onExtendReservation && !isCancelled && (
+                  <button
+                    onClick={onExtendReservation}
+                    disabled={extendingReservation}
+                    className="px-4 py-2.5 rounded-xl font-bold text-sm transition-all disabled:opacity-50 bg-indigo-600 text-white shadow-sm hover:bg-indigo-700"
+                  >
+                    {extendingReservation ? "Extender..." : "Extender +1h"}
+                  </button>
+                )}
+                {!isCancelled && (
+                  <button
+                    onClick={onCancelReservation}
+                    disabled={cancellingReservation}
+                    className="ml-auto px-4 py-2.5 rounded-xl font-bold text-sm transition-all disabled:opacity-50 bg-red-600 text-white shadow-sm hover:bg-red-700"
+                  >
+                    {cancellingReservation ? "Cancelando..." : "Cancelar reserva"}
+                  </button>
+                )}
+                {onToggleArrived && !isCancelled && arrived && (
+                  <button
+                    onClick={handleArrivedToggle}
+                    disabled={arrivedLoading}
+                    className="ml-auto px-4 py-2.5 rounded-xl font-bold text-sm transition-all disabled:opacity-50 bg-green-500 text-white shadow-md hover:bg-green-600"
+                  >
+                    {arrivedLoading ? "..." : "Cancelar llegada"}
+                  </button>
+                )}
+              </div>
+
+              <div className="w-full mt-1">
+                <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1">
+                  Tipo de cliente
+                </label>
+                {clientTypeLoading ? (
+                  <div className="h-[42px] w-full rounded-xl border-2 border-gray-200 bg-gray-100 animate-pulse" />
+                ) : (
+                  <select
+                    value={clientType}
+                    disabled={clientTypeUpdating}
+                    onChange={(e) => {
+                      const next = e.target.value as ClientType;
+                      if (next === clientType) return;
+                      void onUpdateClientType(next);
+                    }}
+                    className="w-full rounded-xl border-2 border-gray-200 bg-gray-50 px-3 py-2.5 text-sm font-bold text-gray-800 focus:border-blue-500 focus:outline-none disabled:opacity-60"
+                  >
+                    <option value="casual">{CLIENT_TYPE_LABELS.casual}</option>
+                    <option value="recurrente">{CLIENT_TYPE_LABELS.recurrente}</option>
+                    <option value="sospechoso_fraude">{CLIENT_TYPE_LABELS.sospechoso_fraude}</option>
+                  </select>
+                )}
+              </div>
             </div>
           </div>
 
           {/* Resumen financiero */}
-          <div className="mt-4 grid grid-cols-3 gap-4">
+          <div className="mt-7 pt-4 border-t border-gray-100 grid grid-cols-3 gap-4">
             <div className="bg-gray-50 rounded-xl px-4 py-3 text-center">
               <p className="text-xs font-medium text-gray-400 uppercase">Total</p>
               <p className="text-lg font-bold text-gray-900">S/ {totalPrice.toFixed(2)}</p>

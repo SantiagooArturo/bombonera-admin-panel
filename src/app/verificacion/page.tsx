@@ -251,6 +251,10 @@ function VerificacionContent() {
                     cancellingReservation={sidebar.cancellingReservation}
                     onRevokeManualPayment={sidebar.handleRevokeManualPayment}
                     onRegisterPayment={sidebar.handleRegisterPayment}
+                    clientType={sidebar.clientType}
+                    clientTypeLoading={sidebar.clientTypeLoading}
+                    clientTypeUpdating={sidebar.clientTypeUpdating}
+                    onUpdateClientType={sidebar.handleUpdateClientType}
                     onClose={sidebar.close}
                 />
             )}

@@ -46,7 +46,7 @@ export interface ScheduleGridProps {
   reservations: Reservation[];
   blockedSlots: BlockedSlot[];
   autoAssignments: Map<string, number>;
-  clientTypeByChatId?: Map<string, string | undefined>;
+  recurrentChatIds?: Set<string>;
   currentSlot: string;
   isToday: boolean;
   onSelectReservation: (reservation: Reservation) => void;
@@ -61,7 +61,7 @@ export default function ScheduleGrid({
   reservations,
   blockedSlots,
   autoAssignments,
-  clientTypeByChatId,
+  recurrentChatIds,
   currentSlot,
   isToday,
   onSelectReservation,
@@ -269,7 +269,7 @@ export default function ScheduleGrid({
                     >
                       <OccupiedCellContent
                         reservation={reservation}
-                        clientType={clientTypeByChatId?.get(reservation.chat_id)}
+                        isRecurrent={recurrentChatIds?.has(String(reservation.chat_id || "").replace(/\D/g, ""))}
                       />
                     </td>
                   );

@@ -3,7 +3,7 @@
 import { useState, useCallback } from "react";
 import { useStore } from "@/lib/hooks";
 import { useToastContext } from "@/components/ClientLayout";
-import type { Reservation, Transfer, Invoice, PaymentMethod } from "@/lib/types";
+import type { Reservation, Transfer, Invoice, PaymentMethod, ClientType } from "@/lib/types";
 
 interface UsePaymentSidebarOptions {
   onReservationUpdated?: (resId: string, patch: Partial<Reservation>) => void;
@@ -21,19 +21,25 @@ export function usePaymentSidebar(options?: UsePaymentSidebarOptions) {
   const [emittingInvoiceId, setEmittingInvoiceId] = useState<string | null>(null);
   const [paymentLoading, setPaymentLoading] = useState(false);
   const [cancellingReservation, setCancellingReservation] = useState(false);
+  const [clientType, setClientType] = useState<ClientType>("casual");
+  const [clientTypeLoading, setClientTypeLoading] = useState(false);
+  const [clientTypeUpdating, setClientTypeUpdating] = useState(false);
 
   const isOpen = selectedReservation !== null;
 
   const open = useCallback(async (reservation: Reservation) => {
     setSelectedReservation(reservation);
     setLoadingData(true);
+    setClientTypeLoading(true);
     try {
       await store.syncReservationPayments(reservation.id);
 
-      const [transfersData, invoicesData, freshResReq] = await Promise.all([
+      const normalizedChatId = String(reservation.chat_id || "").replace(/\D/g, "");
+      const [transfersData, invoicesData, freshResReq, clientTypeRes] = await Promise.all([
         store.fetchTransfers(reservation.id),
         store.fetchInvoices({ reservation_id: reservation.id }),
         fetch(`/api/reservations?id=${reservation.id}`),
+        fetch(`/api/users/client-type?chat_id=${encodeURIComponent(normalizedChatId)}`, { cache: "no-store" }),
       ]);
       setTransfers(transfersData || []);
       setInvoices(invoicesData || []);
@@ -51,11 +57,23 @@ export function usePaymentSidebar(options?: UsePaymentSidebarOptions) {
         return sum;
       }, 0);
       setSelectedReservation({ ...freshReservation, amount_paid: total });
+
+      if (clientTypeRes.ok) {
+        const clientTypeData = await clientTypeRes.json();
+        const nextType = clientTypeData?.client_type;
+        const isValid =
+          nextType === "casual" || nextType === "recurrente" || nextType === "sospechoso_fraude";
+        setClientType(isValid ? nextType : "casual");
+      } else {
+        setClientType("casual");
+      }
     } catch (error) {
       console.error("Error loading sidebar data", error);
       toast("Error al cargar información", "error");
+      setClientType("casual");
     } finally {
       setLoadingData(false);
+      setClientTypeLoading(false);
     }
   }, [store, toast]);
 
@@ -63,7 +81,29 @@ export function usePaymentSidebar(options?: UsePaymentSidebarOptions) {
     setSelectedReservation(null);
     setTransfers([]);
     setInvoices([]);
+    setClientType("casual");
+    setClientTypeLoading(false);
+    setClientTypeUpdating(false);
   }, []);
+
+  const handleUpdateClientType = useCallback(async (nextType: ClientType) => {
+    if (!selectedReservation) return false;
+    const prevType = clientType;
+    setClientType(nextType);
+    setClientTypeUpdating(true);
+
+    const normalizedChatId = String(selectedReservation.chat_id || "").replace(/\D/g, "");
+    const ok = await store.updateUserClientType(normalizedChatId, nextType);
+
+    setClientTypeUpdating(false);
+    if (!ok) {
+      setClientType(prevType);
+      toast("No se pudo actualizar tipo de cliente", "error");
+      return false;
+    }
+    toast("Tipo de cliente actualizado", "success");
+    return true;
+  }, [selectedReservation, clientType, store, toast]);
 
   const handleVerifyTransfer = useCallback(async (transferId: string, currentStatus: boolean) => {
     const success = await store.verifyTransfer(transferId, !currentStatus);
@@ -261,6 +301,9 @@ export function usePaymentSidebar(options?: UsePaymentSidebarOptions) {
     emittingInvoiceId,
     paymentLoading,
     cancellingReservation,
+    clientType,
+    clientTypeLoading,
+    clientTypeUpdating,
     isOpen,
     open,
     close,
@@ -268,6 +311,7 @@ export function usePaymentSidebar(options?: UsePaymentSidebarOptions) {
     handleEmitInvoice,
     handleUpdateDni,
     handleCancelReservation,
+    handleUpdateClientType,
     handleAttachInvoice,
     handleDetachInvoice,
     handleRevokeManualPayment,

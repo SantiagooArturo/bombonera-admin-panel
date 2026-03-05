@@ -38,6 +38,7 @@ export default function OperacionesPage() {
   const [reservations, setReservations] = useState<Reservation[]>([]);
   const [blockedSlots, setBlockedSlots] = useState<BlockedSlot[]>([]);
   const [users, setUsers] = useState<User[]>([]);
+  const [recurrentChatIds, setRecurrentChatIds] = useState<Set<string>>(new Set());
   const [loading, setLoading] = useState(true);
 
   // Unblock dialog
@@ -119,10 +120,24 @@ export default function OperacionesPage() {
         .filter((u) => u.phone.length >= 9),
     [users]
   );
-  const clientTypeByChatId = useMemo(
-    () => new Map(users.map((u) => [u.chat_id, u.client_type])),
-    [users]
-  );
+  const loadRecurrentClientIds = useCallback(async () => {
+    try {
+      const res = await fetch("/api/users/recurrent", { cache: "no-store" });
+      if (!res.ok) return;
+      const data = await res.json();
+      const ids = Array.isArray(data?.chat_ids) ? data.chat_ids : [];
+      setRecurrentChatIds(new Set(ids.map((id: string) => String(id).replace(/\D/g, ""))));
+    } catch {
+      // Evita ruido visual: si falla, simplemente no mostramos el badge.
+      setRecurrentChatIds(new Set());
+    }
+  }, []);
+
+  useEffect(() => {
+    loadRecurrentClientIds();
+    const interval = setInterval(loadRecurrentClientIds, 15000);
+    return () => clearInterval(interval);
+  }, [loadRecurrentClientIds]);
 
   useEffect(() => {
     sidebar.close();
@@ -511,7 +526,7 @@ export default function OperacionesPage() {
             reservations={reservations}
             blockedSlots={blockedSlots}
             autoAssignments={autoAssignments}
-            clientTypeByChatId={clientTypeByChatId}
+            recurrentChatIds={recurrentChatIds}
             currentSlot={currentSlot}
             isToday={isToday}
             onSelectReservation={sidebar.open}
@@ -540,6 +555,10 @@ export default function OperacionesPage() {
           cancellingReservation={sidebar.cancellingReservation}
           onRevokeManualPayment={sidebar.handleRevokeManualPayment}
           onRegisterPayment={sidebar.handleRegisterPayment}
+          clientType={sidebar.clientType}
+          clientTypeLoading={sidebar.clientTypeLoading}
+          clientTypeUpdating={sidebar.clientTypeUpdating}
+          onUpdateClientType={sidebar.handleUpdateClientType}
           onClose={sidebar.close}
           onToggleArrived={handleToggleArrived}
           onExtendReservation={() => handleExtendReservationOneHour(sidebar.selectedReservation!)}
