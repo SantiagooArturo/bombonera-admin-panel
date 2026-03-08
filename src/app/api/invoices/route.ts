@@ -2,11 +2,19 @@ import { NextRequest, NextResponse } from "next/server";
 import { getDb, getStorageBucket } from "@/lib/firebase-admin";
 import { randomUUID } from "crypto";
 
-const FACTILIZA_BASE_URL = process.env.FACTILIZA_BASE_URL!;
-const FACTILIZA_TOKEN = process.env.FACTILIZA_TOKEN!;
-const FACTILIZA_RUC = process.env.FACTILIZA_RUC!;
-const FACTILIZA_SERIE = process.env.FACTILIZA_SERIE || "B098";
-const FACTILIZA_SERIE_FACTURA = process.env.FACTILIZA_SERIE_FACTURA || "F001";
+// ── Configuración apisunat.pe (Lucode) ──
+// Docs: https://docs.apisunat.pe/integracion/facturacion-electronica/configuracion-api
+// Sandbox:    https://sandbox.apisunat.pe/api/v3/documents
+// Producción: https://app.apisunat.pe/api/v3/documents
+const APISUNAT_URL = process.env.APISUNAT_URL!;
+const APISUNAT_TOKEN = process.env.APISUNAT_TOKEN!;
+const APISUNAT_SERIE_BOLETA = process.env.APISUNAT_SERIE_BOLETA || "B001";
+const APISUNAT_SERIE_FACTURA = process.env.APISUNAT_SERIE_FACTURA || "F001";
+
+// Máximo de reintentos si apisunat reporta correlativo duplicado.
+// Esto auto-sincroniza el contador local si alguien emitió desde el panel de apisunat
+// o si el contador quedó desincronizado por cualquier razón.
+const MAX_EMISSION_RETRIES = 5;
 
 const COURT_DESCRIPTIONS: Record<string, string> = {
   voley_6v6: "Alquiler cancha voley 6v6",
@@ -14,6 +22,37 @@ const COURT_DESCRIPTIONS: Record<string, string> = {
   voley_5v5: "Alquiler cancha voley 5v5",
   voley_basket_5v5: "Alquiler cancha voley-basket 5v5",
 };
+
+// ── Helpers ──────────────────────────────────────────────────────────────────
+
+/**
+ * Incrementa atómicamente el correlativo para una serie dada.
+ * Colección: config, documento: invoice_counter_{serie}
+ * Se crea automáticamente si no existe (empieza en 0 → devuelve 1).
+ */
+async function getNextCorrelativo(
+  db: FirebaseFirestore.Firestore,
+  serie: string
+): Promise<number> {
+  const counterRef = db.collection("config").doc(`invoice_counter_${serie}`);
+  return db.runTransaction(async (tx) => {
+    const doc = await tx.get(counterRef);
+    const current = doc.exists ? (doc.data()?.last_correlativo || 0) : 0;
+    const next = current + 1;
+    tx.set(counterRef, { last_correlativo: next }, { merge: true });
+    return next;
+  });
+}
+
+/**
+ * Detecta si el error de apisunat es por documento duplicado.
+ * Mensaje típico: "ERROR: Documento B001-1 fue emitido anteriormente"
+ */
+function isDuplicateError(message?: string): boolean {
+  return !!message?.toLowerCase().includes("fue emitido anteriormente");
+}
+
+// ── GET: Listar boletas por reserva ─────────────────────────────────────────
 
 export async function GET(request: NextRequest) {
   try {
@@ -44,6 +83,8 @@ export async function GET(request: NextRequest) {
   }
 }
 
+// ── POST: Emitir boleta/factura ─────────────────────────────────────────────
+
 export async function POST(request: NextRequest) {
   try {
     const db = getDb();
@@ -70,6 +111,7 @@ export async function POST(request: NextRequest) {
       );
     }
 
+    // ── Validación de documento de identidad ──
     const tipoComprobante: "boleta" | "factura" =
       tipo_comprobante === "factura" ? "factura" : "boleta";
     const cleanDoc = String(doc_num || "").replace(/\D/g, "");
@@ -80,31 +122,25 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: "DNI inválido para boleta" }, { status: 400 });
     }
 
-    const tipoDocSunat = tipoComprobante === "factura" ? "01" : "03";
-    const serieSunat = tipoComprobante === "factura" ? FACTILIZA_SERIE_FACTURA : FACTILIZA_SERIE;
+    const serieSunat =
+      tipoComprobante === "factura" ? APISUNAT_SERIE_FACTURA : APISUNAT_SERIE_BOLETA;
 
-    // 1. Obtener siguiente correlativo (atómico con transacción)
-    const counterRef = db.collection("config").doc("invoice_counter");
-    const correlativo = await db.runTransaction(async (tx) => {
-      const doc = await tx.get(counterRef);
-      const current = doc.exists ? (doc.data()?.last_correlativo || 1) : 1;
-      // Ya usamos B098-1 en la prueba, empezar desde 2
-      const next = doc.exists ? current + 1 : 2;
-      tx.set(counterRef, { last_correlativo: next }, { merge: true });
-      return next;
-    });
-
-    // 2. Calcular montos (precios INCLUYEN IGV)
+    // 1. Calcular valor unitario sin IGV (apisunat calcula IGV internamente)
+    //    El monto recibido INCLUYE IGV → valor_unitario = monto / 1.18
+    //    6 decimales de precisión para que apisunat redondee correctamente
     const totalAmount = amount || 0;
-    const baseImponible = Math.round((totalAmount / 1.18) * 100) / 100;
-    const igv = Math.round((totalAmount - baseImponible) * 100) / 100;
+    const valorUnitario = (totalAmount / 1.18).toFixed(6);
 
-    // 3. Construir descripción del servicio
+    // 2. Descripción del servicio (aparece en la boleta impresa)
     const courtDesc = COURT_DESCRIPTIONS[court_type] || `Alquiler cancha ${court_type}`;
     let descripcion = courtDesc;
     if (date) {
       const dateObj = new Date(date + "T12:00:00");
-      const dateStr = dateObj.toLocaleDateString("es-PE", { day: "2-digit", month: "2-digit", year: "numeric" });
+      const dateStr = dateObj.toLocaleDateString("es-PE", {
+        day: "2-digit",
+        month: "2-digit",
+        year: "numeric",
+      });
       descripcion += ` - ${dateStr}`;
     }
     if (time_slots?.length > 0) {
@@ -113,147 +149,161 @@ export async function POST(request: NextRequest) {
       descripcion += ` ${startH}-${lastH}:00`;
     }
 
-    // 4. Fecha de emisión en formato ISO con timezone Lima
+    // 3. Fecha y hora de emisión (timezone Lima UTC-5)
     const now = new Date();
-    const fechaEmision = now.toISOString().split("T")[0] + "T00:00:00-05:00";
+    const limaDate = new Date(now.toLocaleString("en-US", { timeZone: "America/Lima" }));
+    const fechaEmision = limaDate.toISOString().split("T")[0];
+    const horaEmision = limaDate.toTimeString().split(" ")[0]; // HH:mm:ss
 
-    // 5. Nombre del cliente
+    // 4. Nombre del cliente
     const clienteName = (representative_name || "CLIENTE GENERAL").toUpperCase();
 
-    // 6. Armar request para Factiliza
-    const factilizaBody = {
-      tipo_Operacion: "0101",
-      tipo_Doc: tipoDocSunat,
+    // 5. Request body base para apisunat.pe (Lucode) — sin "numero", se asigna en el loop
+    //    Docs: https://docs.apisunat.pe/integracion/facturacion-electronica/boleta/boleta-simple
+    //    - "documento": "boleta" | "factura"
+    //    - "valor_unitario": precio SIN IGV (la API calcula el IGV)
+    //    - "total": monto final CON IGV
+    //    - "codigo_tipo_afectacion_igv": "10" = Gravado - Operación Onerosa
+    //    - "unidad_de_medida": "ZZ" = Servicio
+    //    - No requiere empresa_Ruc en el body (va asociado al token)
+    const apisunatBaseBody = {
+      documento: tipoComprobante,
       serie: serieSunat,
-      correlativo: String(correlativo),
-      tipo_Moneda: "PEN",
-      fecha_Emision: fechaEmision,
-      empresa_Ruc: FACTILIZA_RUC,
-      cliente_Tipo_Doc:
-        tipoComprobante === "factura" ? "6" : "1",
-      cliente_Num_Doc: cleanDoc,
-      cliente_Razon_Social: clienteName,
-      cliente_Direccion: "LIMA",
-      monto_Oper_Gravadas: baseImponible,
-      monto_Igv: igv,
-      total_Impuestos: igv,
-      valor_Venta: baseImponible,
-      sub_Total: totalAmount,
-      monto_Imp_Venta: totalAmount,
-      monto_Oper_Exoneradas: 0,
-      estado_Documento: "0",
-      manual: false,
-      id_Base_Dato: "15265",
-      detalle: [
+      fecha_de_emision: fechaEmision,
+      hora_de_emision: horaEmision,
+      moneda: "PEN",
+      tipo_operacion: "0101",
+      cliente_tipo_de_documento: tipoComprobante === "factura" ? "6" : "1",
+      cliente_numero_de_documento: cleanDoc,
+      cliente_denominacion: clienteName,
+      cliente_direccion: "LIMA",
+      items: [
         {
-          unidad: "ZZ", // Servicio
-          cantidad: 1,
-          cod_Producto: court_type || "CANCHA",
+          unidad_de_medida: "ZZ",
           descripcion,
-          monto_Valor_Unitario: baseImponible,
-          monto_Base_Igv: baseImponible,
-          porcentaje_Igv: 18.0,
-          igv,
-          tip_Afe_Igv: "10", // Gravado
-          total_Impuestos: igv,
-          monto_Precio_Unitario: totalAmount,
-          monto_Valor_Venta: baseImponible,
-          factor_Icbper: 0,
+          cantidad: "1",
+          valor_unitario: valorUnitario,
+          porcentaje_igv: "18",
+          codigo_tipo_afectacion_igv: "10",
+          nombre_tributo: "IGV",
         },
       ],
-      forma_pago: [
-        {
-          tipo: "Contado",
-          monto: totalAmount,
-          cuota: 0,
-          fecha_Pago: fechaEmision,
-        },
-      ],
-      legend: [
-        {
-          legend_Code: "1000",
-          legend_Value: numberToWords(totalAmount),
-        },
-      ],
+      total: String(totalAmount),
     };
 
-    // 7. Emitir boleta en Factiliza (SUNAT)
-    const emitRes = await fetch(`${FACTILIZA_BASE_URL}/api/v1/invoice/send`, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        Authorization: `Bearer ${FACTILIZA_TOKEN}`,
-      },
-      body: JSON.stringify(factilizaBody),
-    });
+    // 6. Emitir comprobante con auto-recuperación ante correlativos duplicados.
+    //    Si apisunat responde "fue emitido anteriormente", incrementamos el contador
+    //    y reintentamos. Esto auto-sincroniza el contador local con apisunat
+    //    (ej: si alguien emitió manualmente desde el panel, o por la prueba inicial).
+    //    Respuesta exitosa: { success, message, payload: { estado, hash, xml, cdr, pdf: { ticket } } }
+    //    Estados posibles: ACEPTADO | PENDIENTE (cdr: null) | RECHAZADO
+    let correlativo = 0;
+    let emitData: Record<string, unknown> | null = null;
+    let emitStatus = 0;
 
-    const emitData = await emitRes.json();
+    for (let attempt = 0; attempt < MAX_EMISSION_RETRIES; attempt++) {
+      correlativo = await getNextCorrelativo(db, serieSunat);
 
-    if (!emitData.success) {
-      console.error("Factiliza emission error:", emitData);
+      const emitRes = await fetch(APISUNAT_URL, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${APISUNAT_TOKEN}`,
+        },
+        body: JSON.stringify({ ...apisunatBaseBody, numero: correlativo }),
+      });
+
+      emitStatus = emitRes.status;
+      emitData = (await emitRes.json()) as Record<string, unknown>;
+
+      if (emitData.success) break;
+
+      // Si NO es error de duplicado, es un error real → no reintentar
+      if (!isDuplicateError(emitData.message as string)) {
+        console.error("apisunat emission error:", emitData);
+        return NextResponse.json(
+          { error: `Error de SUNAT: ${(emitData.message as string) || "Error desconocido"}` },
+          { status: emitStatus === 401 ? 401 : 400 }
+        );
+      }
+
+      // Duplicado: el counter ya se incrementó, el siguiente loop obtendrá el próximo número
+      console.warn(
+        `Correlativo ${serieSunat}-${correlativo} duplicado en apisunat (intento ${attempt + 1}/${MAX_EMISSION_RETRIES}), reintentando...`
+      );
+    }
+
+    // Si agotamos los reintentos sin éxito
+    if (!emitData?.success) {
+      console.error("apisunat: se agotaron reintentos por duplicados", emitData);
       return NextResponse.json(
-        { error: `Error de SUNAT: ${emitData.message || "Error desconocido"}` },
+        { error: `Error de SUNAT: no se pudo asignar un correlativo válido tras ${MAX_EMISSION_RETRIES} intentos` },
         { status: 400 }
       );
     }
 
-    // 8. Descargar PDF de Factiliza
-    const pdfRes = await fetch(`${FACTILIZA_BASE_URL}/api/v1/invoice/pdf`, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        Authorization: `Bearer ${FACTILIZA_TOKEN}`,
-      },
-      body: JSON.stringify({
-        empresa_Ruc: FACTILIZA_RUC,
-        tipo_Doc: tipoDocSunat,
-        serie: serieSunat,
-        correlativo: String(correlativo),
-      }),
-    });
+    const payload = (emitData.payload || {}) as Record<string, unknown>;
+    const pdfPayload = (payload.pdf || {}) as Record<string, string>;
 
-    if (!pdfRes.ok) {
-      console.error("Error downloading PDF from Factiliza");
-      return NextResponse.json(
-        { error: "Boleta emitida pero error al descargar PDF" },
-        { status: 500 }
-      );
+    // 7. Descargar PDF desde apisunat.pe y subirlo a Firebase Storage
+    //    apisunat devuelve la URL del PDF directamente en payload.pdf.ticket
+    //    Lo descargamos y lo re-subimos a nuestro Storage para control propio
+    const pdfTicketUrl: string | null = pdfPayload.ticket || null;
+    const serieCorrelativo = `${serieSunat}-${correlativo}`;
+    let fileUrl = pdfTicketUrl; // fallback: URL externa de apisunat
+
+    if (pdfTicketUrl) {
+      try {
+        const pdfRes = await fetch(pdfTicketUrl, {
+          headers: { Authorization: `Bearer ${APISUNAT_TOKEN}` },
+        });
+
+        if (pdfRes.ok) {
+          const pdfBuffer = Buffer.from(await pdfRes.arrayBuffer());
+          const storagePath = `invoices/${serieCorrelativo}.pdf`;
+          const file = bucket.file(storagePath);
+          const downloadToken = randomUUID();
+
+          await file.save(pdfBuffer, {
+            metadata: {
+              contentType: "application/pdf",
+              metadata: { firebaseStorageDownloadTokens: downloadToken },
+            },
+          });
+
+          const bucketName = bucket.name;
+          const encodedPath = encodeURIComponent(storagePath);
+          fileUrl = `https://firebasestorage.googleapis.com/v0/b/${bucketName}/o/${encodedPath}?alt=media&token=${downloadToken}`;
+        } else {
+          console.warn("No se pudo descargar PDF de apisunat, usando URL externa");
+        }
+      } catch (pdfErr) {
+        // Si falla la descarga del PDF, no bloqueamos la emisión.
+        // La boleta ya fue emitida en SUNAT, simplemente usamos la URL externa.
+        console.warn("Error descargando PDF de apisunat:", pdfErr);
+      }
     }
 
-    const pdfBuffer = Buffer.from(await pdfRes.arrayBuffer());
-
-    // 9. Subir PDF a Firebase Storage
-    const serieCorrelativo = `${serieSunat}-${correlativo}`;
-    const storagePath = `invoices/${serieCorrelativo}.pdf`;
-    const file = bucket.file(storagePath);
-    const downloadToken = randomUUID();
-
-    await file.save(pdfBuffer, {
-      metadata: {
-        contentType: "application/pdf",
-        metadata: { firebaseStorageDownloadTokens: downloadToken },
-      },
-    });
-
-    const bucketName = bucket.name;
-    const encodedPath = encodeURIComponent(storagePath);
-    const fileUrl = `https://firebasestorage.googleapis.com/v0/b/${bucketName}/o/${encodedPath}?alt=media&token=${downloadToken}`;
-
-    // 10. Guardar en Firestore
+    // 8. Guardar metadata en Firestore
     const invoiceData = {
       reservation_id,
       user_id,
       phone_number: phone_number || "",
-      file_url: fileUrl,
+      file_url: fileUrl || "",
       amount: totalAmount,
       court_type: court_type || "",
       date: date || "",
       transfer_id: transfer_id || null,
       serie: serieSunat,
-      tipo_doc: tipoDocSunat,
+      tipo_comprobante: tipoComprobante,
       correlativo,
       serie_correlativo: serieCorrelativo,
-      factiliza_hash: emitData.data?.hash || null,
+      sunat_hash: (payload.hash as string) || null,
+      sunat_estado: (payload.estado as string) || null,
+      // URLs originales de apisunat por si necesitamos re-descargar
+      sunat_xml: (payload.xml as string) || null,
+      sunat_cdr: (payload.cdr as string) || null,
+      sunat_pdf_ticket: pdfTicketUrl,
       status: "emitted",
       created_at: new Date().toISOString(),
     };
@@ -265,6 +315,7 @@ export async function POST(request: NextRequest) {
       invoice_id: docRef.id,
       file_url: fileUrl,
       serie_correlativo: serieCorrelativo,
+      sunat_estado: payload.estado,
     });
   } catch (error) {
     console.error("Error creating invoice:", error);
@@ -274,6 +325,8 @@ export async function POST(request: NextRequest) {
     );
   }
 }
+
+// ── DELETE: Desvincular boleta adjuntada manualmente ─────────────────────────
 
 export async function DELETE(request: NextRequest) {
   try {
@@ -307,77 +360,4 @@ export async function DELETE(request: NextRequest) {
     console.error("Error deleting invoice:", error);
     return NextResponse.json({ error: "Error al desvincular boleta" }, { status: 500 });
   }
-}
-
-// ── Número a letras (español) para la leyenda SUNAT ──
-
-function numberToWords(num: number): string {
-  const intPart = Math.floor(num);
-  const decPart = Math.round((num - intPart) * 100);
-
-  const units = ["", "UN", "DOS", "TRES", "CUATRO", "CINCO", "SEIS", "SIETE", "OCHO", "NUEVE"];
-  const teens = ["DIEZ", "ONCE", "DOCE", "TRECE", "CATORCE", "QUINCE", "DIECISEIS", "DIECISIETE", "DIECIOCHO", "DIECINUEVE"];
-  const tens = ["", "DIEZ", "VEINTE", "TREINTA", "CUARENTA", "CINCUENTA", "SESENTA", "SETENTA", "OCHENTA", "NOVENTA"];
-  const hundreds = ["", "CIENTO", "DOSCIENTOS", "TRESCIENTOS", "CUATROCIENTOS", "QUINIENTOS", "SEISCIENTOS", "SETECIENTOS", "OCHOCIENTOS", "NOVECIENTOS"];
-
-  function convertGroup(n: number): string {
-    if (n === 0) return "";
-    if (n === 100) return "CIEN";
-
-    let result = "";
-
-    if (n >= 100) {
-      result += hundreds[Math.floor(n / 100)] + " ";
-      n %= 100;
-    }
-
-    if (n >= 10 && n <= 19) {
-      result += teens[n - 10];
-      return result.trim();
-    }
-
-    if (n >= 20 && n <= 29 && n !== 20) {
-      result += "VEINTI" + units[n - 20];
-      return result.trim();
-    }
-
-    if (n >= 10) {
-      result += tens[Math.floor(n / 10)];
-      n %= 10;
-      if (n > 0) result += " Y ";
-    }
-
-    if (n > 0) {
-      result += units[n];
-    }
-
-    return result.trim();
-  }
-
-  let words = "";
-
-  if (intPart === 0) {
-    words = "CERO";
-  } else if (intPart >= 1000000) {
-    const millions = Math.floor(intPart / 1000000);
-    const remainder = intPart % 1000000;
-    words = (millions === 1 ? "UN MILLON" : convertGroup(millions) + " MILLONES");
-    if (remainder > 0) words += " " + convertBelow1M(remainder);
-  } else {
-    words = convertBelow1M(intPart);
-  }
-
-  function convertBelow1M(n: number): string {
-    if (n >= 1000) {
-      const thousands = Math.floor(n / 1000);
-      const remainder = n % 1000;
-      let result = thousands === 1 ? "MIL" : convertGroup(thousands) + " MIL";
-      if (remainder > 0) result += " " + convertGroup(remainder);
-      return result;
-    }
-    return convertGroup(n);
-  }
-
-  const decStr = decPart.toString().padStart(2, "0");
-  return `SON ${words} CON ${decStr}/100 SOLES`;
 }
