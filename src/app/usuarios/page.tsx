@@ -181,6 +181,7 @@ function UsuariosContent() {
       if (digits && phone.includes(digits)) return true;
       if (digits && u.last_dni?.includes(digits)) return true;
       const names = [u.custom_name, u.contact_name, u.last_representative_name]
+        .concat(u.push_name)
         .filter(Boolean)
         .map((n) => n!.toLowerCase());
       return names.some((n) => n.includes(lower));

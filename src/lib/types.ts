@@ -109,6 +109,8 @@ export interface User {
   phone_number?: string;
   /** Nombre del contacto en WhatsApp (pushName). */
   contact_name?: string;
+  /** Alias explícito del nombre recibido desde WhatsApp (pushName). */
+  push_name?: string;
   /** Nombre personalizado asignado desde el panel admin. */
   custom_name?: string;
   /** Último nombre usado al crear reserva. */

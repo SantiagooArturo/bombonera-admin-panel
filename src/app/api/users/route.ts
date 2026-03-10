@@ -28,6 +28,7 @@ export async function GET() {
         chat_id: data.chat_id ?? id,
         phone_number: data.phone_number ?? undefined,
         contact_name: typeof data.contact_name === "string" ? data.contact_name : undefined,
+        push_name: typeof data.push_name === "string" ? data.push_name : undefined,
         custom_name: typeof data.custom_name === "string" ? data.custom_name : undefined,
         last_representative_name: typeof data.last_representative_name === "string" ? data.last_representative_name : undefined,
         last_dni: typeof data.last_dni === "string" ? data.last_dni : undefined,
