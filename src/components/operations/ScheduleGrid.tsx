@@ -1,7 +1,7 @@
 "use client";
 
 import { useMemo, useEffect, useRef } from "react";
-import { TIME_SLOTS, type Reservation, type CourtType, type BlockedSlot, isReservationActive } from "@/lib/types";
+import { TIME_SLOTS, type Reservation, type BlockedSlot, isReservationActive } from "@/lib/types";
 import { OccupiedCellContent, EmptyCellContent, BlockedCellContent } from "./GridCell";
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
@@ -18,19 +18,41 @@ function formatHour12(slot: string): string {
 
 interface ColumnGroup {
   label: string;
-  courtType: CourtType;
   fields: number[];
 }
 
-const COLUMN_GROUPS: ColumnGroup[] = [
-  { label: "Voley 6v6", courtType: "voley_6v6", fields: [1, 2, 3, 8, 10, 11, 12] },
-  { label: "Multi 6v6", courtType: "voley_basket_6v6", fields: [4] },
-  { label: "Voley 5v5", courtType: "voley_5v5", fields: [5, 6, 7] },
-  { label: "Multi 5v5", courtType: "voley_basket_5v5", fields: [9] },
-];
+/** Campos ordenados estrictamente de 1 a 12. */
+const ALL_FIELDS = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12];
 
-/** Todos los campos en orden de columna (agrupados por tipo). */
-const ALL_FIELDS = COLUMN_GROUPS.flatMap((g) => g.fields);
+const FIELD_GROUP_LABEL: Record<number, string> = {
+  1: "Voley 6v6",
+  2: "Voley 6v6",
+  3: "Voley 6v6",
+  4: "Multi 6v6",
+  5: "Voley 5v5",
+  6: "Voley 5v5",
+  7: "Voley 5v5",
+  8: "Voley 6v6",
+  9: "Multi 5v5",
+  10: "Voley 6v6",
+  11: "Voley 6v6",
+  12: "Voley 6v6",
+};
+
+/**
+ * Encabezados de grupo basados en el orden visible de columnas.
+ * Si un tipo se corta por otro en orden numérico, se renderiza en bloques separados.
+ */
+const COLUMN_GROUPS: ColumnGroup[] = ALL_FIELDS.reduce<ColumnGroup[]>((acc, field) => {
+  const label = FIELD_GROUP_LABEL[field];
+  const last = acc[acc.length - 1];
+  if (last && last.label === label) {
+    last.fields.push(field);
+    return acc;
+  }
+  acc.push({ label, fields: [field] });
+  return acc;
+}, []);
 
 // ─── Grid cell types ────────────────────────────────────────────────────────
 
@@ -170,7 +192,7 @@ export default function ScheduleGrid({
             </th>
             {COLUMN_GROUPS.map((group) => (
               <th
-                key={group.courtType}
+                key={`${group.label}-${group.fields[0]}`}
                 colSpan={group.fields.length}
                 className="sticky top-0 z-20 bg-gray-50 border-b border-l border-gray-300 px-2 py-2 text-xs font-bold text-gray-600 text-center whitespace-nowrap"
               >
