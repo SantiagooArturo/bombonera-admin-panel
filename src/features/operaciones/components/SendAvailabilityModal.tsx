@@ -42,21 +42,26 @@ export default function SendAvailabilityModal({
           </div>
           <div>
             <p className="text-sm font-semibold text-gray-700 mb-2">Días a enviar</p>
-            <div className="max-h-36 overflow-y-auto rounded-xl border border-gray-200 bg-gray-50 p-2 space-y-1">
+            <div className="max-h-44 overflow-y-auto rounded-xl border border-gray-200 bg-gray-50 p-2">
+              <div className="grid grid-cols-3 gap-2">
               {dayOptions.map((date) => {
                 const checked = selectedDates.includes(date);
                 return (
                   <label
                     key={date}
-                    className="flex items-center gap-2 px-2 py-1.5 rounded-lg hover:bg-white cursor-pointer"
+                    className={`relative flex items-center justify-center min-h-[44px] rounded-lg border cursor-pointer transition-colors ${
+                      checked
+                        ? "border-emerald-300 bg-emerald-50"
+                        : "border-gray-200 bg-white hover:bg-gray-100"
+                    }`}
                   >
                     <input
                       type="checkbox"
                       checked={checked}
                       onChange={() => toggleDate(date)}
-                      className="h-4 w-4 accent-emerald-600"
+                      className="absolute top-1.5 left-1.5 h-3.5 w-3.5 accent-emerald-600"
                     />
-                    <span className="text-sm text-gray-700">
+                    <span className="text-[12px] font-medium text-gray-700 text-center leading-tight px-1">
                       {new Date(`${date}T12:00:00`).toLocaleDateString("es-PE", {
                         weekday: "short",
                         day: "2-digit",
@@ -66,6 +71,7 @@ export default function SendAvailabilityModal({
                   </label>
                 );
               })}
+              </div>
             </div>
           </div>
           <EditablePhoneSelect
