@@ -59,6 +59,7 @@ export default function OperacionesPage() {
   const [sendAvailabilityOpen, setSendAvailabilityOpen] = useState(false);
   const [sendAvailabilityLoading, setSendAvailabilityLoading] = useState(false);
   const [availabilityPhone, setAvailabilityPhone] = useState("");
+  const [availabilityDates, setAvailabilityDates] = useState<string[]>([]);
 
   const sidebar = usePaymentSidebar({
     onReservationUpdated: (resId, patch) => {
@@ -97,19 +98,10 @@ export default function OperacionesPage() {
 
   const selectedDate = useMemo(() => formatDateISO(getDateWithOffset(dayOffset)), [dayOffset]);
   const todayDate = useMemo(() => formatDateISO(new Date()), []);
-  const canSendAvailability = useMemo(() => {
-    if (selectedDate < todayDate) return false;
-    if (selectedDate === todayDate) {
-      const nowHour = new Date().getHours();
-      return nowHour < 22;
-    }
-    return true;
-  }, [selectedDate, todayDate]);
-  const sendAvailabilityDisabledReason = useMemo(() => {
-    if (selectedDate < todayDate) return "No puedes enviar disponibilidad de fechas pasadas.";
-    if (selectedDate === todayDate) return "Para hoy, el envío está disponible hasta las 10:00 pm.";
-    return "";
-  }, [selectedDate, todayDate]);
+  const availabilityDayOptions = useMemo(
+    () => Array.from({ length: MAX_DAY_OFFSET + 1 }, (_, idx) => formatDateISO(getDateWithOffset(idx))),
+    []
+  );
 
   const selectedDateLabel = useMemo(() => {
     const date = getDateWithOffset(dayOffset);
@@ -295,6 +287,19 @@ export default function OperacionesPage() {
     setSendAvailabilityOpen(false);
     setSendAvailabilityLoading(false);
     setAvailabilityPhone("");
+    setAvailabilityDates([]);
+  }
+
+  function toggleAvailabilityDate(date: string) {
+    setAvailabilityDates((prev) =>
+      prev.includes(date) ? prev.filter((d) => d !== date) : [...prev, date]
+    );
+  }
+
+  function isDateAvailabilitySendable(date: string): boolean {
+    if (date < todayDate) return false;
+    if (date === todayDate) return new Date().getHours() < 22;
+    return true;
   }
 
   function hasConflicts(field: number, slots: string[]) {
@@ -406,32 +411,50 @@ export default function OperacionesPage() {
   }
 
   async function handleSendAvailability() {
-    if (!canSendAvailability) {
-      toast(sendAvailabilityDisabledReason || "No se puede enviar disponibilidad para esta fecha.", "info");
-      return;
-    }
     const phone = availabilityPhone.trim().replace(/\D/g, "");
     if (phone.length < 9) {
       toast("Ingresa un WhatsApp válido.", "error");
+      return;
+    }
+    if (availabilityDates.length === 0) {
+      toast("Selecciona al menos un día para enviar.", "error");
+      return;
+    }
+    const invalidDates = availabilityDates.filter((d) => !isDateAvailabilitySendable(d));
+    if (invalidDates.length > 0) {
+      toast("Incluiste días no permitidos (pasados o hoy después de las 10pm).", "error");
       return;
     }
 
     setSendAvailabilityLoading(true);
     try {
       const chatId = phone.startsWith("51") ? phone : `51${phone}`;
-      const res = await fetch("/api/send-availability", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          chat_id: chatId,
-          date: selectedDate,
-        }),
-      });
-      if (!res.ok) {
-        const data = await res.json().catch(() => ({}));
-        throw new Error(typeof data?.error === "string" ? data.error : "No se pudo enviar");
+      let successCount = 0;
+      for (const date of availabilityDates) {
+        const res = await fetch("/api/send-availability", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            chat_id: chatId,
+            date,
+          }),
+        });
+        if (!res.ok) {
+          const data = await res.json().catch(() => ({}));
+          throw new Error(
+            typeof data?.error === "string"
+              ? `${date}: ${data.error}`
+              : `${date}: No se pudo enviar`
+          );
+        }
+        successCount++;
       }
-      toast("Disponibilidad enviada por WhatsApp", "success");
+      toast(
+        successCount === 1
+          ? "Disponibilidad enviada por WhatsApp"
+          : `Disponibilidad enviada (${successCount} días)`,
+        "success"
+      );
       closeSendAvailabilityModal();
     } catch (error) {
       console.error(error);
@@ -442,11 +465,8 @@ export default function OperacionesPage() {
   }
 
   function openSendAvailabilityModal() {
-    if (!canSendAvailability) {
-      toast(sendAvailabilityDisabledReason || "No se puede enviar disponibilidad para esta fecha.", "info");
-      return;
-    }
     setAvailabilityPhone("");
+    setAvailabilityDates([todayDate]);
     setSendAvailabilityOpen(true);
   }
 
@@ -525,13 +545,7 @@ export default function OperacionesPage() {
     <ClientLayout>
       <button
         onClick={openSendAvailabilityModal}
-        disabled={!canSendAvailability}
-        className={`fixed top-3 right-3 md:top-4 md:right-4 z-30 px-3 md:px-4 py-2 rounded-xl text-white font-semibold text-sm shadow-lg transition-colors whitespace-nowrap ${
-          canSendAvailability
-            ? "bg-emerald-600 hover:bg-emerald-700"
-            : "bg-gray-400 cursor-not-allowed"
-        }`}
-        title={!canSendAvailability ? sendAvailabilityDisabledReason : "Enviar disponibilidad"}
+        className="fixed top-3 right-3 md:top-4 md:right-4 z-30 px-3 md:px-4 py-2 rounded-xl bg-emerald-600 text-white font-semibold text-sm hover:bg-emerald-700 shadow-lg transition-colors whitespace-nowrap"
       >
         Enviar disponibilidad
       </button>
@@ -633,13 +647,13 @@ export default function OperacionesPage() {
 
       <SendAvailabilityModal
         open={sendAvailabilityOpen}
-        selectedDate={selectedDate}
+        dayOptions={availabilityDayOptions}
+        selectedDates={availabilityDates}
+        toggleDate={toggleAvailabilityDate}
         availabilityPhone={availabilityPhone}
         setAvailabilityPhone={setAvailabilityPhone}
         phoneOptions={phoneDirectory}
         loading={sendAvailabilityLoading}
-        disabled={!canSendAvailability}
-        disabledReason={sendAvailabilityDisabledReason}
         onClose={closeSendAvailabilityModal}
         onSubmit={handleSendAvailability}
       />

@@ -4,26 +4,26 @@ import EditablePhoneSelect, { type PhoneOption } from "./EditablePhoneSelect";
 
 type SendAvailabilityModalProps = {
   open: boolean;
-  selectedDate: string;
+  dayOptions: string[];
+  selectedDates: string[];
+  toggleDate: (date: string) => void;
   availabilityPhone: string;
   setAvailabilityPhone: (value: string) => void;
   phoneOptions: PhoneOption[];
   loading: boolean;
-  disabled?: boolean;
-  disabledReason?: string;
   onClose: () => void;
   onSubmit: () => void;
 };
 
 export default function SendAvailabilityModal({
   open,
-  selectedDate,
+  dayOptions,
+  selectedDates,
+  toggleDate,
   availabilityPhone,
   setAvailabilityPhone,
   phoneOptions,
   loading,
-  disabled = false,
-  disabledReason,
   onClose,
   onSubmit,
 }: SendAvailabilityModalProps) {
@@ -37,8 +37,36 @@ export default function SendAvailabilityModal({
           <div>
             <h3 className="text-xl font-bold text-gray-900">Enviar disponibilidad</h3>
             <p className="text-sm text-gray-500 mt-1">
-              Fecha: {selectedDate}. Escribe el WhatsApp o selecciónalo de la lista.
+              Selecciona uno o varios días y luego el WhatsApp destino.
             </p>
+          </div>
+          <div>
+            <p className="text-sm font-semibold text-gray-700 mb-2">Días a enviar</p>
+            <div className="max-h-36 overflow-y-auto rounded-xl border border-gray-200 bg-gray-50 p-2 space-y-1">
+              {dayOptions.map((date) => {
+                const checked = selectedDates.includes(date);
+                return (
+                  <label
+                    key={date}
+                    className="flex items-center gap-2 px-2 py-1.5 rounded-lg hover:bg-white cursor-pointer"
+                  >
+                    <input
+                      type="checkbox"
+                      checked={checked}
+                      onChange={() => toggleDate(date)}
+                      className="h-4 w-4 accent-emerald-600"
+                    />
+                    <span className="text-sm text-gray-700">
+                      {new Date(`${date}T12:00:00`).toLocaleDateString("es-PE", {
+                        weekday: "short",
+                        day: "2-digit",
+                        month: "2-digit",
+                      })}
+                    </span>
+                  </label>
+                );
+              })}
+            </div>
           </div>
           <EditablePhoneSelect
             label="WhatsApp"
@@ -48,11 +76,6 @@ export default function SendAvailabilityModal({
             accent="emerald"
             placeholder="Escribe número o selecciona"
           />
-          {disabled && (
-            <div className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-700">
-              {disabledReason || "No disponible para esta fecha."}
-            </div>
-          )}
 
           <div className="flex gap-3 pt-1">
             <button
@@ -64,7 +87,7 @@ export default function SendAvailabilityModal({
             </button>
             <button
               onClick={onSubmit}
-              disabled={loading || disabled}
+              disabled={loading || selectedDates.length === 0}
               className="flex-1 py-3 px-4 font-semibold rounded-xl bg-emerald-600 text-white hover:bg-emerald-700 transition-colors text-sm disabled:opacity-50 disabled:cursor-not-allowed"
             >
               {loading ? "Enviando..." : "Enviar por WhatsApp"}
