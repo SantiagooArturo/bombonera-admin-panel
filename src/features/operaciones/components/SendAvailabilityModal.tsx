@@ -9,6 +9,8 @@ type SendAvailabilityModalProps = {
   setAvailabilityPhone: (value: string) => void;
   phoneOptions: PhoneOption[];
   loading: boolean;
+  disabled?: boolean;
+  disabledReason?: string;
   onClose: () => void;
   onSubmit: () => void;
 };
@@ -20,6 +22,8 @@ export default function SendAvailabilityModal({
   setAvailabilityPhone,
   phoneOptions,
   loading,
+  disabled = false,
+  disabledReason,
   onClose,
   onSubmit,
 }: SendAvailabilityModalProps) {
@@ -44,6 +48,11 @@ export default function SendAvailabilityModal({
             accent="emerald"
             placeholder="Escribe número o selecciona"
           />
+          {disabled && (
+            <div className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-700">
+              {disabledReason || "No disponible para esta fecha."}
+            </div>
+          )}
 
           <div className="flex gap-3 pt-1">
             <button
@@ -55,8 +64,8 @@ export default function SendAvailabilityModal({
             </button>
             <button
               onClick={onSubmit}
-              disabled={loading}
-              className="flex-1 py-3 px-4 font-semibold rounded-xl bg-emerald-600 text-white hover:bg-emerald-700 transition-colors text-sm disabled:opacity-50"
+              disabled={loading || disabled}
+              className="flex-1 py-3 px-4 font-semibold rounded-xl bg-emerald-600 text-white hover:bg-emerald-700 transition-colors text-sm disabled:opacity-50 disabled:cursor-not-allowed"
             >
               {loading ? "Enviando..." : "Enviar por WhatsApp"}
             </button>

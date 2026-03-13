@@ -96,6 +96,20 @@ export default function OperacionesPage() {
   }, [store]);
 
   const selectedDate = useMemo(() => formatDateISO(getDateWithOffset(dayOffset)), [dayOffset]);
+  const todayDate = useMemo(() => formatDateISO(new Date()), []);
+  const canSendAvailability = useMemo(() => {
+    if (selectedDate < todayDate) return false;
+    if (selectedDate === todayDate) {
+      const nowHour = new Date().getHours();
+      return nowHour < 22;
+    }
+    return true;
+  }, [selectedDate, todayDate]);
+  const sendAvailabilityDisabledReason = useMemo(() => {
+    if (selectedDate < todayDate) return "No puedes enviar disponibilidad de fechas pasadas.";
+    if (selectedDate === todayDate) return "Para hoy, el envío está disponible hasta las 10:00 pm.";
+    return "";
+  }, [selectedDate, todayDate]);
 
   const selectedDateLabel = useMemo(() => {
     const date = getDateWithOffset(dayOffset);
@@ -244,7 +258,7 @@ export default function OperacionesPage() {
         );
         sidebar.setSelectedReservation((prev) =>
           prev?.id === resId ? { ...prev, arrived } : prev
-        );
+          );
       }
     } catch {
       toast("Error al marcar asistencia", "error");
@@ -392,6 +406,10 @@ export default function OperacionesPage() {
   }
 
   async function handleSendAvailability() {
+    if (!canSendAvailability) {
+      toast(sendAvailabilityDisabledReason || "No se puede enviar disponibilidad para esta fecha.", "info");
+      return;
+    }
     const phone = availabilityPhone.trim().replace(/\D/g, "");
     if (phone.length < 9) {
       toast("Ingresa un WhatsApp válido.", "error");
@@ -424,6 +442,10 @@ export default function OperacionesPage() {
   }
 
   function openSendAvailabilityModal() {
+    if (!canSendAvailability) {
+      toast(sendAvailabilityDisabledReason || "No se puede enviar disponibilidad para esta fecha.", "info");
+      return;
+    }
     setAvailabilityPhone("");
     setSendAvailabilityOpen(true);
   }
@@ -503,7 +525,13 @@ export default function OperacionesPage() {
     <ClientLayout>
       <button
         onClick={openSendAvailabilityModal}
-        className="fixed top-3 right-3 md:top-4 md:right-4 z-30 px-3 md:px-4 py-2 rounded-xl bg-emerald-600 text-white font-semibold text-sm hover:bg-emerald-700 shadow-lg transition-colors whitespace-nowrap"
+        disabled={!canSendAvailability}
+        className={`fixed top-3 right-3 md:top-4 md:right-4 z-30 px-3 md:px-4 py-2 rounded-xl text-white font-semibold text-sm shadow-lg transition-colors whitespace-nowrap ${
+          canSendAvailability
+            ? "bg-emerald-600 hover:bg-emerald-700"
+            : "bg-gray-400 cursor-not-allowed"
+        }`}
+        title={!canSendAvailability ? sendAvailabilityDisabledReason : "Enviar disponibilidad"}
       >
         Enviar disponibilidad
       </button>
@@ -610,6 +638,8 @@ export default function OperacionesPage() {
         setAvailabilityPhone={setAvailabilityPhone}
         phoneOptions={phoneDirectory}
         loading={sendAvailabilityLoading}
+        disabled={!canSendAvailability}
+        disabledReason={sendAvailabilityDisabledReason}
         onClose={closeSendAvailabilityModal}
         onSubmit={handleSendAvailability}
       />
