@@ -32,7 +32,7 @@ const FALLBACK_STATUS: BotHealthStatus = {
 };
 
 export function BotHealthPanel() {
-  const [status, setStatus] = useState<BotHealthStatus>(FALLBACK_STATUS);
+  const [status, setStatus] = useState<BotHealthStatus | null>(null);
   const [loading, setLoading] = useState(true);
   const [probingNow, setProbingNow] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -55,7 +55,10 @@ export function BotHealthPanel() {
     loadStatus();
   }, [loadStatus]);
 
-  const isGreen = status.indicator === "green";
+  const effectiveStatus = status ?? FALLBACK_STATUS;
+  const isInitialLoading = loading && !status;
+  const isGreen =
+    effectiveStatus.indicator === "green" || effectiveStatus.status === "ok";
 
   const probeNow = useCallback(async () => {
     setProbingNow(true);
@@ -118,32 +121,62 @@ export function BotHealthPanel() {
       <div className="mt-6 rounded-xl border border-gray-100 bg-gray-50 p-4 mt-4">
         <div className="flex items-center gap-3">
           <span
-            className={`inline-flex h-4 w-4 rounded-full ${isGreen ? "bg-emerald-500" : "bg-red-500"}`}
-            aria-label={isGreen ? "Estado saludable" : "Estado con error"}
+            className={`inline-flex h-4 w-4 rounded-full ${
+              isInitialLoading
+                ? "bg-gray-300 animate-pulse"
+                : isGreen
+                ? "bg-emerald-500"
+                : "bg-red-500"
+            }`}
+            aria-label={
+              isInitialLoading
+                ? "Cargando estado"
+                : isGreen
+                ? "Estado saludable"
+                : "Estado con error"
+            }
           />
-          <p className={`text-sm font-semibold ${isGreen ? "text-emerald-700" : "text-red-700"}`}>{status.title}</p>
+          <p
+            className={`text-sm font-semibold ${
+              isInitialLoading
+                ? "text-gray-600"
+                : isGreen
+                ? "text-emerald-700"
+                : "text-red-700"
+            }`}
+          >
+            {isInitialLoading ? "Cargando estado del bot..." : effectiveStatus.title}
+          </p>
         </div>
-        <p className="mt-2 text-sm text-gray-700">{status.detail}</p>
+        <p className="mt-2 text-sm text-gray-700">
+          {isInitialLoading
+            ? "Consultando último heartbeat del keepalive..."
+            : effectiveStatus.detail}
+        </p>
         {probeMessage && <p className="mt-2 text-sm text-emerald-700">{probeMessage}</p>}
         {error && <p className="mt-2 text-sm text-red-600">{error}</p>}
       </div>
 
       <div className="mt-6 grid grid-cols-1 md:grid-cols-2 gap-3 text-sm">
-        <InfoRow label="Última señal del bot" value={formatDateTime(status.last_run_at)} />
-        <InfoRow label="Última señal OK" value={formatDateTime(status.last_success_at)} />
-        <InfoRow label="Última señal con error" value={formatDateTime(status.last_error_at)} />
+        <InfoRow label="Última señal del bot" value={formatDateTime(effectiveStatus.last_run_at)} />
+        <InfoRow label="Última señal OK" value={formatDateTime(effectiveStatus.last_success_at)} />
+        <InfoRow label="Última señal con error" value={formatDateTime(effectiveStatus.last_error_at)} />
         <InfoRow
           label="Fallos consecutivos"
-          value={String(status.consecutive_failures)}
-          danger={status.consecutive_failures > 0}
+          value={String(effectiveStatus.consecutive_failures)}
+          danger={effectiveStatus.consecutive_failures > 0}
         />
-        <InfoRow label="Estado estancado" value={status.is_stale ? "Sí" : "No"} danger={status.is_stale} />
+        <InfoRow
+          label="Estado estancado"
+          value={effectiveStatus.is_stale ? "Sí" : "No"}
+          danger={effectiveStatus.is_stale}
+        />
       </div>
 
-      {status.last_error_message && (
+      {effectiveStatus.last_error_message && (
         <div className="mt-4 rounded-lg border border-red-200 bg-red-50 p-3">
           <p className="text-xs font-semibold uppercase tracking-wide text-red-700">Último detalle de error</p>
-          <p className="text-sm text-red-700 mt-1">{status.last_error_message}</p>
+          <p className="text-sm text-red-700 mt-1">{effectiveStatus.last_error_message}</p>
         </div>
       )}
     </div>
