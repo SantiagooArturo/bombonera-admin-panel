@@ -49,7 +49,7 @@ export default function SendAvailabilityModal({
                 return (
                   <label
                     key={date}
-                    className={`relative flex items-center justify-center min-h-[44px] rounded-lg border cursor-pointer transition-colors ${
+                    className={`flex items-center gap-1.5 min-h-[40px] px-2 py-1.5 rounded-lg border cursor-pointer transition-colors ${
                       checked
                         ? "border-emerald-300 bg-emerald-50"
                         : "border-gray-200 bg-white hover:bg-gray-100"
@@ -59,9 +59,9 @@ export default function SendAvailabilityModal({
                       type="checkbox"
                       checked={checked}
                       onChange={() => toggleDate(date)}
-                      className="absolute top-1.5 left-1.5 h-3.5 w-3.5 accent-emerald-600"
+                      className="h-3.5 w-3.5 shrink-0 accent-emerald-600"
                     />
-                    <span className="text-[12px] font-medium text-gray-700 text-center leading-tight px-1">
+                    <span className="text-[12px] font-medium text-gray-700 leading-tight">
                       {new Date(`${date}T12:00:00`).toLocaleDateString("es-PE", {
                         weekday: "short",
                         day: "2-digit",
