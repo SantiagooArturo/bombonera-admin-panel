@@ -265,7 +265,7 @@ export async function POST(request: NextRequest) {
     if (pdfTicketUrl) {
       try {
         const pdfRes = await fetch(pdfTicketUrl, {
-          headers: { Authorization: `Bearer ${APISUNAT_TOKEN}` },
+          headers: { Authorization: `Bearer ${APISUNAT_TOKEN_VAL}` },
         });
 
         if (pdfRes.ok) {
