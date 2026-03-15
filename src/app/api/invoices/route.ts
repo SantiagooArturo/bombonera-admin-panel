@@ -6,8 +6,6 @@ import { randomUUID } from "crypto";
 // Docs: https://docs.apisunat.pe/integracion/facturacion-electronica/configuracion-api
 // Sandbox:    https://sandbox.apisunat.pe/api/v3/documents
 // Producción: https://app.apisunat.pe/api/v3/documents
-const APISUNAT_URL = process.env.APISUNAT_URL!;
-const APISUNAT_TOKEN = process.env.APISUNAT_TOKEN!;
 const APISUNAT_SERIE_BOLETA = process.env.APISUNAT_SERIE_BOLETA || "B001";
 const APISUNAT_SERIE_FACTURA = process.env.APISUNAT_SERIE_FACTURA || "F001";
 
@@ -86,6 +84,18 @@ export async function GET(request: NextRequest) {
 // ── POST: Emitir boleta/factura ─────────────────────────────────────────────
 
 export async function POST(request: NextRequest) {
+  const APISUNAT_URL_VAL = process.env.APISUNAT_URL;
+  const APISUNAT_TOKEN_VAL = process.env.APISUNAT_TOKEN;
+  if (!APISUNAT_URL_VAL || !APISUNAT_TOKEN_VAL) {
+    return NextResponse.json(
+      {
+        error:
+          "Configuración incompleta: faltan APISUNAT_URL o APISUNAT_TOKEN en variables de entorno",
+      },
+      { status: 500 }
+    );
+  }
+
   try {
     const db = getDb();
     const bucket = getStorageBucket();
@@ -204,11 +214,11 @@ export async function POST(request: NextRequest) {
     for (let attempt = 0; attempt < MAX_EMISSION_RETRIES; attempt++) {
       correlativo = await getNextCorrelativo(db, serieSunat);
 
-      const emitRes = await fetch(APISUNAT_URL, {
+      const emitRes = await fetch(APISUNAT_URL_VAL, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
-          Authorization: `Bearer ${APISUNAT_TOKEN}`,
+          Authorization: `Bearer ${APISUNAT_TOKEN_VAL}`,
         },
         body: JSON.stringify({ ...apisunatBaseBody, numero: correlativo }),
       });
@@ -318,9 +328,11 @@ export async function POST(request: NextRequest) {
       sunat_estado: payload.estado,
     });
   } catch (error) {
+    const msg =
+      error instanceof Error ? error.message : String(error);
     console.error("Error creating invoice:", error);
     return NextResponse.json(
-      { error: "Error al crear boleta" },
+      { error: `Error al crear boleta: ${msg}` },
       { status: 500 }
     );
   }

@@ -546,7 +546,7 @@ class Store {
       return result;
     } catch (error) {
       console.error("Error emitting invoice:", error);
-      return null;
+      throw error;
     }
   }
 

@@ -141,8 +141,10 @@ export function usePaymentSidebar(options?: UsePaymentSidebarOptions) {
       } else {
         toast("Error al emitir comprobante", "error");
       }
-    } catch {
-      toast("Error inesperado al emitir comprobante", "error");
+    } catch (error) {
+      const msg =
+        error instanceof Error ? error.message : "Error inesperado al emitir comprobante";
+      toast(msg, "error");
     } finally {
       setEmittingInvoiceId(null);
     }
