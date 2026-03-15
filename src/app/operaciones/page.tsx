@@ -587,6 +587,7 @@ export default function OperacionesPage() {
           invoices={sidebar.invoices}
           loading={sidebar.loadingData}
           emittingInvoiceId={sidebar.emittingInvoiceId}
+          attachingInvoiceId={sidebar.attachingInvoiceId}
           paymentLoading={sidebar.paymentLoading}
           onVerifyTransfer={sidebar.handleVerifyTransfer}
           onEmitInvoice={sidebar.handleEmitInvoice}

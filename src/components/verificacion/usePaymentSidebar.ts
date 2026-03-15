@@ -19,6 +19,7 @@ export function usePaymentSidebar(options?: UsePaymentSidebarOptions) {
   const [invoices, setInvoices] = useState<Invoice[]>([]);
   const [loadingData, setLoadingData] = useState(false);
   const [emittingInvoiceId, setEmittingInvoiceId] = useState<string | null>(null);
+  const [attachingInvoiceId, setAttachingInvoiceId] = useState<string | null>(null);
   const [paymentLoading, setPaymentLoading] = useState(false);
   const [cancellingReservation, setCancellingReservation] = useState(false);
   const [clientType, setClientType] = useState<ClientType>("casual");
@@ -192,7 +193,7 @@ export function usePaymentSidebar(options?: UsePaymentSidebarOptions) {
       return;
     }
 
-    setEmittingInvoiceId(transfer.id);
+    setAttachingInvoiceId(transfer.id);
     try {
       const formData = new FormData();
       formData.append("file", file);
@@ -218,7 +219,7 @@ export function usePaymentSidebar(options?: UsePaymentSidebarOptions) {
       console.error("Error attaching invoice:", err);
       toast("Error inesperado al adjuntar boleta", "error");
     } finally {
-      setEmittingInvoiceId(null);
+      setAttachingInvoiceId(null);
     }
   }, [store, toast, selectedReservation]);
 
@@ -301,6 +302,7 @@ export function usePaymentSidebar(options?: UsePaymentSidebarOptions) {
     invoices,
     loadingData,
     emittingInvoiceId,
+    attachingInvoiceId,
     paymentLoading,
     cancellingReservation,
     clientType,

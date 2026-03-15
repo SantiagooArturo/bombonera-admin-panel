@@ -73,6 +73,7 @@ interface PaymentSidebarProps {
   invoices: Invoice[];
   loading: boolean;
   emittingInvoiceId: string | null;
+  attachingInvoiceId: string | null;
   paymentLoading: boolean;
   onVerifyTransfer: (transferId: string, currentStatus: boolean) => void;
   onEmitInvoice: (
@@ -349,11 +350,12 @@ function RegisterPaymentForm({
 // ─── Transfer Card ───────────────────────────────────────────────────────────
 
 function TransferCard({
-  transfer, invoice, emittingInvoiceId, onVerify, onEmitInvoice, onAttachInvoice, onDetachInvoice, onRevoke, onViewImage, onHover, chatId, clientDni,
+  transfer, invoice, emittingInvoiceId, attachingInvoiceId, onVerify, onEmitInvoice, onAttachInvoice, onDetachInvoice, onRevoke, onViewImage, onHover, chatId, clientDni,
 }: {
   transfer: Transfer;
   invoice: Invoice | undefined;
   emittingInvoiceId: string | null;
+  attachingInvoiceId: string | null;
   onVerify: (transferId: string, currentStatus: boolean) => void;
   onEmitInvoice: (
     transfer: Transfer,
@@ -573,10 +575,10 @@ function TransferCard({
               />
               <button
                 onClick={() => fileInputRef.current?.click()}
-                disabled={emittingInvoiceId === transfer.id}
+                disabled={attachingInvoiceId === transfer.id || emittingInvoiceId === transfer.id}
                 className="w-full py-2.5 px-4 rounded-xl font-bold text-sm bg-gray-900 text-white hover:bg-gray-800 flex items-center justify-center gap-2 transition-colors disabled:opacity-60 disabled:cursor-not-allowed shadow-sm"
               >
-                {emittingInvoiceId === transfer.id ? (
+                {attachingInvoiceId === transfer.id ? (
                   <><svg className="w-4 h-4 animate-spin" fill="none" viewBox="0 0 24 24"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" /><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" /></svg>Subiendo...</>
                 ) : (
                   <><svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.172 7l-6.586 6.586a2 2 0 102.828 2.828l6.414-6.586a4 4 0 00-5.656-5.656l-6.415 6.585a6 6 0 108.486 8.486L20.5 13" /></svg>Adjuntar Boleta</>
@@ -589,11 +591,14 @@ function TransferCard({
                   setDocNumber(clientDni || "");
                   setShowEmitModal(true);
                 }}
-                disabled={emittingInvoiceId === transfer.id}
+                disabled={attachingInvoiceId === transfer.id || emittingInvoiceId === transfer.id}
                 className="w-full py-2.5 px-4 rounded-xl font-bold text-sm bg-green-600 text-white hover:bg-green-700 flex items-center justify-center gap-2 border border-green-700 disabled:opacity-60 disabled:cursor-not-allowed"
               >
-                <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" /></svg>
-                Emitir Boleta
+                {emittingInvoiceId === transfer.id ? (
+                  <><svg className="w-4 h-4 animate-spin" fill="none" viewBox="0 0 24 24"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" /><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" /></svg>Emitiendo...</>
+                ) : (
+                  <><svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" /></svg>Emitir Boleta</>
+                )}
               </button>
             </div>
           )}
@@ -667,7 +672,7 @@ function TransferCard({
                   });
                   setShowEmitModal(false);
                 }}
-                disabled={emittingInvoiceId === transfer.id || (docType === "factura" ? docNumber.length !== 11 : docNumber.length !== 8)}
+                disabled={attachingInvoiceId === transfer.id || emittingInvoiceId === transfer.id || (docType === "factura" ? docNumber.length !== 11 : docNumber.length !== 8)}
                 className="flex-1 py-2.5 px-4 rounded-xl bg-green-600 text-white font-semibold hover:bg-green-700 disabled:opacity-60"
               >
                 {emittingInvoiceId === transfer.id ? "Emitiendo..." : "Emitir"}
@@ -713,6 +718,7 @@ export default function PaymentSidebar({
   invoices,
   loading,
   emittingInvoiceId,
+  attachingInvoiceId,
   paymentLoading,
   onVerifyTransfer,
   onEmitInvoice,
@@ -992,6 +998,7 @@ export default function PaymentSidebar({
                   transfer={transfer}
                   invoice={invoice}
                   emittingInvoiceId={emittingInvoiceId}
+                  attachingInvoiceId={attachingInvoiceId}
                   onVerify={onVerifyTransfer}
                   onEmitInvoice={onEmitInvoice}
                   onAttachInvoice={onAttachInvoice}
