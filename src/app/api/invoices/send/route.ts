@@ -1,9 +1,13 @@
 import { NextRequest, NextResponse } from "next/server";
 import { resolveWhatsAppTarget } from "@/lib/waha";
 
-const WAHA_URL = "https://waha-live-wahaa.dmncie.easypanel.host";
-const WAHA_API_KEY = "MiClaveSegura123";
-const WAHA_SESSION = process.env.WAHA_SESSION || "default";
+/**
+ * Vercel API route → delega al bot (Railway) CHATBOT_API_URL/chatbot/send-file/
+ * Mismo patrón que send-availability → send-schedule-image
+ */
+let rawUrl = process.env.CHATBOT_API_URL || "";
+if (rawUrl && !rawUrl.startsWith("http")) rawUrl = `https://${rawUrl}`;
+const CHATBOT_API_URL = rawUrl;
 
 export async function POST(request: NextRequest) {
   try {
@@ -13,32 +17,36 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: "Faltan chat_id o file_url" }, { status: 400 });
     }
 
-    const target = await resolveWhatsAppTarget(chat_id);
-    const headers: Record<string, string> = {
-      "Content-Type": "application/json",
-    };
-    if (WAHA_API_KEY) {
-      headers["X-Api-Key"] = WAHA_API_KEY;
+    if (!CHATBOT_API_URL) {
+      return NextResponse.json(
+        { error: "CHATBOT_API_URL no configurado para enviar boleta por WhatsApp." },
+        { status: 500 }
+      );
     }
 
-    const response = await fetch(`${WAHA_URL}/api/sendFile`, {
+    const target = await resolveWhatsAppTarget(chat_id);
+
+    const botRes = await fetch(`${CHATBOT_API_URL}/chatbot/send-file/`, {
       method: "POST",
-      headers,
+      headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
-        session: WAHA_SESSION,
-        chatId: target.chatId,
+        chat_id: target.chatId,
+        file_url,
         caption: "Aquí tienes tu boleta de pago 🧾",
-        file: {
-          mimetype: "application/pdf",
-          filename: "boleta.pdf",
-          url: file_url,
-        },
+        filename: "boleta.pdf",
       }),
     });
 
-    if (!response.ok) {
-      const errorText = await response.text();
-      throw new Error(`WAHA sendFile error: ${response.status} - ${errorText}`);
+    const responseData = await botRes.json().catch(() => ({}));
+    if (!botRes.ok || responseData?.status === "error") {
+      const message =
+        typeof responseData?.message === "string"
+          ? responseData.message
+          : "No se pudo enviar la boleta.";
+      return NextResponse.json(
+        { error: message },
+        { status: botRes.ok ? 500 : botRes.status }
+      );
     }
 
     return NextResponse.json({ success: true });
