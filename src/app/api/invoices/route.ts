@@ -162,11 +162,12 @@ export async function POST(request: NextRequest) {
     // 3. Fecha y hora de emisión (timezone Lima UTC-5)
     const now = new Date();
     const limaDate = new Date(now.toLocaleString("en-US", { timeZone: "America/Lima" }));
-    const fechaEmision = limaDate.toISOString().split("T")[0];
-    const horaEmision = limaDate.toTimeString().split(" ")[0]; // HH:mm:ss
+    const fechaEmision = `${limaDate.getFullYear()}-${String(limaDate.getMonth() + 1).padStart(2, "0")}-${String(limaDate.getDate()).padStart(2, "0")}`;
+    const horaEmision = limaDate.toTimeString().split(" ")[0];
 
     // 4. Nombre del cliente
-    const clienteName = (representative_name || "CLIENTE GENERAL").toUpperCase();
+    const rawName = String(representative_name || "").trim();
+    const clienteName = (rawName.length >= 3 ? rawName : "CLIENTE GENERAL").toUpperCase();
 
     // 5. Request body base para apisunat.pe (Lucode) — sin "numero", se asigna en el loop
     //    Docs: https://docs.apisunat.pe/integracion/facturacion-electronica/boleta/boleta-simple
