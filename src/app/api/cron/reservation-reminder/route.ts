@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getDb } from "@/lib/firebase-admin";
 import { sendWhatsAppMessage } from "@/lib/waha";
+import { getCourtLabelForReservation } from "@/lib/court-config-server";
 
 /**
  * GET /api/cron/reservation-reminder
@@ -55,14 +56,16 @@ export async function GET(request: NextRequest) {
         const chatId = data.chat_id;
         if (!chatId) continue;
 
-        const field = data.field ? `cancha ${data.field}` : "";
+        const field = data.field;
+        const courtLabel = await getCourtLabelForReservation(field, data.court_type);
+        const fieldText = field ? `Cancha ${field} · ${courtLabel}` : "";
         const startTime = firstSlot;
         const lastSlot = timeSlots[timeSlots.length - 1];
         const endHour = parseInt(lastSlot) + 1;
 
         const message =
           `hey! te recuerdo que tu reserva es en 15 minutos 🏐\n\n` +
-          `${field} · ${startTime} a ${endHour}:00\n\n` +
+          `${fieldText || "Tu cancha"} · ${startTime} a ${endHour}:00\n\n` +
           `te esperamos en la Bombonera!`;
 
         try {

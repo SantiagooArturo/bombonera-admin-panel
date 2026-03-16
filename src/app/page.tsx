@@ -3,6 +3,14 @@
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import ClientLayout from "@/components/ClientLayout";
+import DateRangeFilter from "@/features/dashboard/components/DateRangeFilter";
+import {
+  type DateRange,
+  getDateRangeForPreset,
+  getToday,
+  isDateInRange,
+  isTodayRange,
+} from "@/features/dashboard/utils/dateRange";
 import { useStore } from "@/lib/hooks";
 import type { User } from "@/lib/types";
 
@@ -23,15 +31,21 @@ function getUserPhone(u: User) {
   return u.phone_number || u.chat_id || "";
 }
 
+const initialDateRange = (): DateRange => {
+  const { start, end } = getDateRangeForPreset("hoy");
+  return { start, end, preset: "hoy" };
+};
+
 export default function DashboardPage() {
   const store = useStore();
   const reservations = store.getReservations();
   const users = store.getUsers();
-  const today = new Date().toISOString().split("T")[0];
+  const today = getToday();
   const loadedRes = store.isLoaded("reservations");
   const loadedUsers = store.isLoaded("users");
   const loaded = loadedRes && loadedUsers;
 
+  const [dateRange, setDateRange] = useState<DateRange>(initialDateRange);
   const [dashStats, setDashStats] = useState({ unverifiedTransfers: 0, pendingInvoices: 0 });
 
   useEffect(() => {
@@ -43,16 +57,24 @@ export default function DashboardPage() {
       .catch(() => {});
   }, [store]);
 
-  const todayReservations = useMemo(
-    () => reservations.filter((r) => r.date === today && r.status !== "cancelled"),
-    [reservations, today]
+  const filteredReservations = useMemo(
+    () =>
+      reservations.filter(
+        (r) =>
+          r.status !== "cancelled" &&
+          isDateInRange(r.date, dateRange.start, dateRange.end)
+      ),
+    [reservations, dateRange.start, dateRange.end]
   );
 
-  const confirmedCount = todayReservations.filter((r) => r.status === "confirmed").length;
-  const collected = todayReservations.reduce((sum, r) => sum + (r.amount_paid ?? 0), 0);
-  const outstanding = todayReservations
-    .reduce((sum, r) => sum + Math.max((r.total_price || 0) - (r.amount_paid ?? 0), 0), 0);
-  const arrivedCount = todayReservations.filter((r) => r.arrived).length;
+  const confirmedCount = filteredReservations.filter((r) => r.status === "confirmed").length;
+  const collected = filteredReservations.reduce((sum, r) => sum + (r.amount_paid ?? 0), 0);
+  const outstanding = filteredReservations.reduce(
+    (sum, r) => sum + Math.max((r.total_price || 0) - (r.amount_paid ?? 0), 0),
+    0
+  );
+  const arrivedCount = filteredReservations.filter((r) => r.arrived).length;
+  const showPendientes = isTodayRange(dateRange.start, dateRange.end);
 
   const usersNeedingHelp = useMemo(() => users.filter((u) => u.needs_help), [users]);
 
@@ -118,12 +140,18 @@ export default function DashboardPage() {
           </div>
         ) : (
           <>
+            {/* Filtro de rango de fechas */}
+            <div className="bg-white rounded-2xl border border-gray-200 shadow-sm p-4 mb-6">
+              <p className="text-sm font-medium text-gray-600 mb-2">Ver estadísticas del período:</p>
+              <DateRangeFilter value={dateRange} onChange={setDateRange} />
+            </div>
+
             {/* Stats */}
             <div className="bg-white rounded-2xl border border-gray-200 shadow-sm mb-8">
               <div className="grid grid-cols-2 lg:grid-cols-4 divide-x divide-gray-100">
                 <Stat
-                  label="Reservas hoy"
-                  value={todayReservations.length}
+                  label={showPendientes ? "Reservas hoy" : "Reservas"}
+                  value={filteredReservations.length}
                   iconColor="text-bombonera-500"
                   icon={
                     <svg className="w-9 h-9" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -164,16 +192,18 @@ export default function DashboardPage() {
               </div>
               <div className="border-t border-gray-100 px-6 py-3 flex items-center justify-between text-sm text-gray-500">
                 <span>
-                  Asistencia: <strong className="text-gray-900">{arrivedCount}</strong> de {todayReservations.length}
+                  Asistencia: <strong className="text-gray-900">{arrivedCount}</strong> de {filteredReservations.length}
                 </span>
-                <Link href="/operaciones" className="text-bombonera-600 font-semibold hover:underline">
-                  Ver en vivo →
-                </Link>
+                {showPendientes && (
+                  <Link href="/operaciones" className="text-bombonera-600 font-semibold hover:underline">
+                    Ver en vivo →
+                  </Link>
+                )}
               </div>
             </div>
 
-            {/* Pendientes */}
-            {hasPendingWork && (
+            {/* Pendientes - solo cuando el rango es hoy */}
+            {showPendientes && hasPendingWork && (
               <div className="bg-white rounded-2xl border border-gray-200 shadow-sm overflow-hidden">
                 <div className="px-6 py-4 border-b border-gray-100">
                   <h2 className="text-base font-bold text-gray-900">Pendientes</h2>
@@ -221,7 +251,7 @@ export default function DashboardPage() {
               </div>
             )}
 
-            {!hasPendingWork && (
+            {showPendientes && !hasPendingWork && (
               <div className="bg-white rounded-2xl border border-gray-200 shadow-sm px-6 py-10 text-center">
                 <p className="text-gray-400 font-medium">Sin tareas pendientes</p>
               </div>

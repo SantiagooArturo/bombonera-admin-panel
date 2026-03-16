@@ -5,6 +5,7 @@
   "scripts": {
     "dev": "next dev",
     "build": "next build",
+    "seed:court-config": "curl -s -X POST http://localhost:3000/api/court-config/seed",
     "start": "next start",
     "lint": "next lint"
   },

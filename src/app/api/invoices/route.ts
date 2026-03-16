@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getDb, getStorageBucket } from "@/lib/firebase-admin";
 import { randomUUID } from "crypto";
+import { getCourtLabelForReservation } from "@/lib/court-config-server";
 
 // ── Configuración apisunat.pe (Lucode) ──
 // Docs: https://docs.apisunat.pe/integracion/facturacion-electronica/configuracion-api
@@ -14,12 +15,6 @@ const APISUNAT_SERIE_FACTURA = process.env.APISUNAT_SERIE_FACTURA || "F001";
 // o si el contador quedó desincronizado por cualquier razón.
 const MAX_EMISSION_RETRIES = 5;
 
-const COURT_DESCRIPTIONS: Record<string, string> = {
-  voley_6v6: "Alquiler cancha voley 6v6",
-  voley_basket_6v6: "Alquiler cancha voley-basket 6v6",
-  voley_5v5: "Alquiler cancha voley 5v5",
-  voley_basket_5v5: "Alquiler cancha voley-basket 5v5",
-};
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -106,6 +101,7 @@ export async function POST(request: NextRequest) {
       phone_number,
       amount,
       court_type,
+      field,
       date,
       time_slots,
       representative_name,
@@ -142,8 +138,8 @@ export async function POST(request: NextRequest) {
     const valorUnitario = (totalAmount / 1.18).toFixed(6);
 
     // 2. Descripción del servicio (aparece en la boleta impresa)
-    const courtDesc = COURT_DESCRIPTIONS[court_type] || `Alquiler cancha ${court_type}`;
-    let descripcion = courtDesc;
+    const courtLabel = await getCourtLabelForReservation(field, court_type);
+    let descripcion = `Alquiler cancha ${courtLabel}`;
     if (date) {
       const dateObj = new Date(date + "T12:00:00");
       const dateStr = dateObj.toLocaleDateString("es-PE", {

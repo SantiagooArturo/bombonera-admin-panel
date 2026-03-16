@@ -2,6 +2,8 @@
 
 import { useMemo, useEffect, useRef } from "react";
 import { TIME_SLOTS, type Reservation, type BlockedSlot, isReservationActive } from "@/lib/types";
+import type { CourtFieldConfig } from "@/lib/court-config";
+import { getCourtSizeLabel } from "@/lib/court-config";
 import { OccupiedCellContent, EmptyCellContent, BlockedCellContent } from "./GridCell";
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
@@ -24,35 +26,36 @@ interface ColumnGroup {
 /** Campos ordenados estrictamente de 1 a 12. */
 const ALL_FIELDS = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12];
 
-const FIELD_GROUP_LABEL: Record<number, string> = {
-  1: "Voley 6v6",
-  2: "Voley 6v6",
-  3: "Voley 6v6",
-  4: "Multi 6v6",
-  5: "Voley 5v5",
-  6: "Voley 5v5",
-  7: "Voley 5v5",
-  8: "Voley 6v6",
-  9: "Multi 5v5",
-  10: "Voley 6v6",
-  11: "Voley 6v6",
-  12: "Voley 6v6",
+/** Fallback cuando no hay config. */
+const FALLBACK_LABEL: Record<number, string> = {
+  1: "6 vs 6",
+  2: "6 vs 6",
+  3: "6 vs 6",
+  4: "6 vs 6",
+  5: "6 vs 6",
+  6: "6 vs 6",
+  7: "6 vs 6",
+  8: "6 vs 6",
+  9: "5 vs 5",
+  10: "6 vs 6",
+  11: "6 vs 6",
+  12: "6 vs 6",
 };
 
-/**
- * Encabezados de grupo basados en el orden visible de columnas.
- * Si un tipo se corta por otro en orden numérico, se renderiza en bloques separados.
- */
-const COLUMN_GROUPS: ColumnGroup[] = ALL_FIELDS.reduce<ColumnGroup[]>((acc, field) => {
-  const label = FIELD_GROUP_LABEL[field];
-  const last = acc[acc.length - 1];
-  if (last && last.label === label) {
-    last.fields.push(field);
+function buildColumnGroups(configs: CourtFieldConfig[] | null): ColumnGroup[] {
+  const configMap = configs?.length ? new Map(configs.map((c) => [c.field, c])) : null;
+  return ALL_FIELDS.reduce<ColumnGroup[]>((acc, field) => {
+    const cfg = configMap?.get(field);
+    const label = cfg ? getCourtSizeLabel(cfg) : FALLBACK_LABEL[field];
+    const last = acc[acc.length - 1];
+    if (last && last.label === label) {
+      last.fields.push(field);
+      return acc;
+    }
+    acc.push({ label, fields: [field] });
     return acc;
-  }
-  acc.push({ label, fields: [field] });
-  return acc;
-}, []);
+  }, []);
+}
 
 // ─── Grid cell types ────────────────────────────────────────────────────────
 
@@ -68,6 +71,8 @@ export interface ScheduleGridProps {
   reservations: Reservation[];
   blockedSlots: BlockedSlot[];
   autoAssignments: Map<string, number>;
+  /** Config de canchas para encabezados dinámicos (5 vs 5, 6 vs 6, otro). */
+  courtConfigs?: CourtFieldConfig[] | null;
   recurrentChatIds?: Set<string>;
   currentSlot: string;
   isToday: boolean;
@@ -83,6 +88,7 @@ export default function ScheduleGrid({
   reservations,
   blockedSlots,
   autoAssignments,
+  courtConfigs,
   recurrentChatIds,
   currentSlot,
   isToday,
@@ -92,6 +98,7 @@ export default function ScheduleGrid({
   maxHeight = "calc(100vh - 220px)",
 }: ScheduleGridProps) {
   const currentRowRef = useRef<HTMLTableRowElement>(null);
+  const columnGroups = useMemo(() => buildColumnGroups(courtConfigs ?? null), [courtConfigs]);
 
   // Auto-scroll a la fila del horario actual al montar
   useEffect(() => {
@@ -186,15 +193,15 @@ export default function ScheduleGrid({
           <tr>
             <th
               rowSpan={2}
-              className="sticky left-0 top-0 z-30 bg-gray-50 border-b border-r border-gray-300 px-3 py-2 text-xs font-bold text-gray-500 min-w-[64px] text-right pr-2"
+              className="sticky left-0 top-0 z-30 bg-gray-50 border-b border-r border-gray-300 px-3 py-3 text-sm font-bold text-gray-500 min-w-[64px] text-center"
             >
               Hora
             </th>
-            {COLUMN_GROUPS.map((group) => (
+            {columnGroups.map((group) => (
               <th
                 key={`${group.label}-${group.fields[0]}`}
                 colSpan={group.fields.length}
-                className="sticky top-0 z-20 bg-gray-50 border-b border-l border-gray-300 px-2 py-2 text-xs font-bold text-gray-600 text-center whitespace-nowrap"
+                className="sticky top-0 z-20 bg-gray-50 border-b border-l border-gray-300 px-2 py-3 text-sm font-bold text-gray-600 text-center whitespace-nowrap"
               >
                 {group.label}
               </th>
@@ -206,7 +213,7 @@ export default function ScheduleGrid({
             {ALL_FIELDS.map((field) => (
               <th
                 key={field}
-                className="sticky top-[33px] z-20 bg-gray-50 border-b border-l border-gray-300 px-2 py-1.5 text-xs font-bold text-gray-500 text-center min-w-[80px]"
+                className="sticky top-[48px] z-20 bg-gray-50 border-b border-l border-gray-300 px-2 py-2.5 text-sm font-bold text-gray-500 text-center min-w-[80px]"
               >
                 Campo {field}
               </th>
@@ -228,7 +235,7 @@ export default function ScheduleGrid({
               >
                 {/* Columna de hora (sticky left) — hora en la intersección */}
                 <td
-                  className={`sticky left-0 z-10 border-r border-gray-300 text-xs font-bold whitespace-nowrap overflow-visible text-right pr-2 ${
+                  className={`sticky left-0 z-10 border-r border-gray-300 text-sm font-bold whitespace-nowrap overflow-visible text-center ${
                     isCurrent
                       ? "bg-bombonera-100 text-bombonera-700"
                       : "bg-gray-50 text-gray-500"
@@ -236,7 +243,7 @@ export default function ScheduleGrid({
                   style={{ verticalAlign: "top", height: 52 }}
                 >
                   <div
-                    className={`flex items-center justify-end gap-1.5 ${isFirst ? "" : "-translate-y-1/2"}`}
+                    className={`flex items-center justify-center gap-1.5 ${isFirst ? "" : "-translate-y-1/2"}`}
                     style={{ lineHeight: 1 }}
                   >
                     {isCurrent && (
@@ -303,10 +310,10 @@ export default function ScheduleGrid({
           {/* Fila final: etiqueta de cierre */}
           <tr>
             <td
-              className="sticky left-0 z-10 border-r border-gray-300 text-xs font-bold whitespace-nowrap bg-gray-50 text-gray-500 overflow-visible text-right pr-2"
+              className="sticky left-0 z-10 border-r border-gray-300 text-sm font-bold whitespace-nowrap bg-gray-50 text-gray-500 overflow-visible text-center"
               style={{ verticalAlign: "top", height: 8 }}
             >
-              <div className="-translate-y-1/2 flex justify-end" style={{ lineHeight: 1 }}>
+              <div className="-translate-y-1/2 flex justify-center" style={{ lineHeight: 1 }}>
                 {formatHour12(`${parseInt(TIME_SLOTS[TIME_SLOTS.length - 1]) + 1}:00`)}
               </div>
             </td>

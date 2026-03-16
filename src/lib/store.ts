@@ -511,6 +511,7 @@ class Store {
           phone_number: reservation.phone_number,
           amount: amountToBill,
           court_type: reservation.court_type,
+          field: reservation.field,
           date: reservation.date,
           time_slots: reservation.time_slots,
           representative_name: reservation.representative_name,

@@ -3,7 +3,9 @@
 import { useState, useRef, useEffect, useCallback } from "react";
 import { Transfer, Invoice, Reservation, PaymentMethod, ClientType, CLIENT_TYPE_LABELS } from "@/lib/types";
 import { renderPdfToDataUrl } from "@/lib/pdf-preview";
-import { calculateReservationPrice } from "@/features/operaciones/utils";
+import { calculateReservationPrice, courtConfigsToMap } from "@/features/operaciones/utils";
+import type { CourtFieldConfig } from "@/lib/court-config";
+import { getCourtSizeLabel } from "@/lib/court-config";
 
 // ─── WhatsApp icon (reutilizado) ─────────────────────────────────────────────
 
@@ -95,6 +97,8 @@ interface PaymentSidebarProps {
   onToggleArrived?: (resId: string, arrived: boolean) => void;
   onExtendReservation?: () => void;
   extendingReservation?: boolean;
+  /** Config de canchas para mostrar tamaño (5 vs 5, 6 vs 6) y calcular precio. */
+  courtConfigs?: CourtFieldConfig[] | null;
 }
 
 // ─── Sub-components ──────────────────────────────────────────────────────────
@@ -737,8 +741,14 @@ export default function PaymentSidebar({
   onToggleArrived,
   onExtendReservation,
   extendingReservation = false,
+  courtConfigs,
 }: PaymentSidebarProps) {
   const [viewingImage, setViewingImage] = useState<string | null>(null);
+  const configMap = courtConfigsToMap(courtConfigs);
+  const fieldConfig = reservation.field && courtConfigs?.length
+    ? courtConfigs.find((c) => c.field === reservation.field)
+    : null;
+  const courtSizeLabel = fieldConfig ? getCourtSizeLabel(fieldConfig) : null;
   const [hoveredTransferId, setHoveredTransferId] = useState<string | null>(null);
   const [editingDni, setEditingDni] = useState(false);
   const [dniValue, setDniValue] = useState(reservation.dni || "");
@@ -779,7 +789,7 @@ export default function PaymentSidebar({
   const [arrivedLoading, setArrivedLoading] = useState(false);
 
   const calculatedPrice = reservation.field && reservation.time_slots
-    ? calculateReservationPrice(reservation.field, reservation.date, reservation.time_slots)
+    ? calculateReservationPrice(reservation.field, reservation.date, reservation.time_slots, configMap)
     : 0;
   const totalPrice = calculatedPrice || reservation.total_price || 0;
   const amountPaid = reservation.amount_paid || 0;
@@ -809,7 +819,11 @@ export default function PaymentSidebar({
               <h3 className="text-xl font-bold text-gray-900">Detalle de reserva</h3>
               <div className="flex flex-wrap items-center gap-x-3 gap-y-1 mt-1 text-sm text-gray-500">
                 <span className="font-semibold text-gray-700">
-                  {reservation.field ? `Cancha ${reservation.field}` : "Sin cancha"}
+                  {reservation.field
+                    ? courtSizeLabel
+                      ? `Cancha ${reservation.field} · ${courtSizeLabel}`
+                      : `Cancha ${reservation.field}`
+                    : "Sin cancha"}
                 </span>
                 <span className="text-gray-300">·</span>
                 <span>{formatReservationTime(reservation)}</span>

@@ -69,6 +69,14 @@ export const COURT_LABELS: Record<CourtType, string> = {
   voley_basket_5v5: "Campo 5 vs 5 voley-basket (campo 9)",
 };
 
+/** Fallback para mostrar tamaño cuando no hay court config (por court_type). */
+export const COURT_TYPE_TO_SIZE: Record<CourtType, string> = {
+  voley_6v6: "6 vs 6",
+  voley_basket_6v6: "6 vs 6",
+  voley_5v5: "5 vs 5",
+  voley_basket_5v5: "5 vs 5",
+};
+
 export const COURT_FIELDS: Record<CourtType, number[]> = {
   voley_6v6: [1, 2, 3, 8, 10, 11, 12],
   voley_basket_6v6: [4],

@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getDb } from "@/lib/firebase-admin";
 import { sendWhatsAppMessage } from "@/lib/waha";
+import { getCourtLabelForReservation } from "@/lib/court-config-server";
 
 /**
  * GET /api/cron/payment-reminder
@@ -10,11 +11,6 @@ import { sendWhatsAppMessage } from "@/lib/waha";
  * Igual que el "Recordar pago" manual pero automático.
  * Marca la reserva con `auto_reminder_sent: true` para no repetir.
  */
-
-const COURT_LABELS: Record<string, string> = {
-  court_6v6: "Campo 6 vs 6",
-  court_5v5: "Campo 5 vs 5",
-};
 
 export async function GET(request: NextRequest) {
   const authHeader = request.headers.get("authorization");
@@ -60,9 +56,9 @@ export async function GET(request: NextRequest) {
       const chatId = data.chat_id;
       if (!chatId) continue;
 
-      const courtName = COURT_LABELS[data.court_type] || data.court_type;
-      const timeSlots: string[] = data.time_slots || [];
       const field = data.field;
+      const courtLabel = await getCourtLabelForReservation(field, data.court_type);
+      const timeSlots: string[] = data.time_slots || [];
       const totalPrice = data.total_price || 0;
       const amountPaid = data.amount_paid || 0;
       const pending = totalPrice - amountPaid;
@@ -89,7 +85,7 @@ export async function GET(request: NextRequest) {
 
         const detalles = [
           `📋 *Detalles de tu reserva:*`,
-          `🏟️ Cancha: ${courtName}${field ? ` - Campo ${field}` : ""}`,
+          `🏟️ Cancha: ${courtLabel}${field ? ` - Campo ${field}` : ""}`,
           `📅 Fecha: ${dateFormatted}`,
           `🕐 Horario: ${startTime} a ${endHour}:00`,
           `💰 Total: S/ ${totalPrice.toFixed(2)} | Pagado: S/ ${amountPaid.toFixed(2)} | Pendiente: S/ ${pending.toFixed(2)}`,

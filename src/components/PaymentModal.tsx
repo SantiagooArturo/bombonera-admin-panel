@@ -2,7 +2,7 @@
 
 import { useState, useRef } from "react";
 import type { Reservation, PaymentMethod } from "@/lib/types";
-import { COURT_LABELS } from "@/lib/types";
+import { COURT_TYPE_TO_SIZE } from "@/lib/types";
 
 interface PaymentModalProps {
   reservation: Reservation;
@@ -61,7 +61,8 @@ export default function PaymentModal({ reservation, onConfirm, onCancel, loading
     onConfirm(parsedAmount, method, mediaUrl);
   }
 
-  const courtLabel = COURT_LABELS[reservation.court_type]?.split("(")[0]?.trim() || reservation.court_type;
+  const sizeLabel = COURT_TYPE_TO_SIZE[reservation.court_type] ?? reservation.court_type;
+  const courtLabel = reservation.field ? `Cancha ${reservation.field} · ${sizeLabel}` : sizeLabel;
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">

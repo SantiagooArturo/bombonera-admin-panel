@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getDb } from "@/lib/firebase-admin";
 import { sendWhatsAppMessage } from "@/lib/waha";
+import { getCourtLabelForReservation } from "@/lib/court-config-server";
 
 /**
  * GET /api/cron/recurrent-rebooking
@@ -105,7 +106,8 @@ export async function GET(request: NextRequest) {
         created++;
       }
 
-      const fieldLabel = field ? `cancha ${field}` : "tu cancha";
+      const courtLabel = await getCourtLabelForReservation(field, data.court_type);
+      const fieldLabel = field ? `Cancha ${field} · ${courtLabel}` : "tu cancha";
       const message =
         `hola! espero que la hayas pasado bien hoy 🏐\n\n` +
         `¿quieres reservar ${fieldLabel} el ${nextWeekDay} de ${startTime} a ${endHour}:00 igual que hoy?\n\n` +

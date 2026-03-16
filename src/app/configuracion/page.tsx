@@ -3,7 +3,9 @@
 import { useState, useEffect, useMemo } from "react";
 import ClientLayout, { useToastContext } from "@/components/ClientLayout";
 import { useStore } from "@/lib/hooks";
-import { COURT_LABELS, type Reservation, type Invoice } from "@/lib/types";
+import { COURT_LABELS, COURT_TYPE_TO_SIZE, type Reservation, type Invoice } from "@/lib/types";
+import type { CourtFieldConfig } from "@/lib/court-config";
+import { getCourtSizeLabel } from "@/lib/court-config";
 
 function formatPhone(phone?: string, chatId?: string): string {
   const raw = (phone || chatId?.replace(/@.*$/, "") || "").replace(/\D/g, "");
@@ -56,6 +58,13 @@ export default function ConfiguracionPage() {
     store.fetchInvoices();
   }, [store]);
 
+  useEffect(() => {
+    fetch("/api/court-config")
+      .then((r) => r.json())
+      .then((data) => { if (Array.isArray(data)) setCourtConfigs(data); })
+      .catch(() => setCourtConfigs(null));
+  }, []);
+
   // Automation derived data
   const filteredUsers = useMemo(() => {
     if (!search.trim()) return users;
@@ -76,6 +85,8 @@ export default function ConfiguracionPage() {
       .filter((r) => r.status === "paid" || (r.amount_paid ?? 0) >= r.total_price)
       .sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
   }, [reservations]);
+
+  const [courtConfigs, setCourtConfigs] = useState<CourtFieldConfig[] | null>(null);
 
   // Invoice modal state
   const [invoiceModal, setInvoiceModal] = useState<{
@@ -372,8 +383,15 @@ export default function ConfiguracionPage() {
                             </div>
                             <div>
                               <p className="text-body-lg font-bold text-gray-900">
-                                {COURT_LABELS[res.court_type] || res.court_type}
-                                {res.field ? ` — Campo ${res.field}` : ""}
+                                {(() => {
+                                  const cfg = res.field && courtConfigs?.length
+                                    ? courtConfigs.find((c) => c.field === res.field)
+                                    : null;
+                                  const sizeLabel = cfg ? getCourtSizeLabel(cfg) : COURT_TYPE_TO_SIZE[res.court_type];
+                                  return res.field
+                                    ? `Cancha ${res.field} · ${sizeLabel ?? res.court_type}`
+                                    : (COURT_LABELS[res.court_type] || res.court_type);
+                                })()}
                               </p>
                               <p className="text-body text-gray-600 mt-1">
                                 {formatDate(res.date)} · {res.time_slots?.[0] || "?"} -{" "}
@@ -477,7 +495,16 @@ export default function ConfiguracionPage() {
                   <div>
                     <h3 className="text-heading font-bold text-gray-900">Boleta de Pago</h3>
                     <p className="text-body text-gray-500 mt-1">
-                      {COURT_LABELS[invoiceModal.reservation.court_type] || invoiceModal.reservation.court_type}
+                      {(() => {
+                        const res = invoiceModal.reservation;
+                        const cfg = res.field && courtConfigs?.length
+                          ? courtConfigs.find((c) => c.field === res.field)
+                          : null;
+                        const sizeLabel = cfg ? getCourtSizeLabel(cfg) : COURT_TYPE_TO_SIZE[res.court_type];
+                        return res.field
+                          ? `Cancha ${res.field} · ${sizeLabel ?? res.court_type}`
+                          : (COURT_LABELS[res.court_type] || res.court_type);
+                      })()}
                       {" — "}
                       {formatDate(invoiceModal.reservation.date)}
                       {" — "}

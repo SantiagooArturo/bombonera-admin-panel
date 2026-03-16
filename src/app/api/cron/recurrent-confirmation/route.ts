@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getDb } from "@/lib/firebase-admin";
 import { sendWhatsAppMessage } from "@/lib/waha";
+import { getCourtLabelForReservation } from "@/lib/court-config-server";
 
 /**
  * GET /api/cron/recurrent-confirmation
@@ -62,14 +63,16 @@ export async function GET(request: NextRequest) {
       const timeSlots: string[] = data.time_slots || [];
       if (timeSlots.length === 0) continue;
 
-      const field = data.field ? `cancha ${data.field}` : "tu cancha";
+      const field = data.field;
+      const courtLabel = await getCourtLabelForReservation(field, data.court_type);
+      const fieldText = field ? `Cancha ${field} · ${courtLabel}` : "tu cancha";
       const startTime = timeSlots[0];
       const lastSlot = timeSlots[timeSlots.length - 1];
       const endHour = parseInt(lastSlot) + 1;
 
       const message =
         `hola! te escribo para confirmar por última vez tu reserva del ${targetFormatted} 🏐\n\n` +
-        `${field} de ${startTime} a ${endHour}:00\n\n` +
+        `${fieldText} de ${startTime} a ${endHour}:00\n\n` +
         `¿confirmas? sino para liberar la cancha`;
 
       try {

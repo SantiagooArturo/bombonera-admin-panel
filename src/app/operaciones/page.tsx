@@ -5,6 +5,7 @@ import ClientLayout, { useToastContext } from "@/components/ClientLayout";
 import { useStore } from "@/lib/hooks";
 
 import { TIME_SLOTS, type Reservation, type BlockedSlot, type User, isReservationActive } from "@/lib/types";
+import type { CourtFieldConfig } from "@/lib/court-config";
 import ScheduleGrid from "@/components/operations/ScheduleGrid";
 import PaymentSidebar from "@/components/verificacion/PaymentSidebar";
 import { usePaymentSidebar } from "@/components/verificacion/usePaymentSidebar";
@@ -39,6 +40,7 @@ export default function OperacionesPage() {
   const [currentSlot, setCurrentSlot] = useState(getCurrentSlot);
   const [reservations, setReservations] = useState<Reservation[]>([]);
   const [blockedSlots, setBlockedSlots] = useState<BlockedSlot[]>([]);
+  const [courtConfigs, setCourtConfigs] = useState<CourtFieldConfig[] | null>(null);
   const [users, setUsers] = useState<User[]>([]);
   const [recurrentChatIds, setRecurrentChatIds] = useState<Set<string>>(new Set());
   const [loading, setLoading] = useState(true);
@@ -75,6 +77,15 @@ export default function OperacionesPage() {
   useEffect(() => {
     const interval = setInterval(() => setCurrentSlot(getCurrentSlot()), 30000);
     return () => clearInterval(interval);
+  }, []);
+
+  useEffect(() => {
+    fetch("/api/court-config")
+      .then((r) => r.json())
+      .then((data) => {
+        if (Array.isArray(data)) setCourtConfigs(data);
+      })
+      .catch(() => setCourtConfigs(null));
   }, []);
 
   useEffect(() => {
@@ -576,6 +587,7 @@ export default function OperacionesPage() {
             reservations={reservations}
             blockedSlots={blockedSlots}
             autoAssignments={autoAssignments}
+            courtConfigs={courtConfigs}
             recurrentChatIds={recurrentChatIds}
             currentSlot={currentSlot}
             isToday={isToday}
@@ -614,6 +626,7 @@ export default function OperacionesPage() {
           onToggleArrived={handleToggleArrived}
           onExtendReservation={() => handleExtendReservationOneHour(sidebar.selectedReservation!)}
           extendingReservation={extendingReservationId === sidebar.selectedReservation.id}
+          courtConfigs={courtConfigs}
         />
       )}
 

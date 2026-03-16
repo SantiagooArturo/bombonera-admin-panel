@@ -1,6 +1,9 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getDb } from "@/lib/firebase-admin";
-import { calculateReservationPrice } from "@/features/operaciones/utils";
+import {
+  calculateReservationPrice,
+  type CourtConfigMap,
+} from "@/features/operaciones/utils";
 
 export async function GET(request: NextRequest) {
   try {
@@ -66,6 +69,43 @@ function dayIdFromDate(dateStr: string): string {
   return map[d.getDay()] || "lun";
 }
 
+async function getCourtConfigMap(db: FirebaseFirestore.Firestore): Promise<CourtConfigMap> {
+  const snap = await db.collection("court_config").get();
+  const map: CourtConfigMap = {} as CourtConfigMap;
+  const defaults: Record<number, CourtConfigMap[number]> = {
+    9: {
+      price_day_weekday: 40,
+      price_day_weekend: 40,
+      price_day_holiday: 40,
+      price_night_weekday: 60,
+      price_night_weekend: 60,
+      price_night_holiday: 60,
+    },
+  };
+  const std = {
+    price_day_weekday: 70,
+    price_day_weekend: 80,
+    price_day_holiday: 80,
+    price_night_weekday: 100,
+    price_night_weekend: 100,
+    price_night_holiday: 100,
+  };
+  for (let f = 1; f <= 12; f++) {
+    const doc = snap.docs.find((d) => d.id === `field_${f}`);
+    const data = doc?.data();
+    const base = defaults[f] ?? std;
+    map[f] = {
+      price_day_weekday: (typeof data?.price_day_weekday === "number" ? data.price_day_weekday : base.price_day_weekday),
+      price_day_weekend: (typeof data?.price_day_weekend === "number" ? data.price_day_weekend : base.price_day_weekend),
+      price_day_holiday: (typeof data?.price_day_holiday === "number" ? data.price_day_holiday : base.price_day_holiday),
+      price_night_weekday: (typeof data?.price_night_weekday === "number" ? data.price_night_weekday : base.price_night_weekday),
+      price_night_weekend: (typeof data?.price_night_weekend === "number" ? data.price_night_weekend : base.price_night_weekend),
+      price_night_holiday: (typeof data?.price_night_holiday === "number" ? data.price_night_holiday : base.price_night_holiday),
+    };
+  }
+  return map;
+}
+
 export async function POST(request: NextRequest) {
   try {
     const db = getDb();
@@ -122,7 +162,8 @@ export async function POST(request: NextRequest) {
     const lastSlot = String(time_slots[time_slots.length - 1]);
     const endHour = parseInt(lastSlot.split(":")[0], 10) + 1;
 
-    const calculatedPrice = calculateReservationPrice(field, date, time_slots);
+    const configMap = await getCourtConfigMap(db);
+    const calculatedPrice = calculateReservationPrice(field, date, time_slots, configMap);
 
     const payload = {
       chat_id: cleanChatId,
@@ -214,7 +255,8 @@ export async function PATCH(request: NextRequest) {
       updateData.slot_keys = time_slots.map((slot: string) => `${dayId}-${slot}`);
       updateData.time_ranges = [{ start: time_slots[0], end: `${endHour}:00`, slot: `${dayId}-${time_slots[0]}` }];
 
-      const newPrice = calculateReservationPrice(targetField, date, time_slots);
+      const configMap = await getCourtConfigMap(db);
+      const newPrice = calculateReservationPrice(targetField, date, time_slots, configMap);
       updateData.total_price = newPrice;
       updateData.reservation_price = newPrice;
     }

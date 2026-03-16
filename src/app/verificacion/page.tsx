@@ -4,7 +4,9 @@ import { Suspense, useState, useEffect } from "react";
 import { useSearchParams } from "next/navigation";
 import ClientLayout from "@/components/ClientLayout";
 import { useStore } from "@/lib/hooks";
-import { COURT_LABELS, STATUS_LABELS } from "@/lib/types";
+import { COURT_LABELS, COURT_TYPE_TO_SIZE, STATUS_LABELS } from "@/lib/types";
+import { getCourtSizeLabel } from "@/lib/court-config";
+import type { CourtFieldConfig } from "@/lib/court-config";
 import PaymentSidebar from "@/components/verificacion/PaymentSidebar";
 import { usePaymentSidebar } from "@/components/verificacion/usePaymentSidebar";
 
@@ -24,6 +26,7 @@ function VerificacionContent() {
 
     const sidebar = usePaymentSidebar();
 
+    const [courtConfigs, setCourtConfigs] = useState<CourtFieldConfig[] | null>(null);
     const [filterText, setFilterText] = useState(searchParams.get("search") ?? "");
     type FilterStatus = "all" | "receivable" | "unverified" | "cancelled";
     const searchStatus = searchParams.get("status");
@@ -36,6 +39,13 @@ function VerificacionContent() {
     const [filterStatus, setFilterStatus] = useState<FilterStatus>(initialStatus);
     const [unverifiedResIds, setUnverifiedResIds] = useState<Set<string>>(new Set());
     const [autoOpenHandled, setAutoOpenHandled] = useState(false);
+
+    useEffect(() => {
+        fetch("/api/court-config")
+            .then((r) => r.json())
+            .then((data) => { if (Array.isArray(data)) setCourtConfigs(data); })
+            .catch(() => setCourtConfigs(null));
+    }, []);
 
     useEffect(() => {
         store.fetchReservations();
@@ -152,7 +162,13 @@ function VerificacionContent() {
                                     <tr key={res.id} className="border-b border-gray-100 hover:bg-gray-50 transition-colors">
                                         <td className="p-6">
                                             <div className="font-bold text-xl text-gray-900">
-                                                {res.field ? `Cancha ${res.field}` : (COURT_LABELS[res.court_type as keyof typeof COURT_LABELS] ?? res.court_type).split('(')[0].trim()}
+                                                {res.field
+                                                    ? (() => {
+                                                        const cfg = courtConfigs?.find((c) => c.field === res.field);
+                                                        const sizeLabel = cfg ? getCourtSizeLabel(cfg) : null;
+                                                        return sizeLabel ? `Cancha ${res.field} · ${sizeLabel}` : `Cancha ${res.field}`;
+                                                    })()
+                                                    : (COURT_TYPE_TO_SIZE[res.court_type as keyof typeof COURT_TYPE_TO_SIZE] ?? res.court_type)}
                                             </div>
                                             <div className="text-gray-500 mt-1 text-base">
                                                 {new Date(res.date + "T12:00:00").toLocaleDateString("es-PE", {
@@ -257,6 +273,7 @@ function VerificacionContent() {
                     clientTypeUpdating={sidebar.clientTypeUpdating}
                     onUpdateClientType={sidebar.handleUpdateClientType}
                     onClose={sidebar.close}
+                    courtConfigs={courtConfigs}
                 />
             )}
         </ClientLayout>

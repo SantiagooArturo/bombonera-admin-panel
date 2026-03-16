@@ -1,4 +1,6 @@
 import { TIME_SLOTS, type Reservation, type User } from "@/lib/types";
+import { isHoliday } from "@/lib/feriados-peru";
+import type { CourtFieldConfig } from "@/lib/court-config";
 
 export const MAX_DAY_OFFSET = 7;
 
@@ -91,25 +93,66 @@ export function getUserName(u: User): string {
   ).trim();
 }
 
-export function calculateReservationPrice(field: number, dateStr: string, time_slots: string[]): number {
+export type CourtConfigMap = Record<
+  number,
+  {
+    price_day_weekday: number;
+    price_day_weekend: number;
+    price_day_holiday: number;
+    price_night_weekday: number;
+    price_night_weekend: number;
+    price_night_holiday: number;
+  }
+>;
+
+/** Convierte CourtFieldConfig[] a CourtConfigMap para calculateReservationPrice. */
+export function courtConfigsToMap(configs: CourtFieldConfig[] | null | undefined): CourtConfigMap | undefined {
+  if (!configs?.length) return undefined;
+  const map: CourtConfigMap = {};
+  for (const c of configs) {
+    map[c.field] = {
+      price_day_weekday: c.price_day_weekday,
+      price_day_weekend: c.price_day_weekend,
+      price_day_holiday: c.price_day_holiday,
+      price_night_weekday: c.price_night_weekday,
+      price_night_weekend: c.price_night_weekend,
+      price_night_holiday: c.price_night_holiday,
+    };
+  }
+  return map;
+}
+
+export function calculateReservationPrice(
+  field: number,
+  dateStr: string,
+  time_slots: string[],
+  configMap?: CourtConfigMap
+): number {
   if (!time_slots || time_slots.length === 0) return 0;
 
   const date = new Date(dateStr + "T12:00:00");
   const day = date.getDay(); // 0 = Domingo, 6 = Sábado
   const isWeekend = day === 0 || day === 6;
+  const isHolidayDate = isHoliday(dateStr);
+
+  const cfg = configMap?.[field];
 
   let total = 0;
   for (const slot of time_slots) {
     const hour = parseInt(slot.split(":")[0], 10);
     const isNight = hour >= 18;
 
-    if (field === 9) {
-      total += isNight ? 60 : 40;
-    } else {
+    if (cfg) {
       if (isNight) {
-        total += 100;
+        total += isHolidayDate ? cfg.price_night_holiday : isWeekend ? cfg.price_night_weekend : cfg.price_night_weekday;
       } else {
-        total += isWeekend ? 80 : 70;
+        total += isHolidayDate ? cfg.price_day_holiday : isWeekend ? cfg.price_day_weekend : cfg.price_day_weekday;
+      }
+    } else {
+      if (field === 9) {
+        total += isNight ? 60 : 40;
+      } else {
+        total += isNight ? 100 : isWeekend ? 80 : 70;
       }
     }
   }
