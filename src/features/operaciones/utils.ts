@@ -67,8 +67,28 @@ export function getUserPhone(u: User): string {
   return (u.phone_number || u.chat_id || "").replace(/\D/g, "");
 }
 
+/** Normaliza a formato Perú (51 + 9 dígitos) para comparación consistente. */
+export function normalizePeruPhone(phone: string): string {
+  const digits = phone.replace(/\D/g, "").slice(0, 11);
+  if (!digits) return "";
+  if (digits.startsWith("51")) return digits;
+  return `51${digits}`.slice(0, 11);
+}
+
+/** Indica si es un número válido para WAHA (9 dígitos Perú o 11 con 51). */
+export function isValidPeruPhone(phone: string): boolean {
+  const digits = phone.replace(/\D/g, "");
+  return digits.length === 9 || (digits.startsWith("51") && digits.length === 11);
+}
+
 export function getUserName(u: User): string {
-  return (u.custom_name || u.contact_name || u.last_representative_name || "Sin nombre").trim();
+  return (
+    u.custom_name ||
+    u.contact_name ||
+    u.push_name ||
+    u.last_representative_name ||
+    "Sin nombre"
+  ).trim();
 }
 
 export function calculateReservationPrice(field: number, dateStr: string, time_slots: string[]): number {

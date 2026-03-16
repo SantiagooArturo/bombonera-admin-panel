@@ -19,6 +19,7 @@ type SlotActionModalProps = {
   customReason: string;
   setCustomReason: (value: string) => void;
   manualPhone: string;
+  manualPhoneValid: boolean;
   onManualPhoneChange: (value: string) => void;
   phoneOptions: PhoneOption[];
   manualName: string;
@@ -48,6 +49,7 @@ export default function SlotActionModal({
   customReason,
   setCustomReason,
   manualPhone,
+  manualPhoneValid,
   onManualPhoneChange,
   phoneOptions,
   manualName,
@@ -160,7 +162,7 @@ export default function SlotActionModal({
                 onChange={onManualPhoneChange}
                 options={phoneOptions}
                 accent="blue"
-                placeholder="Escribe número o selecciona"
+                placeholder="Busca por nombre o escribe número (9 dígitos)"
               />
               <div>
                 <label className="block text-sm font-semibold text-gray-700 mb-2">Nombre</label>
@@ -195,7 +197,7 @@ export default function SlotActionModal({
             </button>
             <button
               onClick={onSubmit}
-              disabled={slotActionLoading}
+              disabled={slotActionLoading || (slotActionMode === "manual" && !manualPhoneValid)}
               className={`flex-1 py-3 px-4 font-semibold rounded-xl text-white transition-colors text-sm disabled:opacity-50 ${slotActionMode === "block" ? "bg-red-600 hover:bg-red-700" : "bg-blue-600 hover:bg-blue-700"
                 }`}
             >

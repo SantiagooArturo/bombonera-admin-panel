@@ -8,6 +8,7 @@ type SendAvailabilityModalProps = {
   selectedDates: string[];
   toggleDate: (date: string) => void;
   availabilityPhone: string;
+  availabilityPhoneValid: boolean;
   setAvailabilityPhone: (value: string) => void;
   phoneOptions: PhoneOption[];
   loading: boolean;
@@ -21,6 +22,7 @@ export default function SendAvailabilityModal({
   selectedDates,
   toggleDate,
   availabilityPhone,
+  availabilityPhoneValid,
   setAvailabilityPhone,
   phoneOptions,
   loading,
@@ -80,7 +82,7 @@ export default function SendAvailabilityModal({
             onChange={(v) => setAvailabilityPhone(v.replace(/\D/g, "").slice(0, 12))}
             options={phoneOptions}
             accent="emerald"
-            placeholder="Escribe número o selecciona"
+            placeholder="Busca por nombre o escribe número (9 dígitos)"
           />
 
           <div className="flex gap-3 pt-1">
@@ -93,7 +95,7 @@ export default function SendAvailabilityModal({
             </button>
             <button
               onClick={onSubmit}
-              disabled={loading || selectedDates.length === 0}
+              disabled={loading || selectedDates.length === 0 || !availabilityPhoneValid}
               className="flex-1 py-3 px-4 font-semibold rounded-xl bg-emerald-600 text-white hover:bg-emerald-700 transition-colors text-sm disabled:opacity-50 disabled:cursor-not-allowed"
             >
               {loading ? "Enviando..." : "Enviar por WhatsApp"}

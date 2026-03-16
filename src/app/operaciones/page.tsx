@@ -25,6 +25,8 @@ import {
   getSlotsInRange,
   getUserName,
   getUserPhone,
+  isValidPeruPhone,
+  normalizePeruPhone,
 } from "@/features/operaciones/utils";
 
 // ─── Page ───────────────────────────────────────────────────────────────────
@@ -122,7 +124,14 @@ export default function OperacionesPage() {
   const phoneDirectory = useMemo(
     () =>
       users
-        .map((u) => ({ phone: getUserPhone(u), name: getUserName(u), dni: (u.last_dni || "").replace(/\D/g, "").slice(0, 8) }))
+        .map((u) => {
+          const raw = getUserPhone(u);
+          return {
+            phone: normalizePeruPhone(raw) || raw,
+            name: getUserName(u),
+            dni: (u.last_dni || "").replace(/\D/g, "").slice(0, 8),
+          };
+        })
         .filter((u) => u.phone.length >= 9),
     [users]
   );
@@ -411,9 +420,8 @@ export default function OperacionesPage() {
   }
 
   async function handleSendAvailability() {
-    const phone = availabilityPhone.trim().replace(/\D/g, "");
-    if (phone.length < 9) {
-      toast("Ingresa un WhatsApp válido.", "error");
+    if (!isValidPeruPhone(availabilityPhone)) {
+      toast("Selecciona un contacto o escribe un número de 9 dígitos.", "error");
       return;
     }
     if (availabilityDates.length === 0) {
@@ -428,7 +436,7 @@ export default function OperacionesPage() {
 
     setSendAvailabilityLoading(true);
     try {
-      const chatId = phone.startsWith("51") ? phone : `51${phone}`;
+      const chatId = normalizePeruPhone(availabilityPhone);
       let successCount = 0;
       for (const date of availabilityDates) {
         const res = await fetch("/api/send-availability", {
@@ -471,9 +479,9 @@ export default function OperacionesPage() {
   }
 
   function handleManualPhoneChange(rawValue: string) {
-    const cleanPhone = rawValue.replace(/\D/g, "").slice(0, 12);
+    const cleanPhone = normalizePeruPhone(rawValue) || rawValue.replace(/\D/g, "").slice(0, 12);
     setManualPhone(cleanPhone);
-    const match = phoneDirectory.find((u) => u.phone === cleanPhone);
+    const match = phoneDirectory.find((u) => normalizePeruPhone(u.phone) === cleanPhone || u.phone === cleanPhone);
     if (match) {
       setManualName(match.name);
       if (!manualDni && match.dni) setManualDni(match.dni);
@@ -626,6 +634,7 @@ export default function OperacionesPage() {
         customReason={customReason}
         setCustomReason={setCustomReason}
         manualPhone={manualPhone}
+        manualPhoneValid={isValidPeruPhone(manualPhone)}
         onManualPhoneChange={handleManualPhoneChange}
         phoneOptions={phoneDirectory}
         manualName={manualName}
@@ -652,6 +661,7 @@ export default function OperacionesPage() {
         selectedDates={availabilityDates}
         toggleDate={toggleAvailabilityDate}
         availabilityPhone={availabilityPhone}
+        availabilityPhoneValid={isValidPeruPhone(availabilityPhone)}
         setAvailabilityPhone={setAvailabilityPhone}
         phoneOptions={phoneDirectory}
         loading={sendAvailabilityLoading}
