@@ -187,6 +187,36 @@ export async function POST(request: NextRequest) {
       source: "manual_operaciones",
     };
 
+    const userDocId = cleanChatId.startsWith("51") ? cleanChatId : `51${cleanChatId}`;
+    const userRef = db.collection("users").doc(userDocId);
+    const userDoc = await userRef.get();
+    if (!userDoc.exists) {
+      await userRef.set({
+        chat_id: userDocId,
+        phone_number: userDocId,
+        custom_name: (representative_name || "").trim() || null,
+        last_dni: cleanDni || null,
+        client_type: "casual",
+        reservation_count: 0,
+        balance: 0,
+        is_automated: true,
+        needs_help: false,
+        help_reason: null,
+      });
+    } else {
+      const userData = userDoc.data() || {};
+      const updates: Record<string, unknown> = {};
+      if (!userData.last_representative_name && representative_name?.trim()) {
+        updates.last_representative_name = representative_name.trim();
+      }
+      if (!userData.last_dni && cleanDni) {
+        updates.last_dni = cleanDni;
+      }
+      if (Object.keys(updates).length > 0) {
+        await userRef.update(updates);
+      }
+    }
+
     const docRef = await db.collection("reservations").add(payload);
     return NextResponse.json({ success: true, id: docRef.id });
   } catch (error) {
@@ -199,7 +229,7 @@ export async function PATCH(request: NextRequest) {
   try {
     const db = getDb();
     const body = await request.json();
-    const { id, status, field, arrived, time_slots, dni } = body;
+    const { id, status, field, arrived, time_slots, dni, total_price, representative_name } = body;
 
     if (!id) {
       return NextResponse.json(
@@ -213,6 +243,13 @@ export async function PATCH(request: NextRequest) {
     if (typeof field === "number" || field === null) updateData.field = field;
     if (typeof arrived === "boolean") updateData.arrived = arrived;
     if (typeof dni === "string") updateData.dni = dni.replace(/\D/g, "").slice(0, 8);
+    if (typeof representative_name === "string") {
+      updateData.representative_name = representative_name.trim();
+    }
+    if (typeof total_price === "number" && total_price >= 0) {
+      updateData.total_price = total_price;
+      updateData.reservation_price = total_price;
+    }
 
     if (Array.isArray(time_slots) && time_slots.length > 0) {
       const currentDoc = await db.collection("reservations").doc(id).get();

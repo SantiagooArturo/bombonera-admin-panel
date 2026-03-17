@@ -301,6 +301,30 @@ class Store {
     }
   }
 
+  async createUser(data: { name: string; phone: string; dni: string; client_type: ClientType }) {
+    try {
+      const res = await fetch("/api/users", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          name: data.name,
+          phone: data.phone,
+          dni: data.dni || undefined,
+          client_type: data.client_type,
+        }),
+      });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        throw new Error(typeof err?.error === "string" ? err.error : "Error al crear usuario");
+      }
+      await this.fetchUsers();
+      return true;
+    } catch (error) {
+      console.error("Error creating user:", error);
+      throw error;
+    }
+  }
+
   async updateUserClientType(userId: string, clientType: ClientType) {
     try {
       const isFraud = clientType === "sospechoso_fraude";

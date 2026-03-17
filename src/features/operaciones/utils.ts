@@ -83,6 +83,13 @@ export function isValidPeruPhone(phone: string): boolean {
   return digits.length === 9 || (digits.startsWith("51") && digits.length === 11);
 }
 
+/** Para mostrar en UI: siempre sin 51. Nunca mostrar el prefijo al usuario. */
+export function formatDisplayPhone(phone: string): string {
+  const digits = phone.replace(/\D/g, "");
+  if (digits.startsWith("51")) return digits.slice(2);
+  return digits;
+}
+
 export function getUserName(u: User): string {
   return (
     u.custom_name ||

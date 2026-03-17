@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getDb } from "@/lib/firebase-admin";
 import type { User, ClientType } from "@/lib/types";
+import { normalizePeruPhone, isValidPeruPhone } from "@/features/operaciones/utils";
 
 /**
  * GET /api/users
@@ -48,6 +49,88 @@ export async function GET() {
     console.error("Error fetching users:", error);
     return NextResponse.json(
       { error: "Error al obtener usuarios" },
+      { status: 500 }
+    );
+  }
+}
+
+/**
+ * POST /api/users
+ * Crea un usuario manualmente (nombre, teléfono con lógica 51, DNI opcional, tipo).
+ */
+export async function POST(request: NextRequest) {
+  try {
+    const db = getDb();
+    const body = await request.json();
+    const { name, phone, dni, client_type } = body;
+
+    const nameTrim = typeof name === "string" ? name.trim() : "";
+    if (nameTrim.length < 2) {
+      return NextResponse.json(
+        { error: "El nombre debe tener al menos 2 caracteres" },
+        { status: 400 }
+      );
+    }
+
+    const rawPhone = typeof phone === "string" ? phone.replace(/\D/g, "") : "";
+    if (!rawPhone) {
+      return NextResponse.json(
+        { error: "El teléfono es obligatorio" },
+        { status: 400 }
+      );
+    }
+
+    const phoneNormalized = normalizePeruPhone(rawPhone);
+    if (!isValidPeruPhone(phoneNormalized)) {
+      return NextResponse.json(
+        { error: "Teléfono inválido. Debe ser 9 dígitos (Perú)." },
+        { status: 400 }
+      );
+    }
+
+    const VALID_CLIENT_TYPES = ["casual", "recurrente", "sospechoso_fraude"];
+    const clientType: ClientType =
+      VALID_CLIENT_TYPES.includes(client_type) ? client_type : "casual";
+
+    const dniClean =
+      typeof dni === "string" && dni.trim()
+        ? dni.replace(/\D/g, "").slice(0, 8)
+        : null;
+    if (dniClean && dniClean.length !== 8) {
+      return NextResponse.json(
+        { error: "El DNI debe tener 8 dígitos" },
+        { status: 400 }
+      );
+    }
+
+    const docId = phoneNormalized;
+    const docRef = db.collection("users").doc(docId);
+    const existing = await docRef.get();
+    if (existing.exists) {
+      return NextResponse.json(
+        { error: "Ya existe un usuario con ese número" },
+        { status: 409 }
+      );
+    }
+
+    await docRef.set({
+      chat_id: docId,
+      phone_number: docId,
+      custom_name: nameTrim,
+      last_dni: dniClean || null,
+      client_type: clientType,
+      reservation_count: 0,
+      balance: 0,
+      is_automated: true,
+      needs_help: false,
+      help_reason: null,
+    });
+
+    return NextResponse.json({ success: true, id: docId });
+  } catch (error) {
+    console.error("Error creating user:", error);
+    return NextResponse.json(
+      { error: "Error al crear usuario" },
       { status: 500 }
     );
   }

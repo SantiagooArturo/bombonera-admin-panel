@@ -85,18 +85,21 @@ interface PaymentSidebarProps {
   onAttachInvoice: (transfer: Transfer, file: File) => void;
   onDetachInvoice: (invoiceId: string) => Promise<boolean>;
   onUpdateDni: (dni: string) => Promise<boolean>;
+  onUpdateName?: (name: string) => Promise<boolean>;
   onCancelReservation: () => Promise<boolean>;
+  /** Nombre a mostrar: custom_name || contact_name || push_name || representative_name */
+  displayName?: string;
+  /** Para inicializar el input al editar: usamos custom_name (solo eso se edita) */
+  userCustomName?: string;
   onRevokeManualPayment: (transferId: string) => void;
   onRegisterPayment: (amount: number, method: PaymentMethod, mediaUrl?: string) => void;
+  onUpdatePrice?: (totalPrice: number) => Promise<boolean>;
   clientType: ClientType;
   clientTypeLoading?: boolean;
   clientTypeUpdating?: boolean;
   onUpdateClientType: (clientType: ClientType) => Promise<boolean>;
   cancellingReservation?: boolean;
   onClose: () => void;
-  onToggleArrived?: (resId: string, arrived: boolean) => void;
-  onExtendReservation?: () => void;
-  extendingReservation?: boolean;
   /** Config de canchas para mostrar tamaño (5 vs 5, 6 vs 6) y calcular precio. */
   courtConfigs?: CourtFieldConfig[] | null;
 }
@@ -729,18 +732,19 @@ export default function PaymentSidebar({
   onAttachInvoice,
   onDetachInvoice,
   onUpdateDni,
+  onUpdateName,
   onCancelReservation,
+  displayName,
+  userCustomName,
   onRevokeManualPayment,
   onRegisterPayment,
+  onUpdatePrice,
   clientType,
   clientTypeLoading = false,
   clientTypeUpdating = false,
   onUpdateClientType,
   cancellingReservation = false,
   onClose,
-  onToggleArrived,
-  onExtendReservation,
-  extendingReservation = false,
   courtConfigs,
 }: PaymentSidebarProps) {
   const [viewingImage, setViewingImage] = useState<string | null>(null);
@@ -752,6 +756,10 @@ export default function PaymentSidebar({
   const [hoveredTransferId, setHoveredTransferId] = useState<string | null>(null);
   const [editingDni, setEditingDni] = useState(false);
   const [dniValue, setDniValue] = useState(reservation.dni || "");
+  const [editingName, setEditingName] = useState(false);
+  const effectiveDisplayName = displayName ?? reservation.representative_name ?? "";
+  const initialNameForEdit = userCustomName ?? effectiveDisplayName;
+  const [nameValue, setNameValue] = useState(initialNameForEdit);
 
   // Ctrl+V / paste: adjuntar boleta desde clipboard
   useEffect(() => {
@@ -786,7 +794,17 @@ export default function PaymentSidebar({
     setDniValue(reservation.dni || "");
     setEditingDni(false);
   }, [reservation.id, reservation.dni]);
-  const [arrivedLoading, setArrivedLoading] = useState(false);
+  useEffect(() => {
+    setNameValue(userCustomName ?? displayName ?? reservation.representative_name ?? "");
+    setEditingName(false);
+  }, [reservation.id, userCustomName, displayName, reservation.representative_name]);
+  const [editingPrice, setEditingPrice] = useState(false);
+  const [priceInput, setPriceInput] = useState(String(reservation.total_price ?? 0));
+  const [priceUpdating, setPriceUpdating] = useState(false);
+
+  useEffect(() => {
+    setPriceInput(String(reservation.total_price ?? 0));
+  }, [reservation.id, reservation.total_price]);
 
   const calculatedPrice = reservation.field && reservation.time_slots
     ? calculateReservationPrice(reservation.field, reservation.date, reservation.time_slots, configMap)
@@ -795,14 +813,16 @@ export default function PaymentSidebar({
   const amountPaid = reservation.amount_paid || 0;
   const remaining = Math.max(0, totalPrice - amountPaid);
   const fullyPaid = remaining <= 0;
-  const arrived = reservation.arrived ?? false;
   const isCancelled = reservation.status === "cancelled";
 
-  async function handleArrivedToggle() {
-    if (!onToggleArrived) return;
-    setArrivedLoading(true);
-    await onToggleArrived(reservation.id, !arrived);
-    setArrivedLoading(false);
+  async function handleSavePrice() {
+    if (!onUpdatePrice) return;
+    const parsed = parseFloat(priceInput.replace(",", "."));
+    if (isNaN(parsed) || parsed < 0) return;
+    setPriceUpdating(true);
+    const ok = await onUpdatePrice(parsed);
+    setPriceUpdating(false);
+    if (ok) setEditingPrice(false);
   }
 
   return (
@@ -851,9 +871,59 @@ export default function PaymentSidebar({
         <div className="px-6 py-4 border-b border-gray-200 bg-white shrink-0">
           <div className="flex items-stretch justify-between gap-4">
             <div className="flex flex-col justify-center space-y-1">
-              <p className="text-lg font-bold text-gray-900">
-                {reservation.representative_name || "Sin nombre"}
-              </p>
+              {onUpdateName && editingName ? (
+                <div className="flex flex-col gap-1">
+                  <div className="flex items-center gap-2">
+                    <input
+                      type="text"
+                      value={nameValue}
+                      onChange={(e) => setNameValue(e.target.value)}
+                      placeholder="Nombre personalizado"
+                      className="flex-1 min-w-0 rounded-lg border-2 border-blue-500 px-2 py-1.5 text-lg font-bold text-gray-900 focus:outline-none"
+                      autoFocus
+                    />
+                  <button
+                    onClick={async () => {
+                      const ok = await onUpdateName(nameValue.trim());
+                      if (ok) setEditingName(false);
+                    }}
+                    disabled={!nameValue.trim()}
+                    className="text-xs px-2 py-1 rounded-md bg-blue-600 text-white hover:bg-blue-700 disabled:opacity-50"
+                  >
+                    Guardar
+                  </button>
+                  <button
+                      onClick={() => {
+                        setEditingName(false);
+                        setNameValue(userCustomName ?? effectiveDisplayName);
+                      }}
+                      className="p-1 rounded-md hover:bg-gray-200 text-gray-500 hover:text-gray-700"
+                      title="Cancelar"
+                    >
+                      <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                      </svg>
+                    </button>
+                  </div>
+                </div>
+              ) : (
+                <div className="flex items-center gap-1">
+                  <p className="text-lg font-bold text-gray-900">
+                    {effectiveDisplayName || "Sin nombre"}
+                  </p>
+                  {onUpdateName && (
+                    <button
+                      onClick={() => setEditingName(true)}
+                      className="p-1 rounded-md hover:bg-gray-100 text-gray-500 hover:text-gray-700"
+                      title="Editar nombre"
+                    >
+                      <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
+                      </svg>
+                    </button>
+                  )}
+                </div>
+              )}
               {reservation.phone_number && (
                 <a
                   href={wspLink(reservation.phone_number)}
@@ -911,24 +981,6 @@ export default function PaymentSidebar({
             </div>
             <div className="flex flex-col items-end gap-4 shrink-0 min-w-[260px]">
               <div className="w-full flex flex-wrap items-center gap-2">
-                {onToggleArrived && !isCancelled && !arrived && (
-                  <button
-                    onClick={handleArrivedToggle}
-                    disabled={arrivedLoading}
-                    className="px-4 py-2.5 rounded-xl font-bold text-sm transition-all disabled:opacity-50 bg-blue-600 text-white shadow-sm hover:bg-blue-700"
-                  >
-                    {arrivedLoading ? "..." : "Marcar llegada"}
-                  </button>
-                )}
-                {onExtendReservation && !isCancelled && (
-                  <button
-                    onClick={onExtendReservation}
-                    disabled={extendingReservation}
-                    className="px-4 py-2.5 rounded-xl font-bold text-sm transition-all disabled:opacity-50 bg-indigo-600 text-white shadow-sm hover:bg-indigo-700"
-                  >
-                    {extendingReservation ? "Extender..." : "Extender +1h"}
-                  </button>
-                )}
                 {!isCancelled && (
                   <button
                     onClick={onCancelReservation}
@@ -936,15 +988,6 @@ export default function PaymentSidebar({
                     className="ml-auto px-4 py-2.5 rounded-xl font-bold text-sm transition-all disabled:opacity-50 bg-red-600 text-white shadow-sm hover:bg-red-700"
                   >
                     {cancellingReservation ? "Cancelando..." : "Cancelar reserva"}
-                  </button>
-                )}
-                {onToggleArrived && !isCancelled && arrived && (
-                  <button
-                    onClick={handleArrivedToggle}
-                    disabled={arrivedLoading}
-                    className="ml-auto px-4 py-2.5 rounded-xl font-bold text-sm transition-all disabled:opacity-50 bg-green-500 text-white shadow-md hover:bg-green-600"
-                  >
-                    {arrivedLoading ? "..." : "Cancelar llegada"}
                   </button>
                 )}
               </div>
@@ -979,7 +1022,68 @@ export default function PaymentSidebar({
           <div className="mt-7 pt-4 border-t border-gray-100 grid grid-cols-3 gap-4">
             <div className="bg-gray-50 rounded-xl px-4 py-3 text-center">
               <p className="text-xs font-medium text-gray-400 uppercase">Total</p>
-              <p className="text-lg font-bold text-gray-900">S/ {totalPrice.toFixed(2)}</p>
+              {onUpdatePrice && !isCancelled && editingPrice ? (
+                <div className="flex flex-col items-center gap-1">
+                  <div className="flex items-center justify-center gap-1">
+                    <span className="text-lg font-bold text-gray-900">S/</span>
+                    <input
+                      type="text"
+                      inputMode="decimal"
+                      value={priceInput}
+                      onChange={(e) => setPriceInput(e.target.value.replace(/[^\d.,]/g, ""))}
+                      onKeyDown={(e) => {
+                        if (e.key === "Enter") void handleSavePrice();
+                        if (e.key === "Escape") {
+                          setEditingPrice(false);
+                          setPriceInput(String(reservation.total_price ?? 0));
+                        }
+                      }}
+                      className="w-20 text-lg font-bold text-gray-900 border-b-2 border-blue-500 bg-transparent focus:outline-none text-center"
+                      autoFocus
+                    />
+                    <button
+                      onClick={() => void handleSavePrice()}
+                      disabled={priceUpdating}
+                      className="text-xs px-2 py-1 rounded-md bg-blue-600 text-white hover:bg-blue-700 disabled:opacity-50"
+                    >
+                      {priceUpdating ? "..." : "Guardar"}
+                    </button>
+                    <button
+                      onClick={() => {
+                        setEditingPrice(false);
+                        setPriceInput(String(reservation.total_price ?? 0));
+                      }}
+                      disabled={priceUpdating}
+                      className="p-1 rounded-md hover:bg-gray-200 text-gray-500 hover:text-gray-700 disabled:opacity-50"
+                      title="Cancelar"
+                    >
+                      <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                      </svg>
+                    </button>
+                  </div>
+                  {calculatedPrice > 0 && (
+                    <p className="text-xs text-gray-400">
+                      Sugerido: S/ {calculatedPrice.toFixed(2)}
+                    </p>
+                  )}
+                </div>
+              ) : (
+                <div className="flex items-center justify-center gap-1">
+                  <p className="text-lg font-bold text-gray-900">S/ {totalPrice.toFixed(2)}</p>
+                  {onUpdatePrice && !isCancelled && (
+                    <button
+                      onClick={() => setEditingPrice(true)}
+                      className="p-1 rounded-md hover:bg-gray-200 text-gray-500 hover:text-gray-700"
+                      title="Editar precio (clientes con trato especial)"
+                    >
+                      <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
+                      </svg>
+                    </button>
+                  )}
+                </div>
+              )}
             </div>
             <div className="bg-blue-50 rounded-xl px-4 py-3 text-center">
               <p className="text-xs font-medium text-blue-400 uppercase">Pagado</p>

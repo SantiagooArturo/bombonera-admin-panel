@@ -30,12 +30,16 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ client_type: DEFAULT_CLIENT_TYPE });
     }
 
-    const value = doc.data()?.client_type;
+    const data = doc.data() || {};
+    const value = data.client_type;
     const valid =
       value === "casual" || value === "recurrente" || value === "sospechoso_fraude";
 
     return NextResponse.json({
       client_type: (valid ? value : DEFAULT_CLIENT_TYPE) as ClientType,
+      custom_name: typeof data.custom_name === "string" ? data.custom_name : undefined,
+      contact_name: typeof data.contact_name === "string" ? data.contact_name : undefined,
+      push_name: typeof data.push_name === "string" ? data.push_name : undefined,
     });
   } catch (error) {
     console.error("Error fetching user client_type:", error);

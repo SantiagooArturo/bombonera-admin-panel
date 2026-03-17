@@ -1,18 +1,14 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { normalizePeruPhone } from "../utils";
+import { formatDisplayPhone, normalizePeruPhone } from "../utils";
 
 export type PhoneOption = {
   phone: string;
   name: string;
+  /** Texto para buscar (ej: custom_name + contact_name + push_name). Si no se pasa, se usa name. */
+  searchText?: string;
 };
-
-function formatDisplayPhone(phone: string) {
-  const digits = phone.replace(/\D/g, "");
-  if (digits.startsWith("51") && digits.length > 9) return digits.slice(2);
-  return digits;
-}
 
 function isOnlyDigits(s: string) {
   return /^\d*$/.test(s.replace(/\s/g, ""));
@@ -59,21 +55,21 @@ export default function EditablePhoneSelect({
     return options
       .filter((o) => {
         if (digits && o.phone.includes(digits)) return true;
-        if (hasLettersInQ && q.length >= 2 && o.name.toLowerCase().includes(q)) return true;
+        if (hasLettersInQ && q.length >= 2) {
+          const toSearch = (o.searchText ?? o.name).toLowerCase();
+          return toSearch.includes(q);
+        }
         return false;
       })
       .slice(0, 10);
   }, [inputValue, options]);
-
-  const showSearchHint = inputValue.trim().length > 0 && !value && hasLetters(inputValue);
 
   const borderFocus = accent === "emerald" ? "focus:border-emerald-500" : "focus:border-blue-500";
   const optionActive = accent === "emerald" ? "hover:bg-emerald-50" : "hover:bg-blue-50";
 
   const displayValue = (() => {
     if (!inputValue) return "";
-    const digits = inputValue.replace(/\D/g, "");
-    if (digits.length >= 6 && isOnlyDigits(inputValue)) {
+    if (isOnlyDigits(inputValue)) {
       return formatDisplayPhone(normalizePeruPhone(inputValue));
     }
     return inputValue;
@@ -102,9 +98,7 @@ export default function EditablePhoneSelect({
             setTimeout(() => setOpen(false), 120);
           }}
           placeholder={placeholder}
-          className={`w-full rounded-xl border-2 px-4 py-3 pr-10 font-semibold text-gray-800 ${borderFocus} focus:outline-none ${
-            showSearchHint ? "border-amber-300 bg-amber-50/50" : "border-gray-200 bg-gray-50"
-          }`}
+          className={`w-full rounded-xl border-2 px-4 py-3 pr-10 font-semibold text-gray-800 ${borderFocus} focus:outline-none border-gray-200 bg-gray-50`}
         />
         <button
           type="button"
@@ -119,11 +113,6 @@ export default function EditablePhoneSelect({
         </button>
       </div>
 
-      {showSearchHint && (
-        <p className="mt-1.5 text-xs text-amber-700 font-medium">
-          Las letras solo sirven para buscar. Selecciona un contacto de la lista o escribe un número de 9 dígitos.
-        </p>
-      )}
       {open && filteredOptions.length > 0 && (
         <div className="absolute z-[70] mt-1 w-full rounded-xl border border-gray-200 bg-white shadow-lg max-h-56 overflow-auto">
           {filteredOptions.map((o) => (

@@ -59,7 +59,6 @@ export default function OperacionesPage() {
   const [manualDni, setManualDni] = useState("");
   const [manualPhone, setManualPhone] = useState("");
   const [slotActionLoading, setSlotActionLoading] = useState(false);
-  const [extendingReservationId, setExtendingReservationId] = useState<string | null>(null);
   const [sendAvailabilityOpen, setSendAvailabilityOpen] = useState(false);
   const [sendAvailabilityLoading, setSendAvailabilityLoading] = useState(false);
   const [availabilityPhone, setAvailabilityPhone] = useState("");
@@ -137,9 +136,11 @@ export default function OperacionesPage() {
       users
         .map((u) => {
           const raw = getUserPhone(u);
+          const names = [u.custom_name, u.contact_name, u.push_name].filter(Boolean) as string[];
           return {
             phone: normalizePeruPhone(raw) || raw,
             name: getUserName(u),
+            searchText: names.length > 0 ? names.join(" ") : undefined,
             dni: (u.last_dni || "").replace(/\D/g, "").slice(0, 8),
           };
         })
@@ -254,28 +255,6 @@ export default function OperacionesPage() {
     () => computeAutoAssignments(reservations),
     [reservations]
   );
-
-  // ── Asistencia ────────────────────────────────────────────────────────
-
-  async function handleToggleArrived(resId: string, arrived: boolean) {
-    try {
-      const res = await fetch("/api/reservations", {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ id: resId, arrived }),
-      });
-      if (res.ok) {
-        setReservations((prev) =>
-          prev.map((r) => (r.id === resId ? { ...r, arrived } : r))
-        );
-        sidebar.setSelectedReservation((prev) =>
-          prev?.id === resId ? { ...prev, arrived } : prev
-          );
-      }
-    } catch {
-      toast("Error al marcar asistencia", "error");
-    }
-  }
 
   // ── Desbloqueo ────────────────────────────────────────────────────────
 
@@ -499,65 +478,6 @@ export default function OperacionesPage() {
     }
   }
 
-  async function handleExtendReservationOneHour(reservation: Reservation) {
-    if (!reservation.field || !reservation.time_slots?.length) {
-      toast("No se puede extender esta reserva.", "error");
-      return;
-    }
-    const lastSlot = reservation.time_slots[reservation.time_slots.length - 1];
-    const lastIdx = TIME_SLOTS.indexOf(lastSlot);
-    const nextSlot = TIME_SLOTS[lastIdx + 1];
-    if (!nextSlot) {
-      toast("Ya está en el último horario disponible.", "info");
-      return;
-    }
-    if (reservation.date !== selectedDate) {
-      toast("Solo puedes extender reservas del día mostrado.", "info");
-      return;
-    }
-    if (hasConflicts(reservation.field, [nextSlot])) {
-      toast("No se puede extender: el siguiente horario está ocupado.", "error");
-      return;
-    }
-
-    setExtendingReservationId(reservation.id);
-    try {
-      const newSlots = [...reservation.time_slots, nextSlot];
-      const res = await fetch("/api/reservations", {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ id: reservation.id, time_slots: newSlots }),
-      });
-      if (!res.ok) {
-        let apiError = "No se pudo extender la reserva.";
-        try {
-          const data = await res.json();
-          if (typeof data?.error === "string") apiError = data.error;
-        } catch {
-          // no-op
-        }
-        if (res.status === 409) {
-          toast(`No se puede extender: ${apiError}`, "error");
-          return;
-        }
-        throw new Error(apiError);
-      }
-
-      setReservations((prev) =>
-        prev.map((r) => (r.id === reservation.id ? { ...r, time_slots: newSlots } : r))
-      );
-      sidebar.setSelectedReservation((prev) =>
-        prev?.id === reservation.id ? { ...prev, time_slots: newSlots } : prev
-      );
-      toast("Reserva extendida +1 hora", "success");
-    } catch (e) {
-      console.error(e);
-      toast("No se pudo extender la reserva.", "error");
-    } finally {
-      setExtendingReservationId(null);
-    }
-  }
-
   // ── Render ────────────────────────────────────────────────────────────
 
   return (
@@ -614,18 +534,19 @@ export default function OperacionesPage() {
           onAttachInvoice={sidebar.handleAttachInvoice}
           onDetachInvoice={sidebar.handleDetachInvoice}
           onUpdateDni={sidebar.handleUpdateDni}
+          onUpdateName={sidebar.handleUpdateName}
+          displayName={sidebar.displayName}
+          userCustomName={sidebar.userNames?.custom_name}
           onCancelReservation={sidebar.handleCancelReservation}
           cancellingReservation={sidebar.cancellingReservation}
           onRevokeManualPayment={sidebar.handleRevokeManualPayment}
           onRegisterPayment={sidebar.handleRegisterPayment}
+          onUpdatePrice={sidebar.handleUpdatePrice}
           clientType={sidebar.clientType}
           clientTypeLoading={sidebar.clientTypeLoading}
           clientTypeUpdating={sidebar.clientTypeUpdating}
           onUpdateClientType={sidebar.handleUpdateClientType}
           onClose={sidebar.close}
-          onToggleArrived={handleToggleArrived}
-          onExtendReservation={() => handleExtendReservationOneHour(sidebar.selectedReservation!)}
-          extendingReservation={extendingReservationId === sidebar.selectedReservation.id}
           courtConfigs={courtConfigs}
         />
       )}

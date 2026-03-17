@@ -264,10 +264,14 @@ function VerificacionContent() {
                     onAttachInvoice={sidebar.handleAttachInvoice}
                     onDetachInvoice={sidebar.handleDetachInvoice}
                     onUpdateDni={sidebar.handleUpdateDni}
+                    onUpdateName={sidebar.handleUpdateName}
+                    displayName={sidebar.displayName}
+                    userCustomName={sidebar.userNames?.custom_name}
                     onCancelReservation={sidebar.handleCancelReservation}
                     cancellingReservation={sidebar.cancellingReservation}
                     onRevokeManualPayment={sidebar.handleRevokeManualPayment}
                     onRegisterPayment={sidebar.handleRegisterPayment}
+                    onUpdatePrice={sidebar.handleUpdatePrice}
                     clientType={sidebar.clientType}
                     clientTypeLoading={sidebar.clientTypeLoading}
                     clientTypeUpdating={sidebar.clientTypeUpdating}

@@ -10,6 +10,7 @@ import {
   type ClientType,
   type User,
 } from "@/lib/types";
+import AddUserModal from "@/features/usuarios/components/AddUserModal";
 
 // ─── Helpers ────────────────────────────────────────────────────────────────
 
@@ -103,6 +104,7 @@ function UsuariosContent() {
   const [resetConfirmId, setResetConfirmId] = useState<string | null>(null);
   const [resetting, setResetting] = useState(false);
   const [search, setSearch] = useState(searchParams.get("search") ?? "");
+  const [addUserOpen, setAddUserOpen] = useState(false);
   const [filterNeedsHelp, setFilterNeedsHelp] = useState(searchParams.get("help") === "true");
   const [filterClientType] = useState<ClientType | "all">(
     (searchParams.get("type") as ClientType | null) || "all"
@@ -217,12 +219,38 @@ function UsuariosContent() {
   return (
     <ClientLayout>
       <div className="p-6 md:p-10 max-w-fit">
-        <div className="mb-8">
-          <h1 className="text-heading-lg font-bold text-gray-900">Usuarios</h1>
-          <p className="text-body-lg text-gray-500 mt-1">
-            Gestiona usuarios, reservas y cobros
-          </p>
+        <div className="mb-8 flex flex-wrap items-center justify-between gap-4">
+          <div>
+            <h1 className="text-heading-lg font-bold text-gray-900">Usuarios</h1>
+            <p className="text-body-lg text-gray-500 mt-1">
+              Gestiona usuarios, reservas y cobros
+            </p>
+          </div>
+          <button
+            onClick={() => setAddUserOpen(true)}
+            className="inline-flex items-center gap-2 px-5 py-3 font-semibold rounded-xl bg-bombonera-600 text-white hover:bg-bombonera-700 transition-colors"
+          >
+            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
+            </svg>
+            Añadir usuario
+          </button>
         </div>
+
+        <AddUserModal
+          open={addUserOpen}
+          onClose={() => setAddUserOpen(false)}
+          onSubmit={async (data) => {
+            try {
+              await store.createUser(data);
+              toast("Usuario creado correctamente", "success");
+              return true;
+            } catch (e) {
+              toast(e instanceof Error ? e.message : "Error al crear usuario", "error");
+              return false;
+            }
+          }}
+        />
 
         {/* Banner de alerta si hay usuarios que necesitan ayuda */}
         {needsHelpCount > 0 && !filterNeedsHelp && (

@@ -64,8 +64,14 @@ export async function resolveWhatsAppTarget(input: string): Promise<{ chatId: st
     }
   }
 
-  const fallbackChatId = normalizeChatId(normalizedInput);
-  return { chatId: fallbackChatId, firebaseId: fallbackChatId.replace(/\D/g, "") };
+  const digits = normalizedInput.replace(/\D/g, "");
+  const fallbackDigits = digits.startsWith("51") && digits.length === 11
+    ? digits
+    : digits.length === 9
+      ? `51${digits}`
+      : digits;
+  const fallbackChatId = normalizeChatId(fallbackDigits);
+  return { chatId: fallbackChatId, firebaseId: fallbackDigits };
 }
 
 /**

@@ -189,11 +189,11 @@ export default function ScheduleGrid({
     >
       <table className="w-full border-collapse text-sm">
         <thead>
-          {/* Fila 1: Headers de grupo (tipo de cancha) */}
+          {/* Fila 1: Headers de grupo (tipo de cancha) — altura fija 40px */}
           <tr>
             <th
               rowSpan={2}
-              className="sticky left-0 top-0 z-30 bg-gray-50 border-b border-r border-gray-300 px-3 py-3 text-sm font-bold text-gray-500 min-w-[64px] text-center"
+              className="sticky left-0 top-0 z-30 h-20 bg-gray-50 border-b border-r border-gray-300 px-3 py-0 text-sm font-bold text-gray-500 min-w-[64px] text-center shadow-[0_1px_0_0_#d1d5db] align-middle"
             >
               Hora
             </th>
@@ -201,19 +201,19 @@ export default function ScheduleGrid({
               <th
                 key={`${group.label}-${group.fields[0]}`}
                 colSpan={group.fields.length}
-                className="sticky top-0 z-20 bg-gray-50 border-b border-l border-gray-300 px-2 py-3 text-sm font-bold text-gray-600 text-center whitespace-nowrap"
+                className="sticky top-0 z-20 h-10 bg-gray-50 border-b border-l border-gray-300 px-2 py-0 text-sm font-bold text-gray-600 text-center whitespace-nowrap shadow-[0_1px_0_0_#d1d5db] align-middle"
               >
                 {group.label}
               </th>
             ))}
           </tr>
 
-          {/* Fila 2: Números de campo */}
+          {/* Fila 2: Números de campo — altura fija 40px, top-10 - 1px para solapar y eliminar hueco */}
           <tr>
             {ALL_FIELDS.map((field) => (
               <th
                 key={field}
-                className="sticky top-[48px] z-20 bg-gray-50 border-b border-l border-gray-300 px-2 py-2.5 text-sm font-bold text-gray-500 text-center min-w-[80px]"
+                className="sticky top-[39px] z-20 h-10 bg-gray-50 border-b border-l border-gray-300 px-2 py-0 text-sm font-bold text-gray-500 text-center min-w-[80px] shadow-[inset_0_1px_0_0_#d1d5db] align-middle"
               >
                 Campo {field}
               </th>

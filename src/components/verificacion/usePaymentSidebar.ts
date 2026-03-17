@@ -25,6 +25,11 @@ export function usePaymentSidebar(options?: UsePaymentSidebarOptions) {
   const [clientType, setClientType] = useState<ClientType>("casual");
   const [clientTypeLoading, setClientTypeLoading] = useState(false);
   const [clientTypeUpdating, setClientTypeUpdating] = useState(false);
+  const [userNames, setUserNames] = useState<{
+    custom_name?: string;
+    contact_name?: string;
+    push_name?: string;
+  }>({});
 
   const isOpen = selectedReservation !== null;
 
@@ -65,8 +70,14 @@ export function usePaymentSidebar(options?: UsePaymentSidebarOptions) {
         const isValid =
           nextType === "casual" || nextType === "recurrente" || nextType === "sospechoso_fraude";
         setClientType(isValid ? nextType : "casual");
+        setUserNames({
+          custom_name: clientTypeData?.custom_name,
+          contact_name: clientTypeData?.contact_name,
+          push_name: clientTypeData?.push_name,
+        });
       } else {
         setClientType("casual");
+        setUserNames({});
       }
     } catch (error) {
       console.error("Error loading sidebar data", error);
@@ -85,6 +96,7 @@ export function usePaymentSidebar(options?: UsePaymentSidebarOptions) {
     setClientType("casual");
     setClientTypeLoading(false);
     setClientTypeUpdating(false);
+    setUserNames({});
   }, []);
 
   const handleUpdateClientType = useCallback(async (nextType: ClientType) => {
@@ -150,6 +162,38 @@ export function usePaymentSidebar(options?: UsePaymentSidebarOptions) {
       setEmittingInvoiceId(null);
     }
   }, [store, toast, selectedReservation]);
+
+  const handleUpdateName = useCallback(async (name: string) => {
+    if (!selectedReservation) return false;
+    const trimmed = name.trim();
+    if (trimmed.length < 2) {
+      toast("El nombre debe tener al menos 2 caracteres", "error");
+      return false;
+    }
+    const normalizedChatId = String(selectedReservation.chat_id || "").replace(/\D/g, "");
+    const [userOk, resOk] = await Promise.all([
+      store.updateUserCustomName(normalizedChatId, trimmed),
+      fetch("/api/reservations", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          id: selectedReservation.id,
+          representative_name: trimmed,
+        }),
+      }).then((r) => r.ok),
+    ]);
+    if (!userOk || !resOk) {
+      toast("No se pudo actualizar el nombre", "error");
+      return false;
+    }
+    setSelectedReservation((prev) =>
+      prev ? { ...prev, representative_name: trimmed } : prev
+    );
+    setUserNames((prev) => ({ ...prev, custom_name: trimmed }));
+    options?.onReservationUpdated?.(selectedReservation.id, { representative_name: trimmed });
+    toast("Nombre personalizado actualizado", "success");
+    return true;
+  }, [selectedReservation, store, toast, options]);
 
   const handleUpdateDni = useCallback(async (dni: string) => {
     if (!selectedReservation) return false;
@@ -262,6 +306,30 @@ export function usePaymentSidebar(options?: UsePaymentSidebarOptions) {
     }
   }, [store, toast, selectedReservation, options]);
 
+  const handleUpdatePrice = useCallback(async (totalPrice: number) => {
+    if (!selectedReservation) return false;
+    try {
+      const res = await fetch("/api/reservations", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ id: selectedReservation.id, total_price: totalPrice }),
+      });
+      if (!res.ok) {
+        toast("No se pudo actualizar el precio", "error");
+        return false;
+      }
+      setSelectedReservation((prev) =>
+        prev ? { ...prev, total_price: totalPrice } : prev
+      );
+      options?.onReservationUpdated?.(selectedReservation.id, { total_price: totalPrice });
+      toast("Precio actualizado", "success");
+      return true;
+    } catch {
+      toast("Error al actualizar precio", "error");
+      return false;
+    }
+  }, [selectedReservation, options, toast]);
+
   const handleRegisterPayment = useCallback(async (amount: number, method: PaymentMethod, mediaUrl?: string) => {
     if (!selectedReservation) return;
     setPaymentLoading(true);
@@ -295,11 +363,20 @@ export function usePaymentSidebar(options?: UsePaymentSidebarOptions) {
     }
   }, [store, toast, selectedReservation, options]);
 
+  const displayName =
+    userNames.custom_name ||
+    userNames.contact_name ||
+    userNames.push_name ||
+    selectedReservation?.representative_name ||
+    "";
+
   return {
     selectedReservation,
     setSelectedReservation,
     transfers,
     invoices,
+    userNames,
+    displayName,
     loadingData,
     emittingInvoiceId,
     attachingInvoiceId,
@@ -314,11 +391,13 @@ export function usePaymentSidebar(options?: UsePaymentSidebarOptions) {
     handleVerifyTransfer,
     handleEmitInvoice,
     handleUpdateDni,
+    handleUpdateName,
     handleCancelReservation,
     handleUpdateClientType,
     handleAttachInvoice,
     handleDetachInvoice,
     handleRevokeManualPayment,
     handleRegisterPayment,
+    handleUpdatePrice,
   };
 }
