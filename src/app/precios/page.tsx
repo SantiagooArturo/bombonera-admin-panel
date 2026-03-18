@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useRef, useCallback, useMemo } from "react";
 import ClientLayout, { useToastContext } from "@/components/ClientLayout";
+import { compressImageForUpload } from "@/lib/compress-image";
 import type { CourtFieldConfig, CourtSize } from "@/lib/court-config";
 
 const IMAGE_TYPES = ["image/jpeg", "image/png", "image/webp"];
@@ -102,8 +103,9 @@ export default function PreciosPage() {
     if (!configs.some((c) => c.field === selectedField)) return;
     setUploadingImage(true);
     try {
+      const blob = await compressImageForUpload(file);
       const form = new FormData();
-      form.append("file", file);
+      form.append("file", blob, "image.jpg");
       form.append("folder", "court-images");
       const res = await fetch("/api/upload", { method: "POST", body: form });
       const data = await res.json().catch(() => ({}));

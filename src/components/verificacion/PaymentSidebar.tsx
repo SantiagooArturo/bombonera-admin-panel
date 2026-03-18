@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useRef, useEffect, useCallback } from "react";
+import { compressImageForUpload } from "@/lib/compress-image";
 import { Transfer, Invoice, Reservation, PaymentMethod, ClientType, CLIENT_TYPE_LABELS, STATUS_LABELS, getPendingExpiryTimeFormatted, type ReservationStatus } from "@/lib/types";
 import { renderPdfToDataUrl } from "@/lib/pdf-preview";
 import { calculateReservationPrice, courtConfigsToMap } from "@/features/operaciones/utils";
@@ -213,8 +214,9 @@ function RegisterPaymentForm({
     if (method === "digital" && file) {
       setUploading(true);
       try {
+        const blob = await compressImageForUpload(file);
         const form = new FormData();
-        form.append("file", file);
+        form.append("file", blob, "image.jpg");
         const res = await fetch("/api/upload", { method: "POST", body: form });
         if (!res.ok) throw new Error("Upload failed");
         const data = await res.json();

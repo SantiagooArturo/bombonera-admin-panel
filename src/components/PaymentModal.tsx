@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useRef } from "react";
+import { compressImageForUpload } from "@/lib/compress-image";
 import type { Reservation, PaymentMethod } from "@/lib/types";
 import { COURT_TYPE_TO_SIZE } from "@/lib/types";
 
@@ -45,8 +46,9 @@ export default function PaymentModal({ reservation, onConfirm, onCancel, loading
     if (method === "digital" && file) {
       setUploading(true);
       try {
+        const blob = await compressImageForUpload(file);
         const form = new FormData();
-        form.append("file", file);
+        form.append("file", blob, "image.jpg");
         const res = await fetch("/api/upload", { method: "POST", body: form });
         if (!res.ok) throw new Error("Upload failed");
         const data = await res.json();
