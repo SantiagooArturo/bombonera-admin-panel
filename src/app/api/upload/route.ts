@@ -37,15 +37,17 @@ export async function POST(request: NextRequest) {
     }
 
     const bucket = getStorageBucket();
-    let buffer = Buffer.from(await file.arrayBuffer());
+    const rawBuffer = Buffer.from(await file.arrayBuffer());
+    let buffer: Buffer;
     let ext: string;
     let contentType: string;
 
     if (isCourtImages) {
-      buffer = Buffer.from(await convertToWebP(buffer, file.type));
+      buffer = await convertToWebP(rawBuffer, file.type);
       ext = "webp";
       contentType = "image/webp";
     } else {
+      buffer = rawBuffer;
       ext = file.type.split("/")[1] === "jpeg" ? "jpg" : file.type.split("/")[1];
       contentType = file.type;
     }

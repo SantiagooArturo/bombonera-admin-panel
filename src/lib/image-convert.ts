@@ -25,8 +25,9 @@ export async function convertToWebP(
     inputBuffer = Buffer.from(jpegResult as ArrayBuffer | Uint8Array);
   }
 
-  return sharp(inputBuffer)
-    .resize(COURT_IMAGE_MAX_WIDTH, null, { withoutEnlargement: true })
+  const result = await sharp(inputBuffer)
+    .resize(COURT_IMAGE_MAX_WIDTH, undefined, { withoutEnlargement: true })
     .webp({ quality: WEBP_QUALITY })
     .toBuffer();
+  return Buffer.from(result);
 }

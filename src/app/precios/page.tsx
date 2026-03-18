@@ -99,8 +99,7 @@ export default function PreciosPage() {
       toast("Solo puedes subir JPEG, PNG, WebP o HEIC", "error");
       return;
     }
-    const cfg = configs.find((c) => c.field === selectedField);
-    if (!cfg) return;
+    if (!configs.some((c) => c.field === selectedField)) return;
     setUploadingImage(true);
     try {
       const form = new FormData();
