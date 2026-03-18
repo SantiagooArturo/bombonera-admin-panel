@@ -106,6 +106,10 @@ interface PaymentSidebarProps {
   onClose: () => void;
   /** Config de canchas para mostrar tamaño (5 vs 5, 6 vs 6) y calcular precio. */
   courtConfigs?: CourtFieldConfig[] | null;
+  /** Todas las reservas del cliente esta semana (incl. actual), ordenadas por fecha. */
+  allReservationsThisWeek?: Reservation[];
+  /** Al hacer click en una reserva de la lista: navegar a ella (ej. cambiar día en operaciones). */
+  onSelectReservationFromList?: (reservation: Reservation) => void;
 }
 
 // ─── Sub-components ──────────────────────────────────────────────────────────
@@ -763,6 +767,8 @@ export default function PaymentSidebar({
   cancellingReservation = false,
   onClose,
   courtConfigs,
+  allReservationsThisWeek = [],
+  onSelectReservationFromList,
 }: PaymentSidebarProps) {
   const [viewingImage, setViewingImage] = useState<string | null>(null);
   const configMap = courtConfigsToMap(courtConfigs);
@@ -937,6 +943,43 @@ export default function PaymentSidebar({
             </button>
           </div>
         </div>
+
+        {/* Reservas del cliente esta semana (navegables) */}
+        {allReservationsThisWeek.length > 0 && (
+          <div className="px-6 py-3 border-b border-gray-200 bg-amber-50/50 shrink-0">
+            <p className="text-xs font-semibold text-amber-700 uppercase tracking-wide mb-1.5">
+              {allReservationsThisWeek.length} reserva{allReservationsThisWeek.length !== 1 ? "s" : ""} esta semana
+            </p>
+            <div className="flex flex-wrap gap-1.5">
+              {allReservationsThisWeek.map((r) => {
+                const dateObj = new Date(r.date + "T12:00:00");
+                const dayName = dateObj.toLocaleDateString("es-PE", { weekday: "long" });
+                const dayNum = dateObj.getDate();
+                const start = r.time_slots?.[0] || "";
+                const lastH = r.time_slots?.length ? parseInt(r.time_slots[r.time_slots.length - 1].split(":")[0]) + 1 : 0;
+                const end = `${lastH}:00`;
+                const timeShort = `${formatHour12(start).replace(/:00\s?/g, "").replace(/\s/g, "")}-${formatHour12(end).replace(/:00\s?/g, "").replace(/\s/g, "")}`;
+                const fieldShort = r.field ? `C${r.field}` : "—";
+                const isCurrent = r.id === reservation.id;
+                const label = `${dayName} ${dayNum}  ·  ${timeShort}  ·  ${fieldShort}`;
+                return (
+                  <button
+                    key={r.id}
+                    type="button"
+                    onClick={() => onSelectReservationFromList?.(r)}
+                    className={`min-w-[12rem] px-2.5 py-1 rounded-lg text-xs font-medium transition-colors text-center ${
+                      isCurrent
+                        ? "bg-amber-600 text-white underline underline-offset-2"
+                        : "bg-white/80 text-amber-900 hover:bg-amber-200 border border-amber-200"
+                    }`}
+                  >
+                    {label}
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+        )}
 
         {/* Client Info */}
         <div className="px-6 py-4 border-b border-gray-200 bg-white shrink-0 space-y-4">

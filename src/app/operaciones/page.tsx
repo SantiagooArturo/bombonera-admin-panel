@@ -64,6 +64,9 @@ export default function OperacionesPage() {
   const [availabilityPhone, setAvailabilityPhone] = useState("");
   const [availabilityDates, setAvailabilityDates] = useState<string[]>([]);
 
+  const preserveSidebarOnDayChangeRef = useRef(false);
+  const skipBlockingLoaderRef = useRef(false);
+
   const sidebar = usePaymentSidebar({
     onReservationUpdated: (resId, patch) => {
       setReservations((prev) => prev.map((r) => (r.id === resId ? { ...r, ...patch } : r)));
@@ -167,7 +170,11 @@ export default function OperacionesPage() {
   }, [loadRecurrentClientIds]);
 
   useEffect(() => {
-    sidebar.close();
+    if (preserveSidebarOnDayChangeRef.current) {
+      preserveSidebarOnDayChangeRef.current = false;
+    } else {
+      sidebar.close();
+    }
     setUnblockTarget(null);
     setSlotActionTarget(null);
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -221,7 +228,8 @@ export default function OperacionesPage() {
   useEffect(() => {
     // Cuando cambiamos de dia reiniciamos la memoria anterior
     prevCountsRef.current = { reservations: -1, blocks: -1 };
-    loadData(true);
+    const skipBlockingLoader = preserveSidebarOnDayChangeRef.current;
+    loadData(!skipBlockingLoader);
 
     const checkCount = async () => {
       try {
@@ -545,6 +553,20 @@ export default function OperacionesPage() {
           statusUpdating={sidebar.statusUpdating}
           onClose={sidebar.close}
           courtConfigs={courtConfigs}
+          allReservationsThisWeek={sidebar.allReservationsThisWeek}
+          onSelectReservationFromList={(r) => {
+            preserveSidebarOnDayChangeRef.current = true;
+            skipBlockingLoaderRef.current = true;
+            const today = new Date();
+            today.setHours(0, 0, 0, 0);
+            const resDate = new Date(r.date + "T12:00:00");
+            resDate.setHours(0, 0, 0, 0);
+            const diffMs = resDate.getTime() - today.getTime();
+            const offset = Math.round(diffMs / (24 * 60 * 60 * 1000));
+            const clamped = Math.max(0, Math.min(MAX_DAY_OFFSET, offset));
+            setDayOffset(clamped);
+            sidebar.open(r);
+          }}
         />
       )}
 

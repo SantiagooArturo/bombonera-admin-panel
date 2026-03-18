@@ -279,6 +279,8 @@ function VerificacionContent() {
                     onUpdateClientType={sidebar.handleUpdateClientType}
                     onClose={sidebar.close}
                     courtConfigs={courtConfigs}
+                    allReservationsThisWeek={sidebar.allReservationsThisWeek}
+                    onSelectReservationFromList={(r) => sidebar.open(r)}
                 />
             )}
         </ClientLayout>

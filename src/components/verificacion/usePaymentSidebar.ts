@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useCallback } from "react";
+import { useState, useCallback, useRef } from "react";
 import { useStore } from "@/lib/hooks";
 import { useToastContext } from "@/components/ClientLayout";
 import type { Reservation, Transfer, Invoice, PaymentMethod, ClientType } from "@/lib/types";
@@ -15,6 +15,8 @@ export function usePaymentSidebar(options?: UsePaymentSidebarOptions) {
   const toast = useToastContext();
 
   const [selectedReservation, setSelectedReservation] = useState<Reservation | null>(null);
+  const [allReservationsThisWeek, setAllReservationsThisWeek] = useState<Reservation[]>([]);
+  const allReservationsChatIdRef = useRef<string | null>(null);
   const [transfers, setTransfers] = useState<Transfer[]>([]);
   const [invoices, setInvoices] = useState<Invoice[]>([]);
   const [loadingData, setLoadingData] = useState(false);
@@ -35,6 +37,11 @@ export function usePaymentSidebar(options?: UsePaymentSidebarOptions) {
   const isOpen = selectedReservation !== null;
 
   const open = useCallback(async (reservation: Reservation) => {
+    const nextChatId = String(reservation.chat_id || reservation.phone_number || "").replace(/\D/g, "");
+    if (allReservationsChatIdRef.current && allReservationsChatIdRef.current !== nextChatId) {
+      setAllReservationsThisWeek([]);
+      allReservationsChatIdRef.current = null;
+    }
     setSelectedReservation(reservation);
     setLoadingData(true);
     setClientTypeLoading(true);
@@ -42,11 +49,13 @@ export function usePaymentSidebar(options?: UsePaymentSidebarOptions) {
       await store.syncReservationPayments(reservation.id);
 
       const normalizedChatId = String(reservation.chat_id || "").replace(/\D/g, "");
-      const [transfersData, invoicesData, freshResReq, clientTypeRes] = await Promise.all([
+      const chatIdForApi = reservation.chat_id || normalizedChatId || reservation.phone_number;
+      const [transfersData, invoicesData, freshResReq, clientTypeRes, clientReservationsRes] = await Promise.all([
         store.fetchTransfers(reservation.id),
         store.fetchInvoices({ reservation_id: reservation.id }),
         fetch(`/api/reservations?id=${reservation.id}`),
         fetch(`/api/users/client-type?chat_id=${encodeURIComponent(normalizedChatId)}`, { cache: "no-store" }),
+        chatIdForApi ? fetch(`/api/reservations?phone_number=${encodeURIComponent(String(chatIdForApi))}`) : Promise.resolve(new Response("[]")),
       ]);
       setTransfers(transfersData || []);
       setInvoices(invoicesData || []);
@@ -83,6 +92,33 @@ export function usePaymentSidebar(options?: UsePaymentSidebarOptions) {
         setClientType("casual");
         setUserNames({});
       }
+
+      if (clientReservationsRes?.ok) {
+        const allClientRes = await clientReservationsRes.json();
+        const resDate = new Date(reservation.date + "T12:00:00");
+        const day = resDate.getDay();
+        const diffToMon = day === 0 ? -6 : 1 - day;
+        const mon = new Date(resDate);
+        mon.setDate(mon.getDate() + diffToMon);
+        const sun = new Date(mon);
+        sun.setDate(sun.getDate() + 6);
+        const weekStart = mon.toISOString().slice(0, 10);
+        const weekEnd = sun.toISOString().slice(0, 10);
+        const full = (Array.isArray(allClientRes) ? allClientRes : [])
+          .filter((r: Reservation) => r.date >= weekStart && r.date <= weekEnd && r.status !== "cancelled" && r.status !== "expired")
+          .sort((a: Reservation, b: Reservation) => {
+            const cmp = (a.date || "").localeCompare(b.date || "");
+            if (cmp !== 0) return cmp;
+            const aStart = a.time_slots?.[0] || "";
+            const bStart = b.time_slots?.[0] || "";
+            return aStart.localeCompare(bStart);
+          });
+        setAllReservationsThisWeek(full);
+        allReservationsChatIdRef.current = String(chatIdForApi || "").replace(/\D/g, "");
+      } else {
+        setAllReservationsThisWeek([]);
+        allReservationsChatIdRef.current = null;
+      }
     } catch (error) {
       console.error("Error loading sidebar data", error);
       toast("Error al cargar información", "error");
@@ -95,6 +131,8 @@ export function usePaymentSidebar(options?: UsePaymentSidebarOptions) {
 
   const close = useCallback(() => {
     setSelectedReservation(null);
+    setAllReservationsThisWeek([]);
+    allReservationsChatIdRef.current = null;
     setTransfers([]);
     setInvoices([]);
     setClientType("casual");
@@ -437,6 +475,7 @@ export function usePaymentSidebar(options?: UsePaymentSidebarOptions) {
   return {
     selectedReservation,
     setSelectedReservation,
+    allReservationsThisWeek,
     transfers,
     invoices,
     userNames,
