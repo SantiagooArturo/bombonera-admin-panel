@@ -165,7 +165,13 @@ export default function PreciosPage() {
           <p className="mt-1 text-sm text-gray-500">
             Edita los campos y haz clic en Guardar para aplicar los cambios.
           </p>
-
+          <button
+            onClick={handleSeed}
+            disabled={seeding}
+            className="mt-3 text-sm text-emerald-600 hover:text-emerald-700 font-medium underline disabled:opacity-50"
+          >
+            {seeding ? "Cargando..." : "Cargar datos iniciales (si la base está vacía)"}
+          </button>
         </div>
 
         {/* Selector de campo */}
@@ -351,7 +357,7 @@ export default function PreciosPage() {
                 </label>
                 <textarea
                   rows={4}
-                  placeholder="Ej: Cancha 6v6 voley. Campos 1, 2, 3. Se reserva por bloques de 2 horas."
+                  placeholder="Ej: Alquiler en turnos de 7pm a 9pm o 9pm a 11pm. No se alquila por una hora de noche, solo feriado, sábado o domingo. (A partir de 6pm es considerado noche)"
                   value={formValues.description ?? ""}
                   onChange={(e) => setEditForm((prev) => prev ? { ...prev, description: e.target.value } : null)}
                   className="w-full rounded-xl border-2 border-gray-200 px-4 py-3 text-gray-800 focus:border-emerald-500 focus:outline-none resize-none"

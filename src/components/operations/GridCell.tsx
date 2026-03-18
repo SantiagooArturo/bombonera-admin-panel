@@ -32,7 +32,7 @@ export function OccupiedCellContent({
     tick();
     const id = setInterval(tick, 15000);
     return () => clearInterval(id);
-  }, [isPending, reservation.id, reservation.created_at]);
+  }, [isPending, reservation]);
 
   return (
     <div className={`relative h-full rounded-lg border-2 ${isPending ? "border-amber-400 border-dashed" : "border-blue-300"} ${bgByStatus} p-2 flex flex-col justify-center gap-0.5 ${isRecurrent ? "pb-5" : ""}`}>
