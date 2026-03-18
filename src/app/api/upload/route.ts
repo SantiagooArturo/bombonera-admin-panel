@@ -42,7 +42,7 @@ export async function POST(request: NextRequest) {
     let contentType: string;
 
     if (isCourtImages) {
-      buffer = await convertToWebP(buffer, file.type);
+      buffer = Buffer.from(await convertToWebP(buffer, file.type));
       ext = "webp";
       contentType = "image/webp";
     } else {
