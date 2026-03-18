@@ -45,7 +45,7 @@ export default function PreciosPage() {
       "court_size", "court_size_other", "image_url",
       "price_day_weekday", "price_day_weekend", "price_day_holiday",
       "price_night_weekday", "price_night_weekend", "price_night_holiday",
-      "description", "block_booking",
+      "description",
     ];
     return keys.some((k) => {
       const a = editForm[k];
@@ -351,21 +351,6 @@ export default function PreciosPage() {
                   onChange={(e) => setEditForm((prev) => prev ? { ...prev, description: e.target.value } : null)}
                   className="w-full rounded-xl border-2 border-gray-200 px-4 py-3 text-gray-800 focus:border-emerald-500 focus:outline-none resize-none"
                 />
-              </section>
-
-              {/* Por bloques */}
-              <section>
-                <label className="flex items-center gap-3 cursor-pointer">
-                  <input
-                    type="checkbox"
-                    checked={formValues.block_booking ?? false}
-                    onChange={(e) => setEditForm((prev) => prev ? { ...prev, block_booking: e.target.checked } : null)}
-                    className="w-5 h-5 rounded border-2 border-gray-300 text-emerald-600 focus:ring-emerald-500"
-                  />
-                  <span className="font-semibold text-gray-800">
-                    Se reserva por bloques (ej. mínimo 2 horas)
-                  </span>
-                </label>
               </section>
 
               {/* Botón Guardar */}
