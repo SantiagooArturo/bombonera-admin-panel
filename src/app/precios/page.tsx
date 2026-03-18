@@ -4,7 +4,7 @@ import { useState, useEffect, useRef, useCallback, useMemo } from "react";
 import ClientLayout, { useToastContext } from "@/components/ClientLayout";
 import type { CourtFieldConfig, CourtSize } from "@/lib/court-config";
 
-const IMAGE_TYPES = ["image/jpeg", "image/png", "image/webp"];
+const IMAGE_TYPES = ["image/jpeg", "image/png", "image/webp", "image/heic", "image/heif"];
 
 function isImageFile(file: File): boolean {
   return IMAGE_TYPES.includes(file.type);
@@ -96,7 +96,7 @@ export default function PreciosPage() {
 
   const uploadImage = useCallback(async (file: File) => {
     if (!isImageFile(file)) {
-      toast("Solo puedes subir JPEG, PNG o WebP", "error");
+      toast("Solo puedes subir JPEG, PNG, WebP o HEIC", "error");
       return;
     }
     const cfg = configs.find((c) => c.field === selectedField);
@@ -236,7 +236,7 @@ export default function PreciosPage() {
                 <input
                   ref={fileInputRef}
                   type="file"
-                  accept="image/jpeg,image/png,image/webp"
+                  accept="image/jpeg,image/png,image/webp,image/heic,image/heif"
                   className="hidden"
                   onChange={(e) => {
                     const f = e.target.files?.[0];

@@ -1,11 +1,16 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getStorageBucket } from "@/lib/firebase-admin";
 import { randomUUID } from "crypto";
+import { convertToWebP } from "@/lib/image-convert";
+
+const IMAGE_TYPES = ["image/jpeg", "image/png", "image/webp"];
+const IMAGE_TYPES_WITH_HEIC = [...IMAGE_TYPES, "image/heic", "image/heif"];
 
 /**
  * POST /api/upload
  * Sube una imagen a Firebase Storage y devuelve la URL pública.
  * Body: FormData con campo "file" (imagen).
+ * Si folder=court-images: acepta HEIC y convierte todo a WebP.
  */
 export async function POST(request: NextRequest) {
   try {
@@ -16,25 +21,41 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: "No se envió archivo" }, { status: 400 });
     }
 
-    const allowedTypes = ["image/jpeg", "image/png", "image/webp"];
+    const folder = (formData.get("folder") as string) || "payments";
+    const isCourtImages = folder === "court-images";
+    const allowedTypes = isCourtImages ? IMAGE_TYPES_WITH_HEIC : IMAGE_TYPES;
+
     if (!allowedTypes.includes(file.type)) {
       return NextResponse.json(
-        { error: "Formato no permitido. Solo JPEG, PNG o WebP." },
+        {
+          error: isCourtImages
+            ? "Formato no permitido. Solo JPEG, PNG, WebP o HEIC."
+            : "Formato no permitido. Solo JPEG, PNG o WebP.",
+        },
         { status: 400 }
       );
     }
 
-    const folder = (formData.get("folder") as string) || "payments";
     const bucket = getStorageBucket();
-    const ext = file.type.split("/")[1] === "jpeg" ? "jpg" : file.type.split("/")[1];
+    let buffer = Buffer.from(await file.arrayBuffer());
+    let ext: string;
+    let contentType: string;
+
+    if (isCourtImages) {
+      buffer = await convertToWebP(buffer, file.type);
+      ext = "webp";
+      contentType = "image/webp";
+    } else {
+      ext = file.type.split("/")[1] === "jpeg" ? "jpg" : file.type.split("/")[1];
+      contentType = file.type;
+    }
+
     const storagePath = `${folder}/${randomUUID()}.${ext}`;
     const bucketFile = bucket.file(storagePath);
 
-    const buffer = Buffer.from(await file.arrayBuffer());
-
     await bucketFile.save(buffer, {
       metadata: {
-        contentType: file.type,
+        contentType,
         metadata: { firebaseStorageDownloadTokens: randomUUID() },
       },
     });
