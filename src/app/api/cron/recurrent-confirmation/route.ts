@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { getDb } from "@/lib/firebase-admin";
 import { sendWhatsAppMessage } from "@/lib/waha";
 import { getCourtLabelForReservation } from "@/lib/court-config-server";
-import { normalizePeruPhone } from "@/features/operaciones/utils";
+import { formatHour12, normalizePeruPhone } from "@/features/operaciones/utils";
 
 /**
  * GET /api/cron/recurrent-confirmation
@@ -75,14 +75,15 @@ export async function GET(request: NextRequest) {
       const field = data.field;
       const courtLabel = await getCourtLabelForReservation(field, data.court_type);
       const fieldText = field ? `Cancha ${field} · ${courtLabel}` : "tu cancha";
-      const startTime = timeSlots[0];
+      const startSlot = timeSlots[0];
       const lastSlot = timeSlots[timeSlots.length - 1];
       const endHour = parseInt(lastSlot) + 1;
+      const timeRange = `de ${formatHour12(startSlot)} a ${formatHour12(String(endHour))}`;
 
       const message =
-        `hola! te escribo para confirmar por última vez tu reserva del ${targetFormatted} 🏐\n\n` +
-        `${fieldText} de ${startTime} a ${endHour}:00\n\n` +
-        `¿confirmas?`;
+        `hola! te escribo para confirmar tu reserva del ${targetFormatted} 🏐\n\n` +
+        `${fieldText} ${timeRange}\n\n` +
+        `¿confirmas que vienes? avísame si tenés algún cambio 🙌`;
 
       try {
         await sendWhatsAppMessage(chatId, message);

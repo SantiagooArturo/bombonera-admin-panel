@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { getDb } from "@/lib/firebase-admin";
 import { sendWhatsAppMessage } from "@/lib/waha";
 import { getCourtLabelForReservation } from "@/lib/court-config-server";
-import { normalizePeruPhone } from "@/features/operaciones/utils";
+import { formatHour12, normalizePeruPhone } from "@/features/operaciones/utils";
 
 /**
  * GET /api/cron/recurrent-rebooking
@@ -117,9 +117,10 @@ export async function GET(request: NextRequest) {
 
       const courtLabel = await getCourtLabelForReservation(field, data.court_type);
       const fieldLabel = field ? `Cancha ${field} · ${courtLabel}` : "tu cancha";
+      const timeRange = `${formatHour12(startTime)} a ${formatHour12(String(endHour))}`;
       const message =
         `hola! espero que la hayas pasado bien hoy 🏐\n\n` +
-        `¿quieres reservar ${fieldLabel} el ${nextWeekDay} de ${startTime} a ${endHour}:00 igual que hoy?\n\n` +
+        `¿quieres reservar ${fieldLabel} el ${nextWeekDay} de ${timeRange} igual que hoy?\n\n` +
         `respóndeme y te lo reservo al toque`;
 
       try {
