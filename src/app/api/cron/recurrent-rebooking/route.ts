@@ -24,6 +24,13 @@ export async function GET(request: NextRequest) {
 
   try {
     const db = getDb();
+
+    const settingsDoc = await db.collection("config").doc("app_settings").get();
+    const recurrentReminderEnabled = settingsDoc.data()?.recurrent_reminder_enabled !== false;
+    if (!recurrentReminderEnabled) {
+      return NextResponse.json({ success: true, reservations_created: 0, messages_sent: 0, skipped: "Recordatorios a recurrentes desactivados" });
+    }
+
     const now = new Date();
 
     const limaOffset = -5 * 60;

@@ -280,7 +280,7 @@ function UsuariosContent() {
           <div>
             <p className="font-semibold text-gray-900">Recordatorio a clientes recurrentes</p>
             <p className="text-sm text-gray-500 mt-0.5">
-              Mensaje de confirmación 4 días antes de la reserva. Si está desactivado, no se envía.
+              Si está desactivado, no se envían recordatorios a clientes recurrentes.
             </p>
           </div>
           <button
