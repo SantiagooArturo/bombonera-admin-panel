@@ -109,10 +109,48 @@ function UsuariosContent() {
   const [filterClientType] = useState<ClientType | "all">(
     (searchParams.get("type") as ClientType | null) || "all"
   );
+  const [recurrentReminderEnabled, setRecurrentReminderEnabled] = useState(true);
+  const [recurrentReminderLoading, setRecurrentReminderLoading] = useState(false);
 
   useEffect(() => {
     store.fetchUsers();
   }, [store]);
+
+  useEffect(() => {
+    fetch("/api/settings")
+      .then((r) => r.json())
+      .then((data) => {
+        if (typeof data.recurrent_reminder_enabled === "boolean") {
+          setRecurrentReminderEnabled(data.recurrent_reminder_enabled);
+        }
+      })
+      .catch(() => {});
+  }, []);
+
+  async function handleToggleRecurrentReminder() {
+    setRecurrentReminderLoading(true);
+    try {
+      const res = await fetch("/api/settings", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ recurrent_reminder_enabled: !recurrentReminderEnabled }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (res.ok) {
+        setRecurrentReminderEnabled(data.recurrent_reminder_enabled ?? !recurrentReminderEnabled);
+        toast(
+          data.recurrent_reminder_enabled ? "Recordatorio a recurrentes activado" : "Recordatorio a recurrentes desactivado",
+          "success"
+        );
+      } else {
+        toast(data.error || "Error al actualizar", "error");
+      }
+    } catch {
+      toast("Error al actualizar configuración", "error");
+    } finally {
+      setRecurrentReminderLoading(false);
+    }
+  }
 
   const handleSort = (key: SortKey) => {
     if (sortBy === key) {
@@ -234,6 +272,32 @@ function UsuariosContent() {
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
             </svg>
             Añadir usuario
+          </button>
+        </div>
+
+        {/* Switch recordatorio recurrentes */}
+        <div className="mb-6 flex items-center justify-between gap-4 p-4 rounded-xl border-2 border-gray-200 bg-white">
+          <div>
+            <p className="font-semibold text-gray-900">Recordatorio a clientes recurrentes</p>
+            <p className="text-sm text-gray-500 mt-0.5">
+              Mensaje de confirmación 4 días antes de la reserva. Si está desactivado, no se envía.
+            </p>
+          </div>
+          <button
+            type="button"
+            role="switch"
+            aria-checked={recurrentReminderEnabled}
+            disabled={recurrentReminderLoading}
+            onClick={handleToggleRecurrentReminder}
+            className={`relative inline-flex h-7 w-12 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors focus:outline-none focus:ring-2 focus:ring-bombonera-500 focus:ring-offset-2 disabled:opacity-50 disabled:cursor-not-allowed ${
+              recurrentReminderEnabled ? "bg-bombonera-600" : "bg-gray-200"
+            }`}
+          >
+            <span
+              className={`pointer-events-none inline-block h-6 w-6 transform rounded-full bg-white shadow ring-0 transition ${
+                recurrentReminderEnabled ? "translate-x-5" : "translate-x-1"
+              }`}
+            />
           </button>
         </div>
 
