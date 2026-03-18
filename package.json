@@ -3,6 +3,7 @@
   "version": "0.1.0",
   "private": true,
   "scripts": {
+    "sync-prices": "tsx scripts/sync-reservation-prices.ts",
     "dev": "next dev",
     "build": "next build",
     "seed:court-config": "curl -s -X POST http://localhost:3000/api/court-config/seed",
@@ -18,6 +19,8 @@
     "react-dom": "^18"
   },
   "devDependencies": {
+    "dotenv": "^16.4.5",
+    "tsx": "^4.19.0",
     "@types/node": "^20",
     "@types/react": "^18",
     "@types/react-dom": "^18",

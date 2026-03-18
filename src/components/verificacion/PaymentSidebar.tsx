@@ -1158,11 +1158,6 @@ export default function PaymentSidebar({
                       </svg>
                     </button>
                   </div>
-                  {calculatedPrice > 0 && (
-                    <p className="text-xs text-gray-400">
-                      Sugerido: S/ {calculatedPrice.toFixed(2)}
-                    </p>
-                  )}
                 </div>
               ) : (
                 <div className="flex items-center justify-center gap-1">
@@ -1179,6 +1174,11 @@ export default function PaymentSidebar({
                     </button>
                   )}
                 </div>
+              )}
+              {calculatedPrice > 0 && (
+                <p className="text-xs text-gray-500 mt-1">
+                  Precio estándar: S/ {calculatedPrice.toFixed(2)}
+                </p>
               )}
             </div>
             <div className="bg-blue-50 rounded-xl px-4 py-3 text-center">
