@@ -83,6 +83,20 @@ export default function PreciosPage() {
   async function handleSaveAll() {
     const data = editForm ?? current;
     if (!current || !data) return;
+
+    const priceKeys = [
+      "price_day_weekday", "price_day_weekend", "price_day_holiday",
+      "price_night_weekday", "price_night_weekend", "price_night_holiday",
+    ] as const;
+    const invalid = priceKeys.find((k) => {
+      const v = data[k] as unknown;
+      return v === "" || v == null || typeof v !== "number" || v < 0;
+    });
+    if (invalid) {
+      toast("Completá todos los precios con números válidos (≥ 0) antes de guardar", "error");
+      return;
+    }
+
     setSaving(true);
     try {
       const res = await fetch("/api/court-config", {
@@ -165,13 +179,6 @@ export default function PreciosPage() {
           <p className="mt-1 text-sm text-gray-500">
             Edita los campos y haz clic en Guardar para aplicar los cambios.
           </p>
-          <button
-            onClick={handleSeed}
-            disabled={seeding}
-            className="mt-3 text-sm text-emerald-600 hover:text-emerald-700 font-medium underline disabled:opacity-50"
-          >
-            {seeding ? "Cargando..." : "Cargar datos iniciales (si la base está vacía)"}
-          </button>
         </div>
 
         {/* Selector de campo */}
@@ -321,7 +328,8 @@ export default function PreciosPage() {
                       label: "Precio de noche · Fin de semana y feriados",
                     },
                   ].map(({ keys, label }) => {
-                    const val = (formValues[keys[0] as keyof CourtFieldConfig] ?? current[keys[0] as keyof CourtFieldConfig]) as number;
+                    const rawVal = formValues[keys[0] as keyof CourtFieldConfig];
+                    const displayVal = rawVal === "" ? "" : String(rawVal ?? current?.[keys[0] as keyof CourtFieldConfig] ?? "");
                     return (
                       <div key={keys.join("-")}>
                         <label className="block text-sm font-medium text-gray-600 mb-1.5">
@@ -331,12 +339,18 @@ export default function PreciosPage() {
                           type="number"
                           min={0}
                           step={5}
-                          value={val ?? 0}
+                          value={displayVal}
                           onChange={(e) => {
-                            const v = parseFloat(e.target.value);
-                            if (!isNaN(v) && v >= 0) {
-                              const updates = Object.fromEntries(keys.map((k) => [k, v]));
+                            const raw = e.target.value;
+                            if (raw === "") {
+                              const updates = Object.fromEntries(keys.map((k) => [k, ""]));
                               setEditForm((prev) => prev ? { ...prev, ...updates } : null);
+                            } else {
+                              const v = parseFloat(raw);
+                              if (!isNaN(v) && v >= 0) {
+                                const updates = Object.fromEntries(keys.map((k) => [k, v]));
+                                setEditForm((prev) => prev ? { ...prev, ...updates } : null);
+                              }
                             }
                           }}
                           className="w-full rounded-xl border-2 border-gray-200 px-4 py-3 font-semibold text-gray-800 focus:border-emerald-500 focus:outline-none"
