@@ -1,12 +1,8 @@
 import { NextResponse } from "next/server";
 import { getDb } from "@/lib/firebase-admin";
-import { DEFAULT_FIELD_CONFIG, FIELD_9_DEFAULTS } from "@/lib/court-config";
+import { courtConfigDocId, DEFAULT_FIELD_CONFIG, FIELD_9_DEFAULTS } from "@/lib/court-config";
 
 const COLLECTION = "court_config";
-
-function docId(field: number) {
-  return `field_${field}`;
-}
 
 /**
  * POST /api/court-config/seed
@@ -31,7 +27,7 @@ export async function POST() {
 
     let created = 0;
     for (let f = 1; f <= 12; f++) {
-      const doc = snapshot.docs.find((d) => d.id === docId(f));
+      const doc = snapshot.docs.find((d) => d.id === courtConfigDocId(f));
       if (doc) continue;
 
       const data = f === 9 ? field9Config : baseConfig;
@@ -50,7 +46,7 @@ export async function POST() {
         block_booking: data.block_booking,
       };
 
-      await db.collection(COLLECTION).doc(docId(f)).set(toWrite);
+      await db.collection(COLLECTION).doc(courtConfigDocId(f)).set(toWrite);
       created++;
     }
 

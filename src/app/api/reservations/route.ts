@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getDb } from "@/lib/firebase-admin";
+import { courtConfigDocId } from "@/lib/court-config";
 import {
   calculateReservationPrice,
   type CourtConfigMap,
@@ -91,7 +92,7 @@ async function getCourtConfigMap(db: FirebaseFirestore.Firestore): Promise<Court
     price_night_holiday: 100,
   };
   for (let f = 1; f <= 12; f++) {
-    const doc = snap.docs.find((d) => d.id === `field_${f}`);
+    const doc = snap.docs.find((d) => d.id === courtConfigDocId(f));
     const data = doc?.data();
     const base = defaults[f] ?? std;
     map[f] = {

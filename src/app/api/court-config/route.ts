@@ -1,12 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getDb } from "@/lib/firebase-admin";
-import type { CourtFieldConfig } from "@/lib/court-config";
+import { courtConfigDocId, type CourtFieldConfig } from "@/lib/court-config";
 
 const COLLECTION = "court_config";
-
-function docId(field: number) {
-  return `field_${field}`;
-}
 
 /** GET: Listar configuración de todos los campos */
 export async function GET() {
@@ -16,7 +12,7 @@ export async function GET() {
 
     const configs: CourtFieldConfig[] = [];
     for (let f = 1; f <= 12; f++) {
-      const doc = snapshot.docs.find((d) => d.id === docId(f));
+      const doc = snapshot.docs.find((d) => d.id === courtConfigDocId(f));
       const data = doc?.data();
       configs.push({
         field: f,
@@ -86,7 +82,7 @@ export async function PATCH(request: NextRequest) {
       }
     }
 
-    const ref = db.collection(COLLECTION).doc(docId(field));
+    const ref = db.collection(COLLECTION).doc(courtConfigDocId(field));
     await ref.set(toSet, { merge: true });
 
     return NextResponse.json({ success: true });

@@ -3,7 +3,7 @@
  * Solo importar en API routes (usa firebase-admin).
  */
 import { getDb } from "@/lib/firebase-admin";
-import type { CourtSize } from "./court-config";
+import { courtConfigDocId, type CourtSize } from "./court-config";
 
 const COLLECTION = "court_config";
 
@@ -24,7 +24,7 @@ const COURT_TYPE_TO_SIZE: Record<string, string> = {
 export async function getCourtSizeLabelForField(field: number): Promise<string> {
   try {
     const db = getDb();
-    const doc = await db.collection(COLLECTION).doc(`field_${field}`).get();
+    const doc = await db.collection(COLLECTION).doc(courtConfigDocId(field)).get();
     const data = doc.data();
     const court_size = (data?.court_size as CourtSize) ?? (field === 9 ? "5 vs 5" : "6 vs 6");
     const court_size_other = (data?.court_size_other as string) ?? "";

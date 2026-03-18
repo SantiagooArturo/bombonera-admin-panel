@@ -1,6 +1,11 @@
 /** Tamaño de cancha: 5 vs 5, 6 vs 6, u otro (especificar en court_size_other). */
 export type CourtSize = "5 vs 5" | "6 vs 6" | "otro";
 
+/** ID del documento en Firestore (court_config) para la cancha N. */
+export function courtConfigDocId(courtNumber: number): string {
+  return `court_${courtNumber}`;
+}
+
 /**
  * Configuración por campo (1-12).
  * Precios: día de semana, fin de semana, feriado × día/noche.
