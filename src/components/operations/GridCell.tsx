@@ -1,6 +1,8 @@
 "use client";
 
+import { useState, useEffect } from "react";
 import type { Reservation } from "@/lib/types";
+import { getPendingExpiryMinutes } from "@/lib/types";
 
 /** Quita el prefijo "51" del número peruano si existe. */
 function formatPhone(phone: string): string {
@@ -20,10 +22,32 @@ export function OccupiedCellContent({
   const remaining = total - paid;
   const arrived = reservation.arrived ?? false;
   const fullyPaid = remaining <= 0;
-  const bgByPayment = fullyPaid ? "bg-green-100" : "bg-yellow-100";
+  const isPending = reservation.status === "pending";
+  const bgByStatus = isPending ? "bg-yellow-100" : "bg-green-100";
+
+  const [expiryMin, setExpiryMin] = useState(() => getPendingExpiryMinutes(reservation));
+  useEffect(() => {
+    if (!isPending) return;
+    const tick = () => setExpiryMin(getPendingExpiryMinutes(reservation));
+    tick();
+    const id = setInterval(tick, 15000);
+    return () => clearInterval(id);
+  }, [isPending, reservation.id, reservation.created_at]);
 
   return (
-    <div className={`relative h-full rounded-lg border-2 border-blue-300 ${bgByPayment} p-2 flex flex-col justify-center gap-0.5 ${isRecurrent ? "pb-5" : ""}`}>
+    <div className={`relative h-full rounded-lg border-2 ${isPending ? "border-amber-400 border-dashed" : "border-blue-300"} ${bgByStatus} p-2 flex flex-col justify-center gap-0.5 ${isRecurrent ? "pb-5" : ""}`}>
+      {/* Badge pendiente + countdown (solo cuando no está confirmada; manual_pending no muestra countdown) */}
+      {isPending && (
+        <div className="flex items-center gap-1.5 flex-wrap mb-0.5">
+          <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[9px] font-bold bg-amber-200 text-amber-900 border border-amber-300">
+            Pendiente
+            {!reservation.manual_pending && expiryMin > 0 && (
+              <span className="text-amber-700">· Libera en {expiryMin} min</span>
+            )}
+          </span>
+        </div>
+      )}
+
       {/* Nombre */}
       <p className="text-xs font-bold text-gray-800 truncate leading-tight">
         {reservation.representative_name || "Sin nombre"}

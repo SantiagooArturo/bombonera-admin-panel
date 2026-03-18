@@ -27,6 +27,8 @@ export async function GET(request: NextRequest) {
 
     for (const doc of snapshot.docs) {
       const data = doc.data();
+      if (data.manual_pending === true) continue;
+
       const createdAt = data.created_at;
       if (!createdAt) continue;
 

@@ -284,19 +284,15 @@ export default function ScheduleGrid({
                   }
 
                   const { reservation, span } = cell;
-                  const paid = reservation.amount_paid ?? 0;
-                  const total = reservation.total_price ?? 0;
-                  const fullyPaid = total <= 0 || paid >= total;
-
-                  const bgByPayment =
-                    fullyPaid ? "bg-green-100" : "bg-yellow-100";
+                  const isPending = reservation.status === "pending";
+                  const bgByStatus = isPending ? "bg-yellow-100" : "bg-green-100";
 
                   return (
                     <td
                       key={field}
                       rowSpan={span}
                       onClick={() => onSelectReservation(reservation)}
-                      className={`border-b border-l border-gray-300 p-1 cursor-pointer transition-colors hover:brightness-95 ${bgByPayment}`}
+                      className={`border-b border-l border-gray-300 p-1 cursor-pointer transition-colors hover:brightness-95 ${bgByStatus}`}
                       style={{ height: `${span * 52}px` }}
                     >
                       <OccupiedCellContent

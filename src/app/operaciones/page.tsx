@@ -540,6 +540,8 @@ export default function OperacionesPage() {
           clientTypeLoading={sidebar.clientTypeLoading}
           clientTypeUpdating={sidebar.clientTypeUpdating}
           onUpdateClientType={sidebar.handleUpdateClientType}
+          onUpdateStatus={sidebar.handleUpdateStatus}
+          statusUpdating={sidebar.statusUpdating}
           onClose={sidebar.close}
           courtConfigs={courtConfigs}
         />

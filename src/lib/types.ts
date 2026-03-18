@@ -30,6 +30,8 @@ export interface Reservation {
   arrived?: boolean;
   /** Si la reserva fue auto-confirmada (cliente recurrente). */
   auto_confirmed?: boolean;
+  /** Si el admin marcó como pendiente manualmente. No expira automáticamente. */
+  manual_pending?: boolean;
 }
 
 export interface BlockedSlot {
@@ -100,12 +102,36 @@ export const STATUS_LABELS: Record<ReservationStatus, string> = {
 
 export const PENDING_EXPIRY_MS = 30 * 60 * 1000;
 
-/** Reserva activa = confirmed (o paid legacy), o pending con menos de 30 min de antigüedad */
+/** Reserva activa = confirmed (o paid legacy), o pending con menos de 30 min (o manual_pending) */
 export function isReservationActive(r: Reservation): boolean {
   if (r.status === "confirmed" || r.status === "paid") return true;
   if (r.status !== "pending") return false;
+  if (r.manual_pending) return true;
   const created = new Date(r.created_at).getTime();
   return Date.now() - created < PENDING_EXPIRY_MS;
+}
+
+/** Minutos restantes hasta que una reserva pending expire (cron cleanup). 0 si manual_pending, ya expiró o no es pending. */
+export function getPendingExpiryMinutes(r: Reservation): number {
+  if (r.status !== "pending" || r.manual_pending) return 0;
+  const created = new Date(r.created_at).getTime();
+  const elapsed = Date.now() - created;
+  if (elapsed >= PENDING_EXPIRY_MS) return 0;
+  return Math.max(1, Math.ceil((PENDING_EXPIRY_MS - elapsed) / 60000));
+}
+
+/** Hora límite (ej. "5:30 pm") hasta la cual el cliente puede confirmar. null si manual_pending, no es pending o ya expiró. */
+export function getPendingExpiryTimeFormatted(r: Reservation): string | null {
+  if (r.status !== "pending" || r.manual_pending) return null;
+  const created = new Date(r.created_at).getTime();
+  const expiryMs = created + PENDING_EXPIRY_MS;
+  if (Date.now() >= expiryMs) return null;
+  const d = new Date(expiryMs);
+  const h = d.getHours();
+  const m = d.getMinutes();
+  const isPm = h >= 12;
+  const hour12 = h % 12 || 12;
+  return `${hour12}:${String(m).padStart(2, "0")} ${isPm ? "pm" : "am"}`;
 }
 
 // Usuarios: colección users. Atributos denormalizados para evitar queries anidadas.

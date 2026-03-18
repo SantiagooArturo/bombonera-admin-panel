@@ -312,6 +312,11 @@ export async function PATCH(request: NextRequest) {
         updateData.confirmed = true;
         updateData.confirmed_at = new Date().toISOString();
       }
+      updateData.manual_pending = false;
+    }
+    // Si se marca como pendiente manualmente, no expirará automáticamente
+    if (status === "pending") {
+      updateData.manual_pending = true;
     }
 
     await db.collection("reservations").doc(id).update(updateData);

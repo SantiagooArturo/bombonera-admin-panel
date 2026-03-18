@@ -25,6 +25,7 @@ export function usePaymentSidebar(options?: UsePaymentSidebarOptions) {
   const [clientType, setClientType] = useState<ClientType>("casual");
   const [clientTypeLoading, setClientTypeLoading] = useState(false);
   const [clientTypeUpdating, setClientTypeUpdating] = useState(false);
+  const [statusUpdating, setStatusUpdating] = useState(false);
   const [userNames, setUserNames] = useState<{
     custom_name?: string;
     contact_name?: string;
@@ -117,6 +118,40 @@ export function usePaymentSidebar(options?: UsePaymentSidebarOptions) {
     toast("Tipo de cliente actualizado", "success");
     return true;
   }, [selectedReservation, clientType, store, toast]);
+
+  const handleUpdateStatus = useCallback(async (nextStatus: "pending" | "confirmed") => {
+    if (!selectedReservation) return false;
+    const prevStatus = selectedReservation.status;
+    if (nextStatus === prevStatus) return true;
+
+    setStatusUpdating(true);
+    const ok = await store.updateReservationStatus(selectedReservation.id, nextStatus);
+    setStatusUpdating(false);
+
+    if (!ok) {
+      toast("No se pudo actualizar estado", "error");
+      return false;
+    }
+    setSelectedReservation((r) =>
+      r
+        ? {
+            ...r,
+            status: nextStatus,
+            confirmed: nextStatus === "confirmed",
+            confirmed_at: nextStatus === "confirmed" ? new Date().toISOString() : undefined,
+            manual_pending: nextStatus === "pending",
+          }
+        : null
+    );
+    options?.onReservationUpdated?.(selectedReservation.id, {
+      status: nextStatus,
+      confirmed: nextStatus === "confirmed",
+      confirmed_at: nextStatus === "confirmed" ? new Date().toISOString() : undefined,
+      manual_pending: nextStatus === "pending",
+    });
+    toast(nextStatus === "confirmed" ? "Reserva confirmada" : "Reserva en pendiente", "success");
+    return true;
+  }, [selectedReservation, store, toast, options]);
 
   const handleVerifyTransfer = useCallback(async (transferId: string, currentStatus: boolean) => {
     const success = await store.verifyTransfer(transferId, !currentStatus);
@@ -394,6 +429,8 @@ export function usePaymentSidebar(options?: UsePaymentSidebarOptions) {
     handleUpdateName,
     handleCancelReservation,
     handleUpdateClientType,
+    handleUpdateStatus,
+    statusUpdating,
     handleAttachInvoice,
     handleDetachInvoice,
     handleRevokeManualPayment,
