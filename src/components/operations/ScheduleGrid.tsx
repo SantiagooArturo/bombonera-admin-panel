@@ -264,7 +264,7 @@ export default function ScheduleGrid({
                       <td
                         key={field}
                         onClick={() => onSelectEmpty(field, slot)}
-                        className="border-b border-l border-gray-300 p-1 h-[52px] cursor-pointer hover:bg-green-50 transition-colors"
+                        className="border-b border-l border-gray-300 p-1 h-[52px] cursor-pointer bg-red-50 hover:bg-red-100 transition-colors"
                       >
                         <EmptyCellContent />
                       </td>
@@ -284,16 +284,19 @@ export default function ScheduleGrid({
                   }
 
                   const { reservation, span } = cell;
-                  const arrived = reservation.arrived ?? false;
+                  const paid = reservation.amount_paid ?? 0;
+                  const total = reservation.total_price ?? 0;
+                  const fullyPaid = total <= 0 || paid >= total;
+
+                  const bgByPayment =
+                    fullyPaid ? "bg-green-100" : "bg-yellow-100";
 
                   return (
                     <td
                       key={field}
                       rowSpan={span}
                       onClick={() => onSelectReservation(reservation)}
-                      className={`border-b border-l border-gray-300 p-1 cursor-pointer transition-colors hover:brightness-95 ${
-                        arrived ? "bg-green-50" : "bg-white"
-                      }`}
+                      className={`border-b border-l border-gray-300 p-1 cursor-pointer transition-colors hover:brightness-95 ${bgByPayment}`}
                       style={{ height: `${span * 52}px` }}
                     >
                       <OccupiedCellContent

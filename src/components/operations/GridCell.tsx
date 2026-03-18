@@ -20,9 +20,10 @@ export function OccupiedCellContent({
   const remaining = total - paid;
   const arrived = reservation.arrived ?? false;
   const fullyPaid = remaining <= 0;
+  const bgByPayment = fullyPaid ? "bg-green-100" : "bg-yellow-100";
 
   return (
-    <div className={`relative h-full rounded-lg border-2 border-blue-300 bg-white p-2 flex flex-col justify-center gap-0.5 ${isRecurrent ? "pb-5" : ""}`}>
+    <div className={`relative h-full rounded-lg border-2 border-blue-300 ${bgByPayment} p-2 flex flex-col justify-center gap-0.5 ${isRecurrent ? "pb-5" : ""}`}>
       {/* Nombre */}
       <p className="text-xs font-bold text-gray-800 truncate leading-tight">
         {reservation.representative_name || "Sin nombre"}
@@ -77,9 +78,9 @@ export function OccupiedCellContent({
   );
 }
 
-/** Contenido visual de una celda vacía (disponible). */
+/** Contenido visual de una celda vacía (disponible/libre). */
 export function EmptyCellContent() {
-  return <div className="h-full min-h-[52px] rounded bg-green-50/40" />;
+  return <div className="h-full min-h-[52px] rounded" />;
 }
 
 /** Contenido visual de una celda bloqueada. */
