@@ -35,6 +35,17 @@ export async function POST(request: NextRequest) {
     }
 
     const db = getDb();
+
+    if (transferId) {
+      const transferDoc = await db.collection("transfers").doc(transferId).get();
+      const transferAmount = transferDoc.exists ? (transferDoc.data()?.amount ?? 0) : 0;
+      if (transferAmount <= 0) {
+        return NextResponse.json(
+          { error: "No se puede adjuntar boleta a un ajuste con monto cero o negativo" },
+          { status: 400 }
+        );
+      }
+    }
     const bucket = getStorageBucket();
     const ts = Date.now();
 

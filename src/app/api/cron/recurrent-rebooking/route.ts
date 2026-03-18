@@ -24,15 +24,10 @@ export async function GET(request: NextRequest) {
 
   try {
     const db = getDb();
-
     const settingsDoc = await db.collection("config").doc("app_settings").get();
     const recurrentReminderEnabled = settingsDoc.data()?.recurrent_reminder_enabled !== false;
-    if (!recurrentReminderEnabled) {
-      return NextResponse.json({ success: true, reservations_created: 0, messages_sent: 0, skipped: "Recordatorios a recurrentes desactivados" });
-    }
 
     const now = new Date();
-
     const limaOffset = -5 * 60;
     const limaTime = new Date(now.getTime() + (limaOffset - now.getTimezoneOffset()) * 60000);
     const todayStr = limaTime.toISOString().slice(0, 10);
@@ -90,6 +85,8 @@ export async function GET(request: NextRequest) {
         return slots[0] === timeSlots[0];
       });
 
+      const isAutomated = userData?.is_automated !== false;
+
       if (!alreadyExists) {
         const newReservation = {
           chat_id: chatId,
@@ -106,8 +103,9 @@ export async function GET(request: NextRequest) {
           phone_number: data.phone_number || "",
           amount_paid: 0,
           representative_name: data.representative_name || "",
-          auto_confirmed: true,
-          confirmed: true,
+          auto_confirmed: isAutomated,
+          confirmed: isAutomated,
+          manual_pending: !isAutomated,
           source: "recurrent_rebooking",
         };
 
@@ -115,23 +113,26 @@ export async function GET(request: NextRequest) {
         created++;
       }
 
-      const courtLabel = await getCourtLabelForReservation(field, data.court_type);
-      const fieldLabel = field ? `Cancha ${field} · ${courtLabel}` : "tu cancha";
-      const timeRange = `${formatHour12(startTime)} a ${formatHour12(String(endHour))}`;
-      const message =
-        `hola! espero que la hayas pasado bien hoy 🏐\n\n` +
-        `¿quieres reservar ${fieldLabel} el ${nextWeekDay} de ${timeRange} igual que hoy?\n\n` +
-        `respóndeme y te lo reservo al toque\n\n` +
-        `(Este es un mensaje automático. Si cree que ha habido un error, disculpe las molestias, estamos mejorando.)`;
+      if (isAutomated && recurrentReminderEnabled) {
+        const courtLabel = await getCourtLabelForReservation(field, data.court_type);
+        const fieldLabel = field ? `Cancha ${field} · ${courtLabel}` : "tu cancha";
+        const timeRange = `${formatHour12(startTime)} a ${formatHour12(String(endHour))}`;
+        const message =
+          `hola! espero que la hayas pasado bien hoy 🏐\n\n` +
+          `¿quieres reservar ${fieldLabel} el ${nextWeekDay} de ${timeRange} igual que hoy?\n\n` +
+          `respóndeme y te lo reservo al toque\n\n` +
+          `(Este es un mensaje automático. Si cree que ha habido un error, disculpe las molestias, estamos mejorando.)`;
 
-      try {
-        await sendWhatsAppMessage(chatId, message);
-        await doc.ref.update({ rebooking_sent: true });
-        sent++;
-        console.log(`🔄 Rebooking enviado a ${chatId} (reserva ${doc.id})`);
-      } catch (err) {
-        console.error(`Error enviando rebooking a ${chatId}:`, err);
+        try {
+          await sendWhatsAppMessage(chatId, message);
+          sent++;
+          console.log(`🔄 Rebooking enviado a ${chatId} (reserva ${doc.id})`);
+        } catch (err) {
+          console.error(`Error enviando rebooking a ${chatId}:`, err);
+        }
       }
+
+      await doc.ref.update({ rebooking_sent: true });
     }
 
     return NextResponse.json({ success: true, reservations_created: created, messages_sent: sent });

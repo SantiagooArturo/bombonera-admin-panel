@@ -391,7 +391,8 @@ function TransferCard({
   const [detachingInvoice, setDetachingInvoice] = useState(false);
   const isManualLike = transfer.source === "manual" || transfer.source === "manual_adjustment";
   const isValidated = transfer.verified || isManualLike;
-  const canAttach = isValidated && !invoice;
+  const hasPositiveAmount = (transfer.amount ?? 0) > 0;
+  const canAttach = isValidated && !invoice && hasPositiveAmount;
 
   const handleDrop = useCallback((e: React.DragEvent) => {
     e.preventDefault();
@@ -593,7 +594,8 @@ function TransferCard({
               />
               <button
                 onClick={() => fileInputRef.current?.click()}
-                disabled={attachingInvoiceId === transfer.id || emittingInvoiceId === transfer.id}
+                disabled={attachingInvoiceId === transfer.id || emittingInvoiceId === transfer.id || !canAttach}
+                title={!hasPositiveAmount ? "No se puede adjuntar boleta a ajustes negativos o cero" : undefined}
                 className="w-full py-2.5 px-4 rounded-xl font-bold text-sm bg-gray-900 text-white hover:bg-gray-800 flex items-center justify-center gap-2 transition-colors disabled:opacity-60 disabled:cursor-not-allowed shadow-sm"
               >
                 {attachingInvoiceId === transfer.id ? (
@@ -609,7 +611,8 @@ function TransferCard({
                   setDocNumber(clientDni || "");
                   setShowEmitModal(true);
                 }}
-                disabled={attachingInvoiceId === transfer.id || emittingInvoiceId === transfer.id}
+                disabled={attachingInvoiceId === transfer.id || emittingInvoiceId === transfer.id || !hasPositiveAmount}
+                title={!hasPositiveAmount ? "No se puede emitir boleta para ajustes negativos o cero" : undefined}
                 className="w-full py-2.5 px-4 rounded-xl font-bold text-sm bg-green-600 text-white hover:bg-green-700 flex items-center justify-center gap-2 border border-green-700 disabled:opacity-60 disabled:cursor-not-allowed"
               >
                 {emittingInvoiceId === transfer.id ? (
@@ -792,7 +795,7 @@ export default function PaymentSidebar({
       if (!file) return;
 
       const eligibleTransfers = transfers.filter(
-        (t) => (t.verified || t.source === "manual" || t.source === "manual_adjustment") && !invoices.find((inv) => inv.transfer_id === t.id)
+        (t) => (t.verified || t.source === "manual" || t.source === "manual_adjustment") && (t.amount ?? 0) > 0 && !invoices.find((inv) => inv.transfer_id === t.id)
       );
       if (eligibleTransfers.length === 0) return;
 

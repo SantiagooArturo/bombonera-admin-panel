@@ -109,7 +109,7 @@ function UsuariosContent() {
   const [filterClientType] = useState<ClientType | "all">(
     (searchParams.get("type") as ClientType | null) || "all"
   );
-  const [recurrentReminderEnabled, setRecurrentReminderEnabled] = useState(true);
+  const [recurrentReminderEnabled, setRecurrentReminderEnabled] = useState<boolean | null>(null);
   const [recurrentReminderLoading, setRecurrentReminderLoading] = useState(false);
 
   useEffect(() => {
@@ -122,12 +122,15 @@ function UsuariosContent() {
       .then((data) => {
         if (typeof data.recurrent_reminder_enabled === "boolean") {
           setRecurrentReminderEnabled(data.recurrent_reminder_enabled);
+        } else {
+          setRecurrentReminderEnabled(false);
         }
       })
-      .catch(() => {});
+      .catch(() => setRecurrentReminderEnabled(false));
   }, []);
 
   async function handleToggleRecurrentReminder() {
+    if (recurrentReminderEnabled === null) return;
     setRecurrentReminderLoading(true);
     try {
       const res = await fetch("/api/settings", {
@@ -280,22 +283,30 @@ function UsuariosContent() {
           <div>
             <p className="font-semibold text-gray-900">Recordatorio a clientes recurrentes</p>
             <p className="text-sm text-gray-500 mt-0.5">
-              Si está desactivado, no se envían recordatorios a clientes recurrentes.
+              Si está desactivado, no se envían recordatorios a clientes recurrentes (solo a quienes tienen bot activado).
             </p>
           </div>
           <button
             type="button"
             role="switch"
-            aria-checked={recurrentReminderEnabled}
-            disabled={recurrentReminderLoading}
+            aria-checked={recurrentReminderEnabled ?? false}
+            disabled={recurrentReminderLoading || recurrentReminderEnabled === null}
             onClick={handleToggleRecurrentReminder}
             className={`relative inline-flex h-7 w-12 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors focus:outline-none focus:ring-2 focus:ring-bombonera-500 focus:ring-offset-2 disabled:opacity-50 disabled:cursor-not-allowed ${
-              recurrentReminderEnabled ? "bg-bombonera-600" : "bg-gray-200"
+              recurrentReminderEnabled === null
+                ? "bg-gray-300"
+                : recurrentReminderEnabled
+                  ? "bg-bombonera-600"
+                  : "bg-gray-200"
             }`}
           >
             <span
               className={`pointer-events-none inline-block h-6 w-6 transform rounded-full bg-white shadow ring-0 transition ${
-                recurrentReminderEnabled ? "translate-x-5" : "translate-x-1"
+                recurrentReminderEnabled === null
+                  ? "translate-x-3 opacity-70"
+                  : recurrentReminderEnabled
+                    ? "translate-x-5"
+                    : "translate-x-1"
               }`}
             />
           </button>

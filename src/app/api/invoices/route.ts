@@ -128,6 +128,17 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: "DNI inválido para boleta" }, { status: 400 });
     }
 
+    if (transfer_id) {
+      const transferDoc = await db.collection("transfers").doc(transfer_id).get();
+      const transferAmount = transferDoc.exists ? (transferDoc.data()?.amount ?? 0) : 0;
+      if (transferAmount <= 0) {
+        return NextResponse.json(
+          { error: "No se puede emitir boleta para un ajuste con monto cero o negativo" },
+          { status: 400 }
+        );
+      }
+    }
+
     const serieSunat =
       tipoComprobante === "factura" ? APISUNAT_SERIE_FACTURA : APISUNAT_SERIE_BOLETA;
 

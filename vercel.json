@@ -14,7 +14,7 @@
     },
     {
       "path": "/api/cron/recurrent-confirmation",
-      "schedule": "0 15 * * *"
+      "schedule": "0 12 * * 1"
     },
     {
       "path": "/api/cron/cleanup-expired",

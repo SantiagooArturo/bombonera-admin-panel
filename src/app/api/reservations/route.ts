@@ -260,19 +260,32 @@ export async function PATCH(request: NextRequest) {
       const phoneNumber = resData.phone_number || "";
 
       const transfersSnap = await db.collection("transfers").where("reservation_id", "==", id).get();
-      let currentSum = 0;
-      transfersSnap.forEach((doc) => {
-        const d = doc.data();
-        if (d.status === "applied" || d.status === "partial") currentSum += d.amount || 0;
-      });
-      const difference = amount_paid - currentSum;
+      let sumNonAdjustment = 0;
+      let existingAdjustmentRef: FirebaseFirestore.DocumentReference | null = null;
 
-      if (difference !== 0) {
+      for (const doc of transfersSnap.docs) {
+        const d = doc.data();
+        if (d.source === "manual_adjustment") {
+          existingAdjustmentRef = doc.ref;
+        } else if (d.status === "applied" || d.status === "partial") {
+          sumNonAdjustment += d.amount || 0;
+        }
+      }
+
+      const adjustmentAmount = amount_paid - sumNonAdjustment;
+
+      if (existingAdjustmentRef) {
+        if (adjustmentAmount === 0) {
+          await existingAdjustmentRef.delete();
+        } else {
+          await existingAdjustmentRef.update({ amount: adjustmentAmount });
+        }
+      } else if (adjustmentAmount !== 0) {
         const now = new Date().toISOString();
         await db.collection("transfers").add({
           phone_number: phoneNumber,
           recipient_name: null,
-          amount: difference,
+          amount: adjustmentAmount,
           transaction_date: now.split("T")[0],
           operation_id: null,
           reservation_id: id,
