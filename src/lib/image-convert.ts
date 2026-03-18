@@ -22,7 +22,7 @@ export async function convertToWebP(
       format: "JPEG",
       quality: 1,
     });
-    inputBuffer = Buffer.from(jpegResult as ArrayBuffer | Uint8Array);
+    inputBuffer = Buffer.from(new Uint8Array(jpegResult));
   }
 
   const result = await sharp(inputBuffer)

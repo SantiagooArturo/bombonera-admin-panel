@@ -1,5 +1,5 @@
 declare module "heic-convert" {
-  function convert(options: {
+  export default function convert(options: {
     buffer: Buffer;
     format: "JPEG" | "PNG";
     quality?: number;
