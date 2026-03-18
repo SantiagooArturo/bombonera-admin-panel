@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { getDb } from "@/lib/firebase-admin";
 import { sendWhatsAppMessage } from "@/lib/waha";
 import { getCourtLabelForReservation } from "@/lib/court-config-server";
+import { normalizePeruPhone } from "@/features/operaciones/utils";
 
 /**
  * GET /api/cron/recurrent-confirmation
@@ -51,9 +52,10 @@ export async function GET(request: NextRequest) {
       const data = doc.data();
       if (data.confirmation_reminder_sent) continue;
 
-      const chatId = data.chat_id;
-      if (!chatId) continue;
+      const rawChatId = data.chat_id;
+      if (!rawChatId) continue;
 
+      const chatId = normalizePeruPhone(String(rawChatId));
       const userDoc = await db.collection("users").doc(chatId).get();
       if (!userDoc.exists) continue;
 

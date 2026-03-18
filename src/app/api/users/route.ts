@@ -189,14 +189,36 @@ export async function PATCH(request: NextRequest) {
     const userDoc = await userRef.get();
 
     if (!userDoc.exists) {
+      const reservationsSnap = await db
+        .collection("reservations")
+        .where("chat_id", "==", id)
+        .get();
+
+      const reservationCount = reservationsSnap.size;
+      let nameFromReservation: string | null = null;
+      for (const d of reservationsSnap.docs) {
+        const rep = d.data()?.representative_name;
+        if (typeof rep === "string" && rep.trim()) {
+          nameFromReservation = rep.trim();
+          break;
+        }
+      }
+
+      const customName =
+        typeof custom_name === "string" && custom_name.trim()
+          ? custom_name.trim()
+          : nameFromReservation;
+
       const minimal: Record<string, unknown> = {
         chat_id: id,
         phone_number: id,
-        reservation_count: 0,
+        reservation_count: reservationCount,
         balance: 0,
         is_automated: true,
         needs_help: false,
         help_reason: null,
+        ...(customName ? { custom_name: customName } : {}),
+        ...(nameFromReservation ? { last_representative_name: nameFromReservation } : {}),
         ...updateData,
       };
       if (!("client_type" in minimal)) minimal.client_type = "casual";
