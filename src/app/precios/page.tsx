@@ -4,7 +4,7 @@ import { useState, useEffect, useRef, useCallback, useMemo } from "react";
 import ClientLayout, { useToastContext } from "@/components/ClientLayout";
 import type { CourtFieldConfig, CourtSize } from "@/lib/court-config";
 
-const IMAGE_TYPES = ["image/jpeg", "image/png", "image/webp", "image/heic", "image/heif"];
+const IMAGE_TYPES = ["image/jpeg", "image/png", "image/webp"];
 
 function isImageFile(file: File): boolean {
   return IMAGE_TYPES.includes(file.type);
@@ -96,7 +96,7 @@ export default function PreciosPage() {
 
   const uploadImage = useCallback(async (file: File) => {
     if (!isImageFile(file)) {
-      toast("Solo puedes subir JPEG, PNG, WebP o HEIC", "error");
+      toast("Solo puedes subir JPEG, PNG o WebP", "error");
       return;
     }
     if (!configs.some((c) => c.field === selectedField)) return;
@@ -109,17 +109,8 @@ export default function PreciosPage() {
       const data = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(data?.error || "Error al subir");
       if (data?.url) {
-        setConfigs((prev) =>
-          prev.map((c) => (c.field === selectedField ? { ...c, image_url: data.url } : c))
-        );
         setEditForm((prev) => (prev ? { ...prev, image_url: data.url } : null));
-        const patchRes = await fetch("/api/court-config", {
-          method: "PATCH",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ field: selectedField, image_url: data.url }),
-        });
-        if (patchRes.ok) toast("Imagen guardada", "success");
-        else throw new Error("Error al guardar");
+        toast("Imagen cargada. Hacé clic en Guardar para aplicar.", "success");
       }
     } catch {
       toast("No se pudo subir la imagen", "error");
@@ -235,7 +226,7 @@ export default function PreciosPage() {
                 <input
                   ref={fileInputRef}
                   type="file"
-                  accept="image/jpeg,image/png,image/webp,image/heic,image/heif"
+                  accept="image/jpeg,image/png,image/webp"
                   className="hidden"
                   onChange={(e) => {
                     const f = e.target.files?.[0];
