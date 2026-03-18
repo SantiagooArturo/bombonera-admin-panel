@@ -185,7 +185,25 @@ export async function PATCH(request: NextRequest) {
       );
     }
 
-    await db.collection("users").doc(id).update(updateData);
+    const userRef = db.collection("users").doc(id);
+    const userDoc = await userRef.get();
+
+    if (!userDoc.exists) {
+      const minimal: Record<string, unknown> = {
+        chat_id: id,
+        phone_number: id,
+        reservation_count: 0,
+        balance: 0,
+        is_automated: true,
+        needs_help: false,
+        help_reason: null,
+        ...updateData,
+      };
+      if (!("client_type" in minimal)) minimal.client_type = "casual";
+      await userRef.set(minimal);
+    } else {
+      await userRef.update(updateData);
+    }
 
     return NextResponse.json({ success: true });
   } catch (error) {
