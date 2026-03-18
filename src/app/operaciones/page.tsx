@@ -316,12 +316,6 @@ export default function OperacionesPage() {
   }
 
   function handleSelectEmptySlot(field: number, timeSlot: string) {
-    const nowIdx = TIME_SLOTS.indexOf(currentSlot);
-    const targetIdx = TIME_SLOTS.indexOf(timeSlot);
-    if (isToday && nowIdx > targetIdx) {
-      toast("Ese horario ya pasó. Elige una hora actual o futura.", "info");
-      return;
-    }
     setSlotActionTarget({ field, startSlot: timeSlot });
   }
 
