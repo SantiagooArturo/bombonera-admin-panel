@@ -82,7 +82,7 @@ export async function GET(request: NextRequest) {
       const message =
         `hola! te escribo para confirmar por última vez tu reserva del ${targetFormatted} 🏐\n\n` +
         `${fieldText} de ${startTime} a ${endHour}:00\n\n` +
-        `¿confirmas? sino para liberar la cancha`;
+        `¿confirmas?`;
 
       try {
         await sendWhatsAppMessage(chatId, message);
