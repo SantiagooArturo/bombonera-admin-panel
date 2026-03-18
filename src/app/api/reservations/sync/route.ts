@@ -53,26 +53,31 @@ export async function POST(request: NextRequest) {
                 }
             });
 
-            // 4. Actualizar la reserva
+            // 4. Actualizar la reserva (no sobrescribir amount_paid si fue editado manualmente)
             // eslint-disable-next-line @typescript-eslint/no-explicit-any
-            const update: Record<string, any> = {
-                amount_paid: calculatedPaid
-            };
+            const update: Record<string, any> = {};
+            if (resData.amount_paid_manual !== true) {
+                update.amount_paid = calculatedPaid;
+            }
 
-            if (resData.status === "confirmed" || calculatedPaid > 0) {
+            const effectivePaid = resData.amount_paid_manual ? (resData.amount_paid ?? 0) : calculatedPaid;
+            if (resData.status === "confirmed" || effectivePaid > 0) {
                 update.status = "confirmed";
                 update.confirmed = true;
                 if (!resData.confirmed_at) {
                     update.confirmed_at = new Date().toISOString();
                 }
             } else {
-                // Sin pago y no confirmada operativamente.
                 update.status = "pending";
                 update.confirmed = false;
-                update.amount_paid = 0;
+                if (resData.amount_paid_manual !== true) {
+                    update.amount_paid = 0;
+                }
             }
 
-            t.update(resRef, update);
+            if (Object.keys(update).length > 0) {
+                t.update(resRef, update);
+            }
         });
 
         return NextResponse.json({ success: true, message: "Pagos sincronizados correctamente" });

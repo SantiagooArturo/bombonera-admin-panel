@@ -16,7 +16,6 @@ export default function PreciosPage() {
   const [configs, setConfigs] = useState<CourtFieldConfig[]>([]);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
-  const [seeding, setSeeding] = useState(false);
   const [uploadingImage, setUploadingImage] = useState(false);
   const [imageLoading, setImageLoading] = useState(true);
   const [selectedField, setSelectedField] = useState(1);
@@ -62,23 +61,6 @@ export default function PreciosPage() {
       return String(a ?? "") !== String(b ?? "");
     });
   }, [current, editForm]);
-
-  async function handleSeed() {
-    setSeeding(true);
-    try {
-      const res = await fetch("/api/court-config/seed", { method: "POST" });
-      const data = await res.json().catch(() => ({}));
-      if (!res.ok) throw new Error(data?.error || "Error al cargar datos");
-      toast(data?.message || "Datos iniciales cargados", "success");
-      const refetch = await fetch("/api/court-config");
-      const fresh = await refetch.json();
-      if (Array.isArray(fresh)) setConfigs(fresh);
-    } catch {
-      toast("No se pudieron cargar los datos iniciales", "error");
-    } finally {
-      setSeeding(false);
-    }
-  }
 
   async function handleSaveAll() {
     const data = editForm ?? current;

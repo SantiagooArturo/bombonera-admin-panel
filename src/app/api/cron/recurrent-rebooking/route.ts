@@ -121,7 +121,8 @@ export async function GET(request: NextRequest) {
       const message =
         `hola! espero que la hayas pasado bien hoy 🏐\n\n` +
         `¿quieres reservar ${fieldLabel} el ${nextWeekDay} de ${timeRange} igual que hoy?\n\n` +
-        `respóndeme y te lo reservo al toque`;
+        `respóndeme y te lo reservo al toque\n\n` +
+        `(Este es un mensaje automático. Si cree que ha habido un error, disculpe las molestias, estamos mejorando.)`;
 
       try {
         await sendWhatsAppMessage(chatId, message);

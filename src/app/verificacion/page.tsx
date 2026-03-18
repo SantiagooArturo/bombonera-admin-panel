@@ -272,6 +272,7 @@ function VerificacionContent() {
                     onRevokeManualPayment={sidebar.handleRevokeManualPayment}
                     onRegisterPayment={sidebar.handleRegisterPayment}
                     onUpdatePrice={sidebar.handleUpdatePrice}
+                    onUpdateAmountPaid={sidebar.handleUpdateAmountPaid}
                     clientType={sidebar.clientType}
                     clientTypeLoading={sidebar.clientTypeLoading}
                     clientTypeUpdating={sidebar.clientTypeUpdating}

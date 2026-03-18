@@ -230,7 +230,7 @@ export async function PATCH(request: NextRequest) {
   try {
     const db = getDb();
     const body = await request.json();
-    const { id, status, field, arrived, time_slots, dni, total_price, representative_name } = body;
+    const { id, status, field, arrived, time_slots, dni, total_price, representative_name, amount_paid } = body;
 
     if (!id) {
       return NextResponse.json(
@@ -250,6 +250,39 @@ export async function PATCH(request: NextRequest) {
     if (typeof total_price === "number" && total_price >= 0) {
       updateData.total_price = total_price;
       updateData.reservation_price = total_price;
+    }
+    if (typeof amount_paid === "number" && amount_paid >= 0) {
+      const resDoc = await db.collection("reservations").doc(id).get();
+      if (!resDoc.exists) {
+        return NextResponse.json({ error: "Reserva no encontrada" }, { status: 404 });
+      }
+      const resData = resDoc.data()!;
+      const phoneNumber = resData.phone_number || "";
+
+      const transfersSnap = await db.collection("transfers").where("reservation_id", "==", id).get();
+      let currentSum = 0;
+      transfersSnap.forEach((doc) => {
+        const d = doc.data();
+        if (d.status === "applied" || d.status === "partial") currentSum += d.amount || 0;
+      });
+      const difference = amount_paid - currentSum;
+
+      if (difference !== 0) {
+        const now = new Date().toISOString();
+        await db.collection("transfers").add({
+          phone_number: phoneNumber,
+          recipient_name: null,
+          amount: difference,
+          transaction_date: now.split("T")[0],
+          operation_id: null,
+          reservation_id: id,
+          status: "applied",
+          source: "manual_adjustment",
+          payment_method: "ajuste",
+          created_at: now,
+        });
+      }
+      updateData.amount_paid = amount_paid;
     }
 
     if (Array.isArray(time_slots) && time_slots.length > 0) {

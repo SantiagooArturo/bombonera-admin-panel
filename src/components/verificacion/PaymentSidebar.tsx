@@ -95,6 +95,7 @@ interface PaymentSidebarProps {
   onRevokeManualPayment: (transferId: string) => void;
   onRegisterPayment: (amount: number, method: PaymentMethod, mediaUrl?: string) => void;
   onUpdatePrice?: (totalPrice: number) => Promise<boolean>;
+  onUpdateAmountPaid?: (amountPaid: number) => Promise<boolean>;
   clientType: ClientType;
   clientTypeLoading?: boolean;
   clientTypeUpdating?: boolean;
@@ -388,7 +389,8 @@ function TransferCard({
   const [wspStatus, setWspStatus] = useState<"idle" | "sending" | "sent" | "error">("idle");
   const [wspError, setWspError] = useState<string | null>(null);
   const [detachingInvoice, setDetachingInvoice] = useState(false);
-  const isValidated = transfer.verified || transfer.source === "manual";
+  const isManualLike = transfer.source === "manual" || transfer.source === "manual_adjustment";
+  const isValidated = transfer.verified || isManualLike;
   const canAttach = isValidated && !invoice;
 
   const handleDrop = useCallback((e: React.DragEvent) => {
@@ -435,6 +437,11 @@ function TransferCard({
                     <svg className="w-10 h-10 text-gray-300 mb-2" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M17 9V7a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2m2 4h10a2 2 0 002-2v-6a2 2 0 00-2-2H9a2 2 0 00-2 2v6a2 2 0 002 2zm7-5a2 2 0 11-4 0 2 2 0 014 0z" /></svg>
                     <span className="text-sm font-semibold text-gray-400">Pago en Caja</span>
                   </>
+                ) : transfer.source === "manual_adjustment" ? (
+                  <>
+                    <svg className="w-10 h-10 text-gray-300 mb-2" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" /></svg>
+                    <span className="text-sm font-semibold text-gray-400">Ajuste manual</span>
+                  </>
                 ) : (
                   <>
                     <svg className="w-10 h-10 text-amber-300 mb-2" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" /></svg>
@@ -450,14 +457,14 @@ function TransferCard({
             <p className="text-xs text-gray-500 mt-0.5">
               {formatTransferDate(transfer.created_at)} · {formatTransferTime(transfer.created_at)}
               <span className="text-gray-300 mx-1">·</span>
-              {transfer.source === "manual" ? "en caja" : "digital"}
+              {transfer.source === "manual" ? "en caja" : transfer.source === "manual_adjustment" ? "ajuste" : "digital"}
             </p>
             <p className={`text-xs font-semibold mt-1 ${transfer.verified ? "text-green-600" : "text-amber-600"}`}>
-              {transfer.verified ? "Validado" : transfer.source === "manual" ? "Cobro manual" : "Pendiente validación"}
+              {transfer.verified ? "Validado" : isManualLike ? (transfer.source === "manual_adjustment" ? "Ajuste manual" : "Cobro manual") : "Pendiente validación"}
             </p>
           </div>
 
-          {transfer.source !== "manual" && (
+          {!isManualLike && (
             <button
               onClick={() => onVerify(transfer.id, !!transfer.verified)}
               className={`w-full py-2.5 px-4 rounded-xl font-bold text-sm transition-all active:scale-[0.98] flex items-center justify-center gap-2 ${transfer.verified
@@ -743,6 +750,7 @@ export default function PaymentSidebar({
   onRevokeManualPayment,
   onRegisterPayment,
   onUpdatePrice,
+  onUpdateAmountPaid,
   clientType,
   clientTypeLoading = false,
   clientTypeUpdating = false,
@@ -784,7 +792,7 @@ export default function PaymentSidebar({
       if (!file) return;
 
       const eligibleTransfers = transfers.filter(
-        (t) => (t.verified || t.source === "manual") && !invoices.find((inv) => inv.transfer_id === t.id)
+        (t) => (t.verified || t.source === "manual" || t.source === "manual_adjustment") && !invoices.find((inv) => inv.transfer_id === t.id)
       );
       if (eligibleTransfers.length === 0) return;
 
@@ -815,10 +823,16 @@ export default function PaymentSidebar({
   const [editingPrice, setEditingPrice] = useState(false);
   const [priceInput, setPriceInput] = useState(String(reservation.total_price ?? 0));
   const [priceUpdating, setPriceUpdating] = useState(false);
+  const [editingAmountPaid, setEditingAmountPaid] = useState(false);
+  const [amountPaidInput, setAmountPaidInput] = useState(String(reservation.amount_paid ?? 0));
+  const [amountPaidUpdating, setAmountPaidUpdating] = useState(false);
 
   useEffect(() => {
     setPriceInput(String(reservation.total_price ?? 0));
   }, [reservation.id, reservation.total_price]);
+  useEffect(() => {
+    setAmountPaidInput(String(reservation.amount_paid ?? 0));
+  }, [reservation.id, reservation.amount_paid]);
 
   const calculatedPrice = reservation.field && reservation.time_slots
     ? calculateReservationPrice(reservation.field, reservation.date, reservation.time_slots, configMap)
@@ -837,6 +851,16 @@ export default function PaymentSidebar({
     const ok = await onUpdatePrice(parsed);
     setPriceUpdating(false);
     if (ok) setEditingPrice(false);
+  }
+
+  async function handleSaveAmountPaid() {
+    if (!onUpdateAmountPaid) return;
+    const parsed = parseFloat(amountPaidInput.replace(",", "."));
+    if (isNaN(parsed) || parsed < 0) return;
+    setAmountPaidUpdating(true);
+    const ok = await onUpdateAmountPaid(parsed);
+    setAmountPaidUpdating(false);
+    if (ok) setEditingAmountPaid(false);
   }
 
   return (
@@ -1156,7 +1180,64 @@ export default function PaymentSidebar({
             </div>
             <div className="bg-blue-50 rounded-xl px-4 py-3 text-center">
               <p className="text-xs font-medium text-blue-400 uppercase">Pagado</p>
-              <p className="text-lg font-bold text-blue-700">S/ {amountPaid.toFixed(2)}</p>
+              {onUpdateAmountPaid && !isCancelled && editingAmountPaid ? (
+                <div className="flex flex-col items-center gap-1">
+                  <div className="flex items-center justify-center gap-1">
+                    <span className="text-lg font-bold text-blue-700">S/</span>
+                    <input
+                      type="text"
+                      inputMode="decimal"
+                      value={amountPaidInput}
+                      onChange={(e) => setAmountPaidInput(e.target.value.replace(/[^\d.,]/g, ""))}
+                      onKeyDown={(e) => {
+                        if (e.key === "Enter") void handleSaveAmountPaid();
+                        if (e.key === "Escape") {
+                          setEditingAmountPaid(false);
+                          setAmountPaidInput(String(amountPaid));
+                        }
+                      }}
+                      className="w-20 text-lg font-bold text-blue-700 border-b-2 border-blue-500 bg-transparent focus:outline-none text-center"
+                      autoFocus
+                    />
+                    <button
+                      onClick={() => void handleSaveAmountPaid()}
+                      disabled={amountPaidUpdating}
+                      className="text-xs px-2 py-1 rounded-md bg-blue-600 text-white hover:bg-blue-700 disabled:opacity-50"
+                    >
+                      {amountPaidUpdating ? "..." : "Guardar"}
+                    </button>
+                    <button
+                      onClick={() => {
+                        setEditingAmountPaid(false);
+                        setAmountPaidInput(String(amountPaid));
+                      }}
+                      disabled={amountPaidUpdating}
+                      className="p-1 rounded-md hover:bg-gray-200 text-gray-500 hover:text-gray-700 disabled:opacity-50"
+                      title="Cancelar"
+                    >
+                      <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                      </svg>
+                    </button>
+                  </div>
+                  <p className="text-xs text-blue-400">La deuda se recalcula automáticamente</p>
+                </div>
+              ) : (
+                <div className="flex items-center justify-center gap-1">
+                  <p className="text-lg font-bold text-blue-700">S/ {amountPaid.toFixed(2)}</p>
+                  {onUpdateAmountPaid && !isCancelled && (
+                    <button
+                      onClick={() => setEditingAmountPaid(true)}
+                      className="p-1 rounded-md hover:bg-blue-100 text-blue-600 hover:text-blue-800"
+                      title="Editar monto pagado (pago anticipado, varias reservas juntas, etc.)"
+                    >
+                      <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
+                      </svg>
+                    </button>
+                  )}
+                </div>
+              )}
             </div>
             <div className={`rounded-xl px-4 py-3 text-center ${fullyPaid ? "bg-green-50" : "bg-red-50"}`}>
               <p className={`text-xs font-medium uppercase ${fullyPaid ? "text-green-400" : "text-red-400"}`}>Deuda</p>

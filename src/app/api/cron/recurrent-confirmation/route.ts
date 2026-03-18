@@ -83,7 +83,8 @@ export async function GET(request: NextRequest) {
       const message =
         `hola! te escribo para confirmar tu reserva del ${targetFormatted} 🏐\n\n` +
         `${fieldText} ${timeRange}\n\n` +
-        `¿confirmas que vienes? avísame si tenés algún cambio 🙌`;
+        `¿confirmas que vienes? avísame si tenés algún cambio 🙌\n\n` +
+        `(Este es un mensaje automático. Si cree que ha habido un error, disculpe las molestias, estamos mejorando.)`;
 
       try {
         await sendWhatsAppMessage(chatId, message);

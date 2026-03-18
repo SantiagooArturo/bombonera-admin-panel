@@ -189,8 +189,8 @@ export interface Invoice {
 // Transferencias: colección transfers. Registro de todos los pagos procesados.
 export type TransferStatus = "applied" | "rejected_duplicate" | "partial";
 
-/** Origen del pago: chatbot (comprobante digital) o manual (cobro presencial). */
-export type PaymentSource = "chatbot" | "manual";
+/** Origen del pago: chatbot (comprobante digital), manual (cobro presencial) o manual_adjustment (ajuste de monto). */
+export type PaymentSource = "chatbot" | "manual" | "manual_adjustment";
 
 /** Método de pago: digital (transferencia, Yape, depósito…) o efectivo. */
 export type PaymentMethod = "digital" | "efectivo";

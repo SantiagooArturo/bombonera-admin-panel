@@ -63,7 +63,10 @@ export function usePaymentSidebar(options?: UsePaymentSidebarOptions) {
         if (t.status === "applied" || t.status === "partial") return sum + (t.amount || 0);
         return sum;
       }, 0);
-      setSelectedReservation({ ...freshReservation, amount_paid: total });
+      const amountPaid = (freshReservation as { amount_paid_manual?: boolean }).amount_paid_manual
+        ? (freshReservation.amount_paid ?? 0)
+        : total;
+      setSelectedReservation({ ...freshReservation, amount_paid: amountPaid });
 
       if (clientTypeRes.ok) {
         const clientTypeData = await clientTypeRes.json();
@@ -341,6 +344,32 @@ export function usePaymentSidebar(options?: UsePaymentSidebarOptions) {
     }
   }, [store, toast, selectedReservation, options]);
 
+  const handleUpdateAmountPaid = useCallback(async (amountPaid: number) => {
+    if (!selectedReservation) return false;
+    try {
+      const res = await fetch("/api/reservations", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ id: selectedReservation.id, amount_paid: amountPaid }),
+      });
+      if (!res.ok) {
+        toast("No se pudo actualizar el monto pagado", "error");
+        return false;
+      }
+      setSelectedReservation((prev) =>
+        prev ? { ...prev, amount_paid: amountPaid } : prev
+      );
+      options?.onReservationUpdated?.(selectedReservation.id, { amount_paid: amountPaid });
+      const newTransfers = await store.fetchTransfers(selectedReservation.id);
+      setTransfers(newTransfers || []);
+      toast("Monto pagado actualizado", "success");
+      return true;
+    } catch {
+      toast("Error al actualizar monto pagado", "error");
+      return false;
+    }
+  }, [selectedReservation, options, toast, store]);
+
   const handleUpdatePrice = useCallback(async (totalPrice: number) => {
     if (!selectedReservation) return false;
     try {
@@ -435,6 +464,7 @@ export function usePaymentSidebar(options?: UsePaymentSidebarOptions) {
     handleDetachInvoice,
     handleRevokeManualPayment,
     handleRegisterPayment,
+    handleUpdateAmountPaid,
     handleUpdatePrice,
   };
 }
