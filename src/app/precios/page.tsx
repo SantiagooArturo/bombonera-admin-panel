@@ -18,6 +18,7 @@ export default function PreciosPage() {
   const [saving, setSaving] = useState(false);
   const [seeding, setSeeding] = useState(false);
   const [uploadingImage, setUploadingImage] = useState(false);
+  const [imageLoading, setImageLoading] = useState(true);
   const [selectedField, setSelectedField] = useState(1);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -39,6 +40,12 @@ export default function PreciosPage() {
   }, [current]);
 
   const formValues = editForm ?? current ?? {};
+  const imageUrl = formValues.image_url ?? current?.image_url ?? "";
+
+  useEffect(() => {
+    if (imageUrl) setImageLoading(true);
+    else setImageLoading(false);
+  }, [selectedField, imageUrl]);
 
   const hasChanges = useMemo(() => {
     if (!current || !editForm) return false;
@@ -158,13 +165,7 @@ export default function PreciosPage() {
           <p className="mt-1 text-sm text-gray-500">
             Edita los campos y haz clic en Guardar para aplicar los cambios.
           </p>
-          <button
-            onClick={handleSeed}
-            disabled={seeding}
-            className="mt-3 text-sm text-emerald-600 hover:text-emerald-700 font-medium underline disabled:opacity-50"
-          >
-            {seeding ? "Cargando..." : "Cargar datos iniciales (si la base está vacía)"}
-          </button>
+
         </div>
 
         {/* Selector de campo */}
@@ -255,13 +256,25 @@ export default function PreciosPage() {
                   }}
                   className={`flex gap-4 items-center p-4 rounded-xl border-2 border-dashed border-gray-300 bg-gray-50 cursor-pointer hover:border-emerald-400 hover:bg-emerald-50/50 transition-colors min-h-[120px] focus:outline-none focus:ring-2 focus:ring-emerald-400 ${uploadingImage ? "opacity-60 pointer-events-none" : ""}`}
                 >
-                  {(formValues.image_url || current.image_url) ? (
-                    // eslint-disable-next-line @next/next/no-img-element
-                    <img
-                      src={(formValues.image_url || current.image_url) ?? ""}
-                      alt={`Campo ${current.field}`}
-                      className="w-28 h-20 object-cover rounded-lg border border-gray-200 shrink-0"
-                    />
+                  {imageUrl ? (
+                    <div className="relative w-28 h-20 rounded-lg border border-gray-200 shrink-0 overflow-hidden bg-gray-100">
+                      {imageLoading && (
+                        <div className="absolute inset-0 flex items-center justify-center">
+                          <svg className="w-8 h-8 animate-spin text-emerald-500" fill="none" viewBox="0 0 24 24">
+                            <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                            <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
+                          </svg>
+                        </div>
+                      )}
+                      {/* eslint-disable-next-line @next/next/no-img-element */}
+                      <img
+                        src={imageUrl}
+                        alt={`Campo ${current.field}`}
+                        className={`w-full h-full object-cover transition-opacity ${imageLoading ? "opacity-0" : "opacity-100"}`}
+                        onLoad={() => setImageLoading(false)}
+                        onError={() => setImageLoading(false)}
+                      />
+                    </div>
                   ) : (
                     <div className="w-28 h-20 rounded-lg bg-gray-200 flex items-center justify-center shrink-0">
                       <span className="text-gray-400 text-xs">Sin imagen</span>
