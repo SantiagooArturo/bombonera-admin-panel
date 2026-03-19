@@ -437,13 +437,17 @@ export function usePaymentSidebar(options?: UsePaymentSidebarOptions) {
     if (!id) return false;
     const prevReservations = allClientReservations;
     const prevSelected = selectedReservation;
+    const patch = { amount_paid: amountPaid };
     setAllClientReservations((prev) =>
-      prev.map((r) => (r.id === id ? { ...r, amount_paid: amountPaid } : r))
+      prev.map((r) => (r.id === id ? { ...r, ...patch } : r))
+    );
+    setAllReservationsThisWeek((prev) =>
+      prev.map((r) => (r.id === id ? { ...r, ...patch } : r))
     );
     setSelectedReservation((prev) =>
-      prev?.id === id ? { ...prev, amount_paid: amountPaid } : prev
+      prev?.id === id ? { ...prev, ...patch } : prev
     );
-    options?.onReservationUpdated?.(id, { amount_paid: amountPaid });
+    options?.onReservationUpdated?.(id, patch);
     try {
       const res = await fetch("/api/reservations", {
         method: "PATCH",
@@ -486,13 +490,17 @@ export function usePaymentSidebar(options?: UsePaymentSidebarOptions) {
         toast("No se pudo actualizar el precio", "error");
         return false;
       }
+      const patch = { total_price: totalPrice };
       setAllClientReservations((prev) =>
-        prev.map((r) => (r.id === id ? { ...r, total_price: totalPrice } : r))
+        prev.map((r) => (r.id === id ? { ...r, ...patch } : r))
+      );
+      setAllReservationsThisWeek((prev) =>
+        prev.map((r) => (r.id === id ? { ...r, ...patch } : r))
       );
       setSelectedReservation((prev) =>
-        prev?.id === id ? { ...prev, total_price: totalPrice } : prev
+        prev?.id === id ? { ...prev, ...patch } : prev
       );
-      options?.onReservationUpdated?.(id, { total_price: totalPrice });
+      options?.onReservationUpdated?.(id, patch);
       toast("Precio actualizado", "success");
       return true;
     } catch {
