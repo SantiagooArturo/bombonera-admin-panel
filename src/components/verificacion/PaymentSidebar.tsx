@@ -303,7 +303,10 @@ function ReservationDetailContent({
   const calculatedPrice = reservation.field && reservation.time_slots
     ? calculateReservationPrice(reservation.field, reservation.date, reservation.time_slots, configMap)
     : 0;
-  const totalPrice = calculatedPrice || reservation.total_price || 0;
+  /** Priorizar precio guardado en la reserva; si no hay, usar precio estándar calculado. */
+  const totalPrice = (reservation.total_price != null && reservation.total_price >= 0)
+    ? reservation.total_price
+    : (calculatedPrice || 0);
   const amountPaid = reservation.amount_paid ?? 0;
   const remaining = Math.max(0, totalPrice - amountPaid);
   const fullyPaid = remaining <= 0;
