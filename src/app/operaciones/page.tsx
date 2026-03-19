@@ -4,7 +4,7 @@ import { useEffect, useState, useMemo, useCallback, useRef } from "react";
 import ClientLayout, { useToastContext } from "@/components/ClientLayout";
 import { useStore } from "@/lib/hooks";
 
-import { TIME_SLOTS, type Reservation, type BlockedSlot, type User, isReservationActive } from "@/lib/types";
+import { TIME_SLOTS, type Reservation, type BlockedSlot, isReservationActive } from "@/lib/types";
 import type { CourtFieldConfig } from "@/lib/court-config";
 import ScheduleGrid from "@/components/operations/ScheduleGrid";
 import PaymentSidebar from "@/components/verificacion/PaymentSidebar";
@@ -41,8 +41,6 @@ export default function OperacionesPage() {
   const [reservations, setReservations] = useState<Reservation[]>([]);
   const [blockedSlots, setBlockedSlots] = useState<BlockedSlot[]>([]);
   const [courtConfigs, setCourtConfigs] = useState<CourtFieldConfig[] | null>(null);
-  const [users, setUsers] = useState<User[]>([]);
-  const [recurrentChatIds, setRecurrentChatIds] = useState<Set<string>>(new Set());
   const [loading, setLoading] = useState(true);
 
   // Unblock dialog
@@ -66,6 +64,7 @@ export default function OperacionesPage() {
 
   const preserveSidebarOnDayChangeRef = useRef(false);
   const skipBlockingLoaderRef = useRef(false);
+  const ignoreListClickRef = useRef(false);
 
   const sidebar = usePaymentSidebar({
     onReservationUpdated: (resId, patch) => {
@@ -91,25 +90,13 @@ export default function OperacionesPage() {
   }, []);
 
   useEffect(() => {
-    let mounted = true;
-    async function loadUsers() {
-      try {
-        if (!store.isLoaded("users")) {
-          await store.fetchUsers();
-        }
-        const data = store.getUsers();
-        if (!mounted) return;
-        const sorted = [...data].sort((a, b) => getUserName(a).localeCompare(getUserName(b), "es"));
-        setUsers(sorted);
-      } catch (error) {
-        console.error("Error loading users:", error);
-      }
+    if (!store.isLoaded("users")) {
+      store.fetchUsers();
     }
-    loadUsers();
-    return () => {
-      mounted = false;
-    };
   }, [store]);
+
+  /** Usuarios ordenados; se actualiza cuando el store cambia (p. ej. al editar tipo de cliente). */
+  const users = [...store.getUsers()].sort((a, b) => getUserName(a).localeCompare(getUserName(b), "es"));
 
   const selectedDate = useMemo(() => formatDateISO(getDateWithOffset(dayOffset)), [dayOffset]);
   const todayDate = useMemo(() => formatDateISO(new Date()), []);
@@ -150,24 +137,18 @@ export default function OperacionesPage() {
         .filter((u) => u.phone.length >= 9),
     [users]
   );
-  const loadRecurrentClientIds = useCallback(async () => {
-    try {
-      const res = await fetch("/api/users/recurrent", { cache: "no-store" });
-      if (!res.ok) return;
-      const data = await res.json();
-      const ids = Array.isArray(data?.chat_ids) ? data.chat_ids : [];
-      setRecurrentChatIds(new Set(ids.map((id: string) => String(id).replace(/\D/g, ""))));
-    } catch {
-      // Evita ruido visual: si falla, simplemente no mostramos el badge.
-      setRecurrentChatIds(new Set());
-    }
-  }, []);
 
-  useEffect(() => {
-    loadRecurrentClientIds();
-    const interval = setInterval(loadRecurrentClientIds, 15000);
-    return () => clearInterval(interval);
-  }, [loadRecurrentClientIds]);
+  /** IDs normalizados (últimos 9 dígitos) de usuarios con client_type === "recurrente". */
+  const recurrentClientIds = useMemo(() => {
+    const set = new Set<string>();
+    const norm = (s: string) => String(s).replace(/\D/g, "").slice(-9);
+    for (const u of users) {
+      if (u.client_type !== "recurrente") continue;
+      const key = norm(getUserPhone(u) || u.chat_id || "");
+      if (key.length >= 9) set.add(key);
+    }
+    return set;
+  }, [users]);
 
   useEffect(() => {
     if (preserveSidebarOnDayChangeRef.current) {
@@ -510,7 +491,7 @@ export default function OperacionesPage() {
             blockedSlots={blockedSlots}
             autoAssignments={autoAssignments}
             courtConfigs={courtConfigs}
-            recurrentChatIds={recurrentChatIds}
+            recurrentClientIds={recurrentClientIds}
             currentSlot={currentSlot}
             isToday={isToday}
             onSelectReservation={sidebar.open}
@@ -549,7 +530,12 @@ export default function OperacionesPage() {
           clientType={sidebar.clientType}
           clientTypeLoading={sidebar.clientTypeLoading}
           clientTypeUpdating={sidebar.clientTypeUpdating}
-          onUpdateClientType={sidebar.handleUpdateClientType}
+          onUpdateClientType={async (type) => {
+            ignoreListClickRef.current = true;
+            const ok = await sidebar.handleUpdateClientType(type);
+            setTimeout(() => { ignoreListClickRef.current = false; }, 300);
+            return ok;
+          }}
           onUpdateStatus={sidebar.handleUpdateStatus}
           statusUpdating={sidebar.statusUpdating}
           onClose={sidebar.close}
@@ -557,6 +543,7 @@ export default function OperacionesPage() {
           allReservationsThisWeek={sidebar.allReservationsThisWeek}
           allClientReservations={sidebar.allClientReservations}
           onSelectReservationFromList={(r) => {
+            if (ignoreListClickRef.current) return;
             preserveSidebarOnDayChangeRef.current = true;
             skipBlockingLoaderRef.current = true;
             const today = new Date();

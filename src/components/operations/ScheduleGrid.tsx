@@ -73,7 +73,8 @@ export interface ScheduleGridProps {
   autoAssignments: Map<string, number>;
   /** Config de canchas para encabezados dinámicos (5 vs 5, 6 vs 6, otro). */
   courtConfigs?: CourtFieldConfig[] | null;
-  recurrentChatIds?: Set<string>;
+  /** IDs normalizados (últimos 9 dígitos) de usuarios con client_type === "recurrente". */
+  recurrentClientIds?: Set<string>;
   currentSlot: string;
   isToday: boolean;
   onSelectReservation: (reservation: Reservation) => void;
@@ -89,7 +90,7 @@ export default function ScheduleGrid({
   blockedSlots,
   autoAssignments,
   courtConfigs,
-  recurrentChatIds,
+  recurrentClientIds,
   currentSlot,
   isToday,
   onSelectReservation,
@@ -297,7 +298,15 @@ export default function ScheduleGrid({
                     >
                       <OccupiedCellContent
                         reservation={reservation}
-                        isRecurrent={recurrentChatIds?.has(String(reservation.chat_id || "").replace(/\D/g, ""))}
+                        isRecurrent={
+                          recurrentClientIds
+                            ? recurrentClientIds.has(
+                                String(reservation.chat_id || reservation.phone_number || "")
+                                  .replace(/\D/g, "")
+                                  .slice(-9)
+                              )
+                            : false
+                        }
                       />
                     </td>
                   );

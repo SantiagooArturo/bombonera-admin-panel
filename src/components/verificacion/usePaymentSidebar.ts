@@ -4,6 +4,7 @@ import { useState, useCallback, useRef } from "react";
 import { useStore } from "@/lib/hooks";
 import { useToastContext } from "@/components/ClientLayout";
 import type { Reservation, Transfer, Invoice, PaymentMethod, ClientType } from "@/lib/types";
+import { normalizePeruPhone } from "@/features/operaciones/utils";
 
 interface UsePaymentSidebarOptions {
   onReservationUpdated?: (resId: string, patch: Partial<Reservation>) => void;
@@ -75,12 +76,13 @@ export function usePaymentSidebar(options?: UsePaymentSidebarOptions) {
     try {
       await store.syncReservationPayments(reservation.id);
 
-      const normalizedChatId = String(reservation.chat_id || "").replace(/\D/g, "");
-      const chatIdForApi = reservation.chat_id || normalizedChatId || reservation.phone_number;
+      const rawChatId = String(reservation.chat_id || reservation.phone_number || "").replace(/\D/g, "");
+      const chatIdForApi = reservation.chat_id || rawChatId || reservation.phone_number;
+      const userDocId = rawChatId.length >= 9 ? normalizePeruPhone(rawChatId) : rawChatId;
       const [transfersByClientRaw, freshResReq, clientTypeRes, clientReservationsRes] = await Promise.all([
         store.fetchTransfersByChatId(chatIdForApi || ""),
         fetch(`/api/reservations?id=${reservation.id}`),
-        fetch(`/api/users/client-type?chat_id=${encodeURIComponent(normalizedChatId)}`, { cache: "no-store" }),
+        fetch(`/api/users/client-type?chat_id=${encodeURIComponent(userDocId)}`, { cache: "no-store" }),
         chatIdForApi ? fetch(`/api/reservations?phone_number=${encodeURIComponent(String(chatIdForApi))}`) : Promise.resolve(new Response("[]")),
       ]);
 
@@ -180,7 +182,8 @@ export function usePaymentSidebar(options?: UsePaymentSidebarOptions) {
     setClientType(nextType);
     setClientTypeUpdating(true);
 
-    const normalizedChatId = String(selectedReservation.chat_id || "").replace(/\D/g, "");
+    const raw = String(selectedReservation.chat_id || selectedReservation.phone_number || "").replace(/\D/g, "");
+    const normalizedChatId = raw.length >= 9 ? normalizePeruPhone(raw) : raw;
     const ok = await store.updateUserClientType(normalizedChatId, nextType);
 
     setClientTypeUpdating(false);

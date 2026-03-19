@@ -18,8 +18,14 @@ class Store {
     return () => { this.listeners.delete(listener); };
   }
 
+  private notifyScheduled = false;
   private notify() {
-    this.listeners.forEach((l) => l());
+    if (this.notifyScheduled) return;
+    this.notifyScheduled = true;
+    queueMicrotask(() => {
+      this.notifyScheduled = false;
+      this.listeners.forEach((l) => l());
+    });
   }
 
   // Reservations

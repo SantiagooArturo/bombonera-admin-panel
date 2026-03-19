@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useRef, useEffect, useCallback } from "react";
+import { useState, useRef, useEffect, useCallback, useMemo, memo } from "react";
 import { compressImageForUpload } from "@/lib/compress-image";
 import { Transfer, Invoice, Reservation, PaymentMethod, ClientType, CLIENT_TYPE_LABELS, STATUS_LABELS, getPendingExpiryTimeFormatted, type ReservationStatus } from "@/lib/types";
 import { renderPdfToDataUrl } from "@/lib/pdf-preview";
@@ -15,7 +15,7 @@ const WSP_ICON_PATH =
 
 // ─── PDF Preview ────────────────────────────────────────────────────────────
 
-function PdfPreview({ url, onClickImage }: { url: string; onClickImage: (src: string) => void }) {
+const PdfPreview = memo(function PdfPreview({ url, onClickImage }: { url: string; onClickImage: (src: string) => void }) {
   const [imgSrc, setImgSrc] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
 
@@ -66,7 +66,7 @@ function PdfPreview({ url, onClickImage }: { url: string; onClickImage: (src: st
       </div>
     </div>
   );
-}
+});
 
 // ─── Props ───────────────────────────────────────────────────────────────────
 
@@ -444,7 +444,7 @@ function RegisterPaymentFormCobros({
 
 // ─── Payment Accordion (compacto → expande TransferCard completo) ─────────────
 
-function PaymentAccordionList({
+const PaymentAccordionList = memo(function PaymentAccordionList({
   transfers,
   invoices,
   emittingInvoiceId,
@@ -558,11 +558,11 @@ function PaymentAccordionList({
       })}
     </div>
   );
-}
+});
 
 // ─── Transfer Card ───────────────────────────────────────────────────────────
 
-function TransferCard({
+const TransferCard = memo(function TransferCard({
   transfer, invoice, emittingInvoiceId, attachingInvoiceId, onVerify, onEmitInvoice, onAttachInvoice, onDetachInvoice, onRevoke, onViewImage, onHover, chatId, clientDni,
 }: {
   transfer: Transfer;
@@ -905,11 +905,125 @@ function TransferCard({
       )}
     </div>
   );
-}
+});
+
+// ─── Reservation Row (memoizado para evitar re-renders en tabla) ─────────────
+
+const ReservationRow = memo(function ReservationRow({
+  r,
+  onUpdatePrice,
+  onUpdateAmountPaid,
+  onMarkedInSession,
+  paymentLoading,
+}: {
+  r: Reservation;
+  onUpdatePrice?: (totalPrice: number, reservationId?: string) => Promise<boolean>;
+  onUpdateAmountPaid?: (amountPaid: number, reservationId?: string) => Promise<boolean>;
+  onMarkedInSession?: (reservationId: string) => void;
+  paymentLoading: boolean;
+}) {
+  const price = r.total_price ?? 0;
+  const paid = r.amount_paid ?? 0;
+  const dateObj = new Date(r.date + "T12:00:00");
+  const dayName = dateObj.toLocaleDateString("es-PE", { weekday: "short" });
+  const dayNum = dateObj.getDate();
+  const start = r.time_slots?.[0] || "";
+  const lastH = r.time_slots?.length ? parseInt(r.time_slots[r.time_slots.length - 1].split(":")[0]) + 1 : 0;
+  const timeStr = `${formatHour12(start).replace(/:00\s?/g, "").replace(/\s/g, "")}-${formatHour12(`${lastH}:00`).replace(/:00\s?/g, "").replace(/\s/g, "")}`;
+  const fieldShort = r.field ? `C${r.field}` : "—";
+
+  const [editingPrice, setEditingPrice] = useState(false);
+  const [priceInput, setPriceInput] = useState(String(price));
+  const [updating, setUpdating] = useState(false);
+  const lastAmountBeforeFull = useRef<number>(0);
+  const isTogglingPaidRef = useRef(false);
+  useEffect(() => {
+    if (!editingPrice) setPriceInput(String(r.total_price ?? 0));
+  }, [r.id, r.total_price, editingPrice]);
+
+  const handleSavePrice = useCallback(async () => {
+    const parsed = parseFloat(priceInput.replace(",", "."));
+    if (isNaN(parsed) || parsed < 0 || !onUpdatePrice) return;
+    setUpdating(true);
+    const ok = await onUpdatePrice(parsed, r.id);
+    setUpdating(false);
+    if (ok) setEditingPrice(false);
+  }, [priceInput, onUpdatePrice, r.id]);
+
+  const handleTogglePaid = useCallback(async (checked: boolean) => {
+    if (!onUpdateAmountPaid || isTogglingPaidRef.current) return;
+    isTogglingPaidRef.current = true;
+    setUpdating(true);
+    try {
+      if (checked) {
+        lastAmountBeforeFull.current = paid;
+        await onUpdateAmountPaid(price, r.id);
+        onMarkedInSession?.(r.id);
+      } else {
+        await onUpdateAmountPaid(lastAmountBeforeFull.current, r.id);
+      }
+    } finally {
+      isTogglingPaidRef.current = false;
+      setUpdating(false);
+    }
+  }, [onUpdateAmountPaid, paid, price, r.id, onMarkedInSession]);
+
+  return (
+    <tr className="border-b border-gray-100 bg-white">
+      <td className="py-2.5 px-3 text-sm font-medium text-gray-900">
+        {dayName} {dayNum} · {timeStr} · {fieldShort}
+      </td>
+      <td className="py-2.5 px-3 text-sm text-gray-600 font-medium">
+        {editingPrice && onUpdatePrice ? (
+          <div className="flex items-center gap-1">
+            <span className="text-gray-500">S/</span>
+            <input
+              type="text"
+              inputMode="decimal"
+              value={priceInput}
+              onChange={(e) => setPriceInput(e.target.value.replace(/[^\d.,]/g, ""))}
+              onKeyDown={(e) => {
+                if (e.key === "Enter") void handleSavePrice();
+                if (e.key === "Escape") { setEditingPrice(false); setPriceInput(String(price)); }
+              }}
+              className="w-16 px-1.5 py-0.5 rounded border border-blue-300 text-sm font-medium focus:outline-none focus:ring-1 focus:ring-blue-500"
+              autoFocus
+            />
+            <button onClick={() => void handleSavePrice()} disabled={updating} className="p-1 text-blue-600 hover:bg-blue-50 rounded" title="Guardar">
+              <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" /></svg>
+            </button>
+          </div>
+        ) : (
+          <button
+            type="button"
+            onClick={() => onUpdatePrice && setEditingPrice(true)}
+            className="flex items-center gap-1 group hover:bg-gray-50 rounded px-1 -mx-1 py-0.5"
+          >
+            S/ {price.toFixed(2)}
+            {onUpdatePrice && <span className="text-gray-400">{PENCIL_ICON}</span>}
+          </button>
+        )}
+      </td>
+      <td className="py-2.5 px-3 text-center">
+        {onUpdateAmountPaid && (
+          <label className="inline-flex items-center justify-center cursor-pointer" title={paid >= price ? "Quitar pago" : "Marcar como pagado"}>
+            <input
+              type="checkbox"
+              checked={paid >= price && price > 0}
+              onChange={(e) => void handleTogglePaid(e.target.checked)}
+              disabled={updating || paymentLoading}
+              className="rounded border-gray-300 text-green-600 focus:ring-green-500 w-5 h-5 cursor-pointer"
+            />
+          </label>
+        )}
+      </td>
+    </tr>
+  );
+});
 
 // ─── Cobros Tab Content ─────────────────────────────────────────────────────
 
-function CobrosTabContent({
+const CobrosTabContent = memo(function CobrosTabContent({
   allClientReservations,
   reservation,
   transfers,
@@ -967,155 +1081,70 @@ function CobrosTabContent({
   const [modifiedInSessionReservationIds, setModifiedInSessionReservationIds] = useState<Set<string>>(new Set());
   const [modifiedInSessionTransferIds, setModifiedInSessionTransferIds] = useState<Set<string>>(new Set());
 
-  const isPaid = (r: Reservation) => (r.amount_paid ?? 0) >= (r.total_price ?? 0) && (r.total_price ?? 0) > 0;
-  const isThisWeek = (d: string) => d >= weekStart && d <= weekEnd;
-  const visibleReservations = allClientReservations.filter(
-    (r) => !isPaid(r) || isThisWeek(r.date) || modifiedInSessionReservationIds.has(r.id)
-  );
-  const past = visibleReservations.filter((r) => r.date < weekStart);
-  const thisWeekRes = visibleReservations.filter((r) => r.date >= weekStart && r.date <= weekEnd);
-  const future = visibleReservations.filter((r) => r.date > weekEnd);
-  const allOrdered = [...past, ...thisWeekRes, ...future];
+  const visibleReservations = useMemo(() => {
+    const isPaid = (r: Reservation) => (r.amount_paid ?? 0) >= (r.total_price ?? 0) && (r.total_price ?? 0) > 0;
+    const isThisWeek = (d: string) => d >= weekStart && d <= weekEnd;
+    return allClientReservations.filter(
+      (r) => !isPaid(r) || isThisWeek(r.date) || modifiedInSessionReservationIds.has(r.id)
+    );
+  }, [allClientReservations, weekStart, weekEnd, modifiedInSessionReservationIds]);
 
-  const totalCost = allClientReservations.reduce((s, r) => s + (r.total_price ?? 0), 0);
-  const totalPaid = allClientReservations.reduce((s, r) => s + (r.amount_paid ?? 0), 0);
+  const allOrdered = useMemo(() => {
+    const past = visibleReservations.filter((r) => r.date < weekStart);
+    const thisWeekRes = visibleReservations.filter((r) => r.date >= weekStart && r.date <= weekEnd);
+    const future = visibleReservations.filter((r) => r.date > weekEnd);
+    return [...past, ...thisWeekRes, ...future];
+  }, [visibleReservations, weekStart, weekEnd]);
+
+  const totalCost = useMemo(() => allClientReservations.reduce((s, r) => s + (r.total_price ?? 0), 0), [allClientReservations]);
+  const totalPaid = useMemo(() => allClientReservations.reduce((s, r) => s + (r.amount_paid ?? 0), 0), [allClientReservations]);
   const totalRemaining = Math.max(0, totalCost - totalPaid);
-  const reservationsWithDebt = allClientReservations.filter((r) => (r.total_price ?? 0) - (r.amount_paid ?? 0) > 0);
+  const reservationsWithDebt = useMemo(
+    () => allClientReservations.filter((r) => (r.total_price ?? 0) - (r.amount_paid ?? 0) > 0),
+    [allClientReservations]
+  );
 
-  const addDays = (dateStr: string, days: number) => {
-    const d = new Date(dateStr + "T12:00:00");
-    d.setDate(d.getDate() + days);
-    return d.toISOString().slice(0, 10);
-  };
-  const lastWeekStart = addDays(weekStart, -7);
-  const lastWeekEnd = addDays(weekEnd, -7);
-  const monthNames = ["Enero", "Febrero", "Marzo", "Abril", "Mayo", "Junio", "Julio", "Agosto", "Septiembre", "Octubre", "Noviembre", "Diciembre"] as const;
-  const getPeriodLabel = (dateStr: string): string => {
-    if (dateStr >= weekStart && dateStr <= weekEnd) return "Esta semana";
-    if (dateStr >= lastWeekStart && dateStr <= lastWeekEnd) return "Semana pasada";
-    const d = new Date(dateStr + "T12:00:00");
-    return monthNames[d.getMonth()] + " " + d.getFullYear();
-  };
-  const pendingByPeriod = reservationsWithDebt.reduce((acc, r) => {
-    const pending = Math.max(0, (r.total_price ?? 0) - (r.amount_paid ?? 0));
-    const label = getPeriodLabel(r.date);
-    acc[label] = (acc[label] ?? 0) + pending;
-    return acc;
-  }, {} as Record<string, number>);
+  const pendingByPeriod = useMemo(() => {
+    const addDays = (dateStr: string, days: number) => {
+      const d = new Date(dateStr + "T12:00:00");
+      d.setDate(d.getDate() + days);
+      return d.toISOString().slice(0, 10);
+    };
+    const lastWeekStart = addDays(weekStart, -7);
+    const lastWeekEnd = addDays(weekEnd, -7);
+    const monthNames = ["Enero", "Febrero", "Marzo", "Abril", "Mayo", "Junio", "Julio", "Agosto", "Septiembre", "Octubre", "Noviembre", "Diciembre"] as const;
+    const getPeriodLabel = (dateStr: string): string => {
+      if (dateStr >= weekStart && dateStr <= weekEnd) return "Esta semana";
+      if (dateStr >= lastWeekStart && dateStr <= lastWeekEnd) return "Semana pasada";
+      const d = new Date(dateStr + "T12:00:00");
+      return monthNames[d.getMonth()] + " " + d.getFullYear();
+    };
+    return reservationsWithDebt.reduce((acc, r) => {
+      const pending = Math.max(0, (r.total_price ?? 0) - (r.amount_paid ?? 0));
+      const label = getPeriodLabel(r.date);
+      acc[label] = (acc[label] ?? 0) + pending;
+      return acc;
+    }, {} as Record<string, number>);
+  }, [reservationsWithDebt, weekStart, weekEnd]);
+
   const clientSearch = String(reservation.phone_number || reservation.chat_id || "").replace(/\D/g, "").slice(-9);
   const historicoUrl = `/verificacion?search=${encodeURIComponent(clientSearch)}`;
 
-  const ReservationRow = ({
-    r,
-    onUpdatePrice,
-    onUpdateAmountPaid,
-    onMarkedInSession,
-    paymentLoading,
-  }: {
-    r: Reservation;
-    onUpdatePrice?: (totalPrice: number, reservationId?: string) => Promise<boolean>;
-    onUpdateAmountPaid?: (amountPaid: number, reservationId?: string) => Promise<boolean>;
-    onMarkedInSession?: (reservationId: string) => void;
-    paymentLoading: boolean;
-  }) => {
-    const price = r.total_price ?? 0;
-    const paid = r.amount_paid ?? 0;
-    const dateObj = new Date(r.date + "T12:00:00");
-    const dayName = dateObj.toLocaleDateString("es-PE", { weekday: "short" });
-    const dayNum = dateObj.getDate();
-    const start = r.time_slots?.[0] || "";
-    const lastH = r.time_slots?.length ? parseInt(r.time_slots[r.time_slots.length - 1].split(":")[0]) + 1 : 0;
-    const timeStr = `${formatHour12(start).replace(/:00\s?/g, "").replace(/\s/g, "")}-${formatHour12(`${lastH}:00`).replace(/:00\s?/g, "").replace(/\s/g, "")}`;
-    const fieldShort = r.field ? `C${r.field}` : "—";
+  const filteredTransfers = useMemo(() => transfers.filter((t) => {
+    const isApplied = t.applied ?? (t.status === "applied" || t.status === "partial");
+    const transferDate = t.created_at?.split?.("T")?.[0] ?? "";
+    const isFromThisWeek = transferDate >= weekStart && transferDate <= weekEnd;
+    return !isApplied || isFromThisWeek || modifiedInSessionTransferIds.has(t.id);
+  }), [transfers, weekStart, weekEnd, modifiedInSessionTransferIds]);
 
-    const [editingPrice, setEditingPrice] = useState(false);
-    const [priceInput, setPriceInput] = useState(String(price));
-    const [updating, setUpdating] = useState(false);
-    const lastAmountBeforeFull = useRef<number>(0);
-    const isTogglingPaidRef = useRef(false);
-    useEffect(() => {
-      if (!editingPrice) setPriceInput(String(r.total_price ?? 0));
-    }, [r.id, r.total_price, editingPrice]);
+  const handleMarkedInSession = useCallback((id: string) => {
+    setModifiedInSessionReservationIds((prev) => new Set(prev).add(id));
+  }, []);
 
-    const handleSavePrice = async () => {
-      const parsed = parseFloat(priceInput.replace(",", "."));
-      if (isNaN(parsed) || parsed < 0 || !onUpdatePrice) return;
-      setUpdating(true);
-      const ok = await onUpdatePrice(parsed, r.id);
-      setUpdating(false);
-      if (ok) setEditingPrice(false);
-    };
-
-    const handleTogglePaid = async (checked: boolean) => {
-      if (!onUpdateAmountPaid || isTogglingPaidRef.current) return;
-      isTogglingPaidRef.current = true;
-      setUpdating(true);
-      try {
-        if (checked) {
-          lastAmountBeforeFull.current = paid;
-          await onUpdateAmountPaid(price, r.id);
-          onMarkedInSession?.(r.id);
-        } else {
-          await onUpdateAmountPaid(lastAmountBeforeFull.current, r.id);
-        }
-      } finally {
-        isTogglingPaidRef.current = false;
-        setUpdating(false);
-      }
-    };
-
-    return (
-      <tr className="border-b border-gray-100 bg-white">
-        <td className="py-2.5 px-3 text-sm font-medium text-gray-900">
-          {dayName} {dayNum} · {timeStr} · {fieldShort}
-        </td>
-        <td className="py-2.5 px-3 text-sm text-gray-600 font-medium">
-          {editingPrice && onUpdatePrice ? (
-            <div className="flex items-center gap-1">
-              <span className="text-gray-500">S/</span>
-              <input
-                type="text"
-                inputMode="decimal"
-                value={priceInput}
-                onChange={(e) => setPriceInput(e.target.value.replace(/[^\d.,]/g, ""))}
-                onKeyDown={(e) => {
-                  if (e.key === "Enter") void handleSavePrice();
-                  if (e.key === "Escape") { setEditingPrice(false); setPriceInput(String(price)); }
-                }}
-                className="w-16 px-1.5 py-0.5 rounded border border-blue-300 text-sm font-medium focus:outline-none focus:ring-1 focus:ring-blue-500"
-                autoFocus
-              />
-              <button onClick={() => void handleSavePrice()} disabled={updating} className="p-1 text-blue-600 hover:bg-blue-50 rounded" title="Guardar">
-                <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" /></svg>
-              </button>
-            </div>
-          ) : (
-            <button
-              type="button"
-              onClick={() => onUpdatePrice && setEditingPrice(true)}
-              className="flex items-center gap-1 group hover:bg-gray-50 rounded px-1 -mx-1 py-0.5"
-            >
-              S/ {price.toFixed(2)}
-              {onUpdatePrice && <span className="text-gray-400">{PENCIL_ICON}</span>}
-            </button>
-          )}
-        </td>
-        <td className="py-2.5 px-3 text-center">
-          {onUpdateAmountPaid && (
-            <label className="inline-flex items-center justify-center cursor-pointer" title={paid >= price ? "Quitar pago" : "Marcar como pagado"}>
-              <input
-                type="checkbox"
-                checked={paid >= price && price > 0}
-                onChange={(e) => void handleTogglePaid(e.target.checked)}
-                disabled={updating || paymentLoading}
-                className="rounded border-gray-300 text-green-600 focus:ring-green-500 w-5 h-5 cursor-pointer"
-              />
-            </label>
-          )}
-        </td>
-      </tr>
-    );
-  };
+  const handleToggleAppliedWithSession = useCallback((id: string, applied: boolean) => {
+    onToggleApplied(id, applied);
+    if (applied) setModifiedInSessionTransferIds((prev) => new Set(prev).add(id));
+  }, [onToggleApplied]);
 
   return (
     <div className="flex-1 overflow-y-auto flex flex-col">
@@ -1174,7 +1203,7 @@ function CobrosTabContent({
                     r={r}
                     onUpdatePrice={onUpdatePrice}
                     onUpdateAmountPaid={onUpdateAmountPaid}
-                    onMarkedInSession={(id) => setModifiedInSessionReservationIds((prev) => new Set(prev).add(id))}
+                    onMarkedInSession={handleMarkedInSession}
                     paymentLoading={paymentLoading}
                   />
                 ))}
@@ -1197,12 +1226,7 @@ function CobrosTabContent({
             <><SkeletonCard /><SkeletonCard /></>
           ) : transfers.length > 0 ? (
             <PaymentAccordionList
-              transfers={transfers.filter((t) => {
-                const isApplied = t.applied ?? (t.status === "applied" || t.status === "partial");
-                const transferDate = t.created_at?.split?.("T")?.[0] ?? "";
-                const isFromThisWeek = transferDate >= weekStart && transferDate <= weekEnd;
-                return !isApplied || isFromThisWeek || modifiedInSessionTransferIds.has(t.id);
-              })}
+              transfers={filteredTransfers}
               invoices={invoices}
               emittingInvoiceId={emittingInvoiceId}
               attachingInvoiceId={attachingInvoiceId}
@@ -1211,10 +1235,7 @@ function CobrosTabContent({
               onAttachInvoice={onAttachInvoice}
               onDetachInvoice={onDetachInvoice}
               onRevokeManualPayment={onRevokeManualPayment}
-              onToggleApplied={(id, applied) => {
-                onToggleApplied(id, applied);
-                if (applied) setModifiedInSessionTransferIds((prev) => new Set(prev).add(id));
-              }}
+              onToggleApplied={handleToggleAppliedWithSession}
               onViewImage={setViewingImage}
               onHover={setHoveredTransferId}
               chatId={chatId}
@@ -1230,7 +1251,7 @@ function CobrosTabContent({
       </div>
     </div>
   );
-}
+});
 
 function SkeletonCard() {
   return (
@@ -1259,7 +1280,7 @@ function SkeletonCard() {
 
 // ─── Main Component ──────────────────────────────────────────────────────────
 
-export default function PaymentSidebar({
+const PaymentSidebar = memo(function PaymentSidebar({
   reservation,
   transfers,
   invoices,
@@ -1297,11 +1318,12 @@ export default function PaymentSidebar({
 }: PaymentSidebarProps) {
   const [activeTab, setActiveTab] = useState<"detalles" | "cobros">("detalles");
   const [viewingImage, setViewingImage] = useState<string | null>(null);
-  const configMap = courtConfigsToMap(courtConfigs);
-  const fieldConfig = reservation.field && courtConfigs?.length
-    ? courtConfigs.find((c) => c.field === reservation.field)
-    : null;
-  const courtSizeLabel = fieldConfig ? getCourtSizeLabel(fieldConfig) : null;
+  const configMap = useMemo(() => courtConfigsToMap(courtConfigs), [courtConfigs]);
+  const fieldConfig = useMemo(
+    () => (reservation.field && courtConfigs?.length ? courtConfigs.find((c) => c.field === reservation.field) : null),
+    [reservation.field, courtConfigs]
+  );
+  const courtSizeLabel = useMemo(() => (fieldConfig ? getCourtSizeLabel(fieldConfig) : null), [fieldConfig]);
   const [hoveredTransferId, setHoveredTransferId] = useState<string | null>(null);
   const [editingDni, setEditingDni] = useState(false);
   const [dniValue, setDniValue] = useState(reservation.dni || "");
@@ -1362,9 +1384,12 @@ export default function PaymentSidebar({
     setPriceInput(String(reservation.total_price ?? 0));
   }, [reservation.id, reservation.total_price]);
 
-  const calculatedPrice = reservation.field && reservation.time_slots
-    ? calculateReservationPrice(reservation.field, reservation.date, reservation.time_slots, configMap)
-    : 0;
+  const calculatedPrice = useMemo(
+    () => (reservation.field && reservation.time_slots
+      ? calculateReservationPrice(reservation.field, reservation.date, reservation.time_slots, configMap)
+      : 0),
+    [reservation.field, reservation.date, reservation.time_slots, configMap]
+  );
   const totalPrice = calculatedPrice || reservation.total_price || 0;
   const isCancelled = reservation.status === "cancelled";
 
@@ -1380,11 +1405,11 @@ export default function PaymentSidebar({
 
   return (
     <>
-      {/* Backdrop */}
-      <div className="fixed inset-0 z-40 bg-black/50 backdrop-blur-sm" onClick={onClose} />
+      {/* Backdrop (sin blur para mejor rendimiento) */}
+      <div className="fixed inset-0 z-40 bg-black/40" onClick={onClose} />
 
-      {/* Sidebar */}
-      <div className="fixed inset-y-0 right-0 z-50 w-full max-w-3xl bg-white shadow-2xl flex flex-col animate-slide-in-right">
+      {/* Sidebar (contain para aislar repaints) */}
+      <div className="fixed inset-y-0 right-0 z-50 w-full max-w-3xl bg-white shadow-2xl flex flex-col animate-slide-in-right" style={{ contain: "layout paint" }}>
         {/* Aviso tiempo de gracia (solo pendientes) */}
         {reservation.status === "pending" && (() => {
           if (reservation.manual_pending) {
@@ -1774,4 +1799,6 @@ export default function PaymentSidebar({
       {viewingImage && <ImageViewer src={viewingImage} onClose={() => setViewingImage(null)} />}
     </>
   );
-}
+});
+
+export default PaymentSidebar;
