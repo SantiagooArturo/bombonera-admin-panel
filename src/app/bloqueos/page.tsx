@@ -4,6 +4,7 @@ import { useState, useEffect, useMemo, useCallback } from "react";
 import ClientLayout, { useToastContext } from "@/components/ClientLayout";
 import { useStore } from "@/lib/hooks";
 import { TIME_SLOTS, COURT_FIELDS } from "@/lib/types";
+import { isValidPeruPhone } from "@/features/operaciones/utils";
 
 // ─── Helpers ────────────────────────────────────────────────────────────────
 
@@ -85,6 +86,9 @@ export default function BloqueosPage() {
     return formatDateISO(d);
   });
   const [reason, setReason] = useState(REASONS[0]);
+  const [contactPhone, setContactPhone] = useState("");
+  const [contactName, setContactName] = useState("");
+  const [contactDni, setContactDni] = useState("");
   const [submitting, setSubmitting] = useState(false);
 
   // Existing rules
@@ -106,7 +110,9 @@ export default function BloqueosPage() {
   const slotsToBlock = useMemo(() => getTimeSlotsInRange(timeFrom, timeTo), [timeFrom, timeTo]);
 
   const totalBlocks = selectedFields.length * datesToBlock.length * slotsToBlock.length;
-  const canSubmit = selectedFields.length > 0 && slotsToBlock.length > 0 && datesToBlock.length > 0 && !submitting;
+  const needsContact = reason === "Reservado internamente" || reason === "Evento privado";
+  const contactValid = !needsContact || (contactPhone.trim() && isValidPeruPhone(contactPhone));
+  const canSubmit = selectedFields.length > 0 && slotsToBlock.length > 0 && datesToBlock.length > 0 && contactValid && !submitting;
 
   // ── Field selection ───────────────────────────────────────────────────
 
@@ -141,6 +147,9 @@ export default function BloqueosPage() {
       mode,
       dates: datesToBlock,
       reason,
+      contact_phone: contactPhone.trim() || undefined,
+      contact_name: contactName.trim() || undefined,
+      contact_dni: contactDni.trim() || undefined,
     });
 
     setSubmitting(false);
@@ -375,7 +384,53 @@ export default function BloqueosPage() {
             </select>
           </div>
 
-          {/* 5. Resumen y botón */}
+          {/* 5. Contacto (obligatorio para Reservado internamente / Evento privado) */}
+          {(reason === "Reservado internamente" || reason === "Evento privado") && (
+            <div className="space-y-4">
+              <label className="block text-lg font-bold text-gray-800 mb-3">
+                Datos de contacto
+              </label>
+              <div>
+                <label className="block text-sm font-semibold text-gray-700 mb-2">WhatsApp (9 dígitos)</label>
+                <input
+                  type="text"
+                  value={contactPhone}
+                  onChange={(e) => setContactPhone(e.target.value.replace(/\D/g, "").slice(0, 11))}
+                  placeholder="Ej: 987654321"
+                  className={`w-full max-w-sm rounded-xl border-2 px-4 py-3 font-semibold focus:outline-none ${
+                    contactPhone && !isValidPeruPhone(contactPhone)
+                      ? "border-red-300 bg-red-50 focus:border-red-500"
+                      : "border-gray-200 bg-gray-50 focus:border-blue-500"
+                  }`}
+                />
+                {contactPhone && !isValidPeruPhone(contactPhone) && (
+                  <p className="text-sm text-red-600 mt-1">Número inválido (9 dígitos)</p>
+                )}
+              </div>
+              <div>
+                <label className="block text-sm font-semibold text-gray-700 mb-2">Nombre</label>
+                <input
+                  type="text"
+                  value={contactName}
+                  onChange={(e) => setContactName(e.target.value)}
+                  placeholder="Nombre completo"
+                  className="w-full max-w-sm rounded-xl border-2 border-gray-200 bg-gray-50 px-4 py-3 font-semibold text-gray-800 focus:border-blue-500 focus:outline-none"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-semibold text-gray-700 mb-2">DNI (opcional)</label>
+                <input
+                  type="text"
+                  value={contactDni}
+                  onChange={(e) => setContactDni(e.target.value.replace(/\D/g, "").slice(0, 8))}
+                  placeholder="Ej: 12345678"
+                  className="w-full max-w-sm rounded-xl border-2 border-gray-200 bg-gray-50 px-4 py-3 font-semibold text-gray-800 focus:border-blue-500 focus:outline-none"
+                />
+              </div>
+            </div>
+          )}
+
+          {/* 6. Resumen y botón */}
           <div className="border-t border-gray-200 pt-6">
             {canSubmit && (
               <p className="text-gray-600 mb-4 text-base">

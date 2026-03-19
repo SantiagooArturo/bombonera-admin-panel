@@ -183,7 +183,7 @@ class Store {
     }
   }
 
-  async addBlockRule(rule: { fields: number[]; time_from: string; time_to: string; mode: string; dates: string[]; reason: string }) {
+  async addBlockRule(rule: { fields: number[]; time_from: string; time_to: string; mode: string; dates: string[]; reason: string; contact_phone?: string; contact_name?: string; contact_dni?: string }) {
     try {
       const res = await fetch("/api/block-rules", {
         method: "POST",

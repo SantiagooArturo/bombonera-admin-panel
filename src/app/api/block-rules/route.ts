@@ -53,7 +53,7 @@ export async function POST(request: NextRequest) {
   try {
     const db = getDb();
     const body = await request.json();
-    const { fields, time_from, time_to, mode, dates, reason } = body;
+    const { fields, time_from, time_to, mode, dates, reason, contact_phone, contact_name, contact_dni } = body;
 
     if (!fields?.length || !time_from || !time_to || !dates?.length) {
       return NextResponse.json({ error: "Faltan campos requeridos" }, { status: 400 });
@@ -64,7 +64,7 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: "Rango horario inválido" }, { status: 400 });
     }
 
-    const ruleData = {
+    const ruleData: Record<string, unknown> = {
       fields,
       time_from,
       time_to,
@@ -73,6 +73,9 @@ export async function POST(request: NextRequest) {
       reason: reason || "Bloqueado manual",
       created_at: new Date().toISOString(),
     };
+    if (contact_phone?.trim()) ruleData.contact_phone = String(contact_phone).replace(/\D/g, "").slice(-11);
+    if (contact_name?.trim()) ruleData.contact_name = String(contact_name).trim();
+    if (contact_dni?.trim()) ruleData.contact_dni = String(contact_dni).replace(/\D/g, "").slice(0, 8);
 
     const ruleRef = await db.collection("block-rules").add(ruleData);
     const ruleId = ruleRef.id;

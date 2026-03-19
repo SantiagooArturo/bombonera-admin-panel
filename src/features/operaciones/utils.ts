@@ -2,7 +2,7 @@ import { TIME_SLOTS, type Reservation, type User } from "@/lib/types";
 import { isHoliday } from "@/lib/feriados-peru";
 import type { CourtFieldConfig } from "@/lib/court-config";
 
-export const MAX_DAY_OFFSET = 7;
+export const MAX_DAY_OFFSET = 14;
 
 export const BLOCK_REASONS = [
   "Mantenimiento",
