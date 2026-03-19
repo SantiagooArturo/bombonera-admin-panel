@@ -271,6 +271,7 @@ function VerificacionContent() {
                     cancellingReservation={sidebar.cancellingReservation}
                     onRevokeManualPayment={sidebar.handleRevokeManualPayment}
                     onRegisterPayment={sidebar.handleRegisterPayment}
+                    onToggleApplied={sidebar.handleToggleApplied}
                     onUpdatePrice={sidebar.handleUpdatePrice}
                     onUpdateAmountPaid={sidebar.handleUpdateAmountPaid}
                     clientType={sidebar.clientType}
@@ -280,6 +281,7 @@ function VerificacionContent() {
                     onClose={sidebar.close}
                     courtConfigs={courtConfigs}
                     allReservationsThisWeek={sidebar.allReservationsThisWeek}
+                    allClientReservations={sidebar.allClientReservations}
                     onSelectReservationFromList={(r) => sidebar.open(r)}
                 />
             )}

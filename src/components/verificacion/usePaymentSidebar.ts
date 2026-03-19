@@ -16,6 +16,7 @@ export function usePaymentSidebar(options?: UsePaymentSidebarOptions) {
 
   const [selectedReservation, setSelectedReservation] = useState<Reservation | null>(null);
   const [allReservationsThisWeek, setAllReservationsThisWeek] = useState<Reservation[]>([]);
+  const [allClientReservations, setAllClientReservations] = useState<Reservation[]>([]);
   const allReservationsChatIdRef = useRef<string | null>(null);
   const [transfers, setTransfers] = useState<Transfer[]>([]);
   const [invoices, setInvoices] = useState<Invoice[]>([]);
@@ -40,24 +41,57 @@ export function usePaymentSidebar(options?: UsePaymentSidebarOptions) {
     const nextChatId = String(reservation.chat_id || reservation.phone_number || "").replace(/\D/g, "");
     if (allReservationsChatIdRef.current && allReservationsChatIdRef.current !== nextChatId) {
       setAllReservationsThisWeek([]);
+      setAllClientReservations([]);
       allReservationsChatIdRef.current = null;
     }
     setSelectedReservation(reservation);
     setLoadingData(true);
     setClientTypeLoading(true);
+
+    // Usar client_type de la cache (users) si está disponible → mostrar al instante
+    const cachedUsers = store.getUsers();
+    const norm = (s: string) => s.replace(/\D/g, "").slice(-9);
+    const resNorm = norm(reservation.phone_number || reservation.chat_id || "");
+    const cachedUser = cachedUsers.find(
+      (u) =>
+        resNorm && resNorm.length >= 9 && (
+          norm(u.id || "") === resNorm ||
+          norm(u.chat_id || "") === resNorm ||
+          (u.phone_number && norm(u.phone_number) === resNorm)
+        )
+    );
+    const validType = (t: string): t is ClientType =>
+      t === "casual" || t === "recurrente" || t === "sospechoso_fraude";
+    if (cachedUser && validType(cachedUser.client_type)) {
+      setClientType(cachedUser.client_type);
+      setClientTypeLoading(false);
+      setUserNames({
+        custom_name: cachedUser.custom_name,
+        contact_name: cachedUser.contact_name,
+        push_name: cachedUser.push_name,
+      });
+    }
+
     try {
       await store.syncReservationPayments(reservation.id);
 
       const normalizedChatId = String(reservation.chat_id || "").replace(/\D/g, "");
       const chatIdForApi = reservation.chat_id || normalizedChatId || reservation.phone_number;
-      const [transfersData, invoicesData, freshResReq, clientTypeRes, clientReservationsRes] = await Promise.all([
-        store.fetchTransfers(reservation.id),
-        store.fetchInvoices({ reservation_id: reservation.id }),
+      const [transfersByClientRaw, freshResReq, clientTypeRes, clientReservationsRes] = await Promise.all([
+        store.fetchTransfersByChatId(chatIdForApi || ""),
         fetch(`/api/reservations?id=${reservation.id}`),
         fetch(`/api/users/client-type?chat_id=${encodeURIComponent(normalizedChatId)}`, { cache: "no-store" }),
         chatIdForApi ? fetch(`/api/reservations?phone_number=${encodeURIComponent(String(chatIdForApi))}`) : Promise.resolve(new Response("[]")),
       ]);
-      setTransfers(transfersData || []);
+
+      let transfersByClient = transfersByClientRaw;
+      if ((!transfersByClient || transfersByClient.length === 0) && reservation.id) {
+        transfersByClient = await store.fetchTransfers(reservation.id);
+      }
+      const transferIds = (transfersByClient || []).map((t) => t.id).filter(Boolean);
+      const invoicesData = transferIds.length > 0 ? await store.fetchInvoicesByTransferIds(transferIds) : [];
+
+      setTransfers(transfersByClient || []);
       setInvoices(invoicesData || []);
 
       let freshReservation = reservation;
@@ -68,7 +102,8 @@ export function usePaymentSidebar(options?: UsePaymentSidebarOptions) {
         }
       }
 
-      const total = (transfersData || []).reduce((sum: number, t: Transfer) => {
+      const transfersForRes = (transfersByClient || []).filter((t) => t.reservation_id === reservation.id);
+      const total = transfersForRes.reduce((sum: number, t: Transfer) => {
         if (t.status === "applied" || t.status === "partial") return sum + (t.amount || 0);
         return sum;
       }, 0);
@@ -95,27 +130,24 @@ export function usePaymentSidebar(options?: UsePaymentSidebarOptions) {
 
       if (clientReservationsRes?.ok) {
         const allClientRes = await clientReservationsRes.json();
-        const resDate = new Date(reservation.date + "T12:00:00");
-        const day = resDate.getDay();
-        const diffToMon = day === 0 ? -6 : 1 - day;
-        const mon = new Date(resDate);
-        mon.setDate(mon.getDate() + diffToMon);
-        const sun = new Date(mon);
-        sun.setDate(sun.getDate() + 6);
-        const weekStart = mon.toISOString().slice(0, 10);
-        const weekEnd = sun.toISOString().slice(0, 10);
-        const full = (Array.isArray(allClientRes) ? allClientRes : [])
-          .filter((r: Reservation) => r.date >= weekStart && r.date <= weekEnd && r.status !== "cancelled" && r.status !== "expired")
-          .sort((a: Reservation, b: Reservation) => {
-            const cmp = (a.date || "").localeCompare(b.date || "");
-            if (cmp !== 0) return cmp;
-            const aStart = a.time_slots?.[0] || "";
-            const bStart = b.time_slots?.[0] || "";
-            return aStart.localeCompare(bStart);
-          });
-        setAllReservationsThisWeek(full);
+        const now = new Date();
+        const todayStr = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-${String(now.getDate()).padStart(2, "0")}`;
+        const sortFn = (a: Reservation, b: Reservation) => {
+          const cmp = (a.date || "").localeCompare(b.date || "");
+          if (cmp !== 0) return cmp;
+          const aStart = a.time_slots?.[0] || "";
+          const bStart = b.time_slots?.[0] || "";
+          return aStart.localeCompare(bStart);
+        };
+        const allFiltered = (Array.isArray(allClientRes) ? allClientRes : [])
+          .filter((r: Reservation) => r.status !== "cancelled" && r.status !== "expired")
+          .sort(sortFn);
+        const upcomingOnly = allFiltered.filter((r: Reservation) => (r.date || "") >= todayStr);
+        setAllClientReservations(allFiltered);
+        setAllReservationsThisWeek(upcomingOnly);
         allReservationsChatIdRef.current = String(chatIdForApi || "").replace(/\D/g, "");
       } else {
+        setAllClientReservations([]);
         setAllReservationsThisWeek([]);
         allReservationsChatIdRef.current = null;
       }
@@ -132,6 +164,7 @@ export function usePaymentSidebar(options?: UsePaymentSidebarOptions) {
   const close = useCallback(() => {
     setSelectedReservation(null);
     setAllReservationsThisWeek([]);
+    setAllClientReservations([]);
     allReservationsChatIdRef.current = null;
     setTransfers([]);
     setInvoices([]);
@@ -208,6 +241,18 @@ export function usePaymentSidebar(options?: UsePaymentSidebarOptions) {
     }
   }, [store, toast]);
 
+  const handleToggleApplied = useCallback(async (transferId: string, applied: boolean) => {
+    const success = await store.updateTransferApplied(transferId, applied);
+    if (success) {
+      setTransfers((prev) =>
+        prev.map((t) => (t.id === transferId ? { ...t, applied } : t))
+      );
+      toast(applied ? "Pago marcado como aplicado" : "Marca de aplicado removida", "success");
+    } else {
+      toast("Error al actualizar", "error");
+    }
+  }, [store, toast]);
+
   const handleEmitInvoice = useCallback(async (
     transfer: Transfer,
     params: { tipo_comprobante: "boleta" | "factura"; doc_num: string }
@@ -225,7 +270,8 @@ export function usePaymentSidebar(options?: UsePaymentSidebarOptions) {
       );
       if (result) {
         toast("Comprobante emitido correctamente", "success");
-        const newInvoices = await store.fetchInvoices({ reservation_id: selectedReservation.id });
+        const ids = transfers.map((t) => t.id).filter(Boolean);
+        const newInvoices = ids.length > 0 ? await store.fetchInvoicesByTransferIds(ids) : [];
         setInvoices(newInvoices || []);
       } else {
         toast("Error al emitir comprobante", "error");
@@ -237,7 +283,7 @@ export function usePaymentSidebar(options?: UsePaymentSidebarOptions) {
     } finally {
       setEmittingInvoiceId(null);
     }
-  }, [store, toast, selectedReservation]);
+  }, [store, toast, selectedReservation, transfers]);
 
   const handleUpdateName = useCallback(async (name: string) => {
     if (!selectedReservation) return false;
@@ -330,7 +376,8 @@ export function usePaymentSidebar(options?: UsePaymentSidebarOptions) {
 
       if (data.success) {
         toast("Boleta adjuntada correctamente", "success");
-        const newInvoices = await store.fetchInvoices({ reservation_id: selectedReservation.id });
+        const ids = transfers.map((t) => t.id).filter(Boolean);
+        const newInvoices = ids.length > 0 ? await store.fetchInvoicesByTransferIds(ids) : [];
         setInvoices(newInvoices || []);
       } else {
         toast(data.error || "Error al adjuntar boleta", "error");
@@ -341,7 +388,7 @@ export function usePaymentSidebar(options?: UsePaymentSidebarOptions) {
     } finally {
       setAttachingInvoiceId(null);
     }
-  }, [store, toast, selectedReservation]);
+  }, [store, toast, selectedReservation, transfers]);
 
   const handleDetachInvoice = useCallback(async (invoiceId: string) => {
     if (!selectedReservation) return false;
@@ -382,48 +429,67 @@ export function usePaymentSidebar(options?: UsePaymentSidebarOptions) {
     }
   }, [store, toast, selectedReservation, options]);
 
-  const handleUpdateAmountPaid = useCallback(async (amountPaid: number) => {
-    if (!selectedReservation) return false;
+  const handleUpdateAmountPaid = useCallback(async (amountPaid: number, reservationId?: string) => {
+    const id = reservationId ?? selectedReservation?.id;
+    if (!id) return false;
+    const prevReservations = allClientReservations;
+    const prevSelected = selectedReservation;
+    setAllClientReservations((prev) =>
+      prev.map((r) => (r.id === id ? { ...r, amount_paid: amountPaid } : r))
+    );
+    setSelectedReservation((prev) =>
+      prev?.id === id ? { ...prev, amount_paid: amountPaid } : prev
+    );
+    options?.onReservationUpdated?.(id, { amount_paid: amountPaid });
     try {
       const res = await fetch("/api/reservations", {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ id: selectedReservation.id, amount_paid: amountPaid }),
+        body: JSON.stringify({ id, amount_paid: amountPaid }),
       });
       if (!res.ok) {
+        setAllClientReservations(prevReservations);
+        setSelectedReservation(prevSelected);
         toast("No se pudo actualizar el monto pagado", "error");
         return false;
       }
-      setSelectedReservation((prev) =>
-        prev ? { ...prev, amount_paid: amountPaid } : prev
-      );
-      options?.onReservationUpdated?.(selectedReservation.id, { amount_paid: amountPaid });
-      const newTransfers = await store.fetchTransfers(selectedReservation.id);
-      setTransfers(newTransfers || []);
+      const resForChat = prevReservations.find((r) => r.id === id) ?? prevSelected;
+      const chatId = resForChat?.chat_id || resForChat?.phone_number || "";
+      if (chatId) {
+        store.fetchTransfersByChatId(chatId).then((newTransfers) => {
+          setTransfers(newTransfers || []);
+        });
+      }
       toast("Monto pagado actualizado", "success");
       return true;
     } catch {
+      setAllClientReservations(prevReservations);
+      setSelectedReservation(prevSelected);
       toast("Error al actualizar monto pagado", "error");
       return false;
     }
-  }, [selectedReservation, options, toast, store]);
+  }, [selectedReservation, allClientReservations, options, toast, store]);
 
-  const handleUpdatePrice = useCallback(async (totalPrice: number) => {
-    if (!selectedReservation) return false;
+  const handleUpdatePrice = useCallback(async (totalPrice: number, reservationId?: string) => {
+    const id = reservationId ?? selectedReservation?.id;
+    if (!id) return false;
     try {
       const res = await fetch("/api/reservations", {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ id: selectedReservation.id, total_price: totalPrice }),
+        body: JSON.stringify({ id, total_price: totalPrice }),
       });
       if (!res.ok) {
         toast("No se pudo actualizar el precio", "error");
         return false;
       }
-      setSelectedReservation((prev) =>
-        prev ? { ...prev, total_price: totalPrice } : prev
+      setAllClientReservations((prev) =>
+        prev.map((r) => (r.id === id ? { ...r, total_price: totalPrice } : r))
       );
-      options?.onReservationUpdated?.(selectedReservation.id, { total_price: totalPrice });
+      setSelectedReservation((prev) =>
+        prev?.id === id ? { ...prev, total_price: totalPrice } : prev
+      );
+      options?.onReservationUpdated?.(id, { total_price: totalPrice });
       toast("Precio actualizado", "success");
       return true;
     } catch {
@@ -432,28 +498,37 @@ export function usePaymentSidebar(options?: UsePaymentSidebarOptions) {
     }
   }, [selectedReservation, options, toast]);
 
-  const handleRegisterPayment = useCallback(async (amount: number, method: PaymentMethod, mediaUrl?: string) => {
-    if (!selectedReservation) return;
+  const handleRegisterPayment = useCallback(async (reservationId: string, amount: number, method: PaymentMethod, mediaUrl?: string) => {
+    const targetRes = allClientReservations.find((r) => r.id === reservationId) ?? selectedReservation;
+    if (!targetRes) return;
+    const phoneNumber = targetRes.phone_number || selectedReservation?.phone_number || "";
+    if (!phoneNumber) return;
     setPaymentLoading(true);
     try {
       const result = await store.processManualPayment(
-        selectedReservation.id,
+        reservationId,
         amount,
-        selectedReservation.phone_number,
+        phoneNumber,
         method,
         mediaUrl,
       );
       if (result?.success) {
-        toast(`Cobro registrado: S/ ${amount.toFixed(2)}`, "success");
+        toast(`Pago registrado: S/ ${amount.toFixed(2)}`, "success");
         const patch: Partial<Reservation> = {
           amount_paid: result.new_amount_paid,
-          status: selectedReservation.status === "pending" ? "confirmed" : selectedReservation.status,
+          status: targetRes.status === "pending" ? "confirmed" : targetRes.status,
           confirmed: true,
         };
-        setSelectedReservation((prev) => prev ? { ...prev, ...patch } : null);
-        options?.onReservationUpdated?.(selectedReservation.id, patch);
+        setAllClientReservations((prev) =>
+          prev.map((r) => (r.id === reservationId ? { ...r, ...patch } : r))
+        );
+        setSelectedReservation((prev) =>
+          prev?.id === reservationId ? { ...prev, ...patch } : prev
+        );
+        options?.onReservationUpdated?.(reservationId, patch);
 
-        const newTransfers = await store.fetchTransfers(selectedReservation.id);
+        const chatId = targetRes.chat_id || targetRes.phone_number || selectedReservation?.chat_id || "";
+        const newTransfers = await store.fetchTransfersByChatId(chatId);
         setTransfers(newTransfers || []);
       } else {
         toast("Error al procesar el pago", "error");
@@ -463,7 +538,7 @@ export function usePaymentSidebar(options?: UsePaymentSidebarOptions) {
     } finally {
       setPaymentLoading(false);
     }
-  }, [store, toast, selectedReservation, options]);
+  }, [store, toast, selectedReservation, allClientReservations, options]);
 
   const displayName =
     userNames.custom_name ||
@@ -476,6 +551,7 @@ export function usePaymentSidebar(options?: UsePaymentSidebarOptions) {
     selectedReservation,
     setSelectedReservation,
     allReservationsThisWeek,
+    allClientReservations,
     transfers,
     invoices,
     userNames,
@@ -505,5 +581,6 @@ export function usePaymentSidebar(options?: UsePaymentSidebarOptions) {
     handleRegisterPayment,
     handleUpdateAmountPaid,
     handleUpdatePrice,
+    handleToggleApplied,
   };
 }

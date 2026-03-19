@@ -203,6 +203,8 @@ export interface Transfer {
   transaction_date: string | null;
   operation_id: string | null;
   reservation_id: string | null;
+  /** chat_id del cliente (de la reserva). Para consultar transfers por cliente. */
+  chat_id?: string | null;
   status: TransferStatus;
   source: PaymentSource;
   payment_method: PaymentMethod;
@@ -210,6 +212,8 @@ export interface Transfer {
   media_url?: string | null;
   verified?: boolean;
   verified_at?: string;
+  /** Marca manual: "ya usado para marcar una reserva" (evitar usarlo dos veces). */
+  applied?: boolean;
   created_at: string;
 }
 

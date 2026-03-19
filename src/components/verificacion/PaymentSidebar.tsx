@@ -4,9 +4,9 @@ import { useState, useRef, useEffect, useCallback } from "react";
 import { compressImageForUpload } from "@/lib/compress-image";
 import { Transfer, Invoice, Reservation, PaymentMethod, ClientType, CLIENT_TYPE_LABELS, STATUS_LABELS, getPendingExpiryTimeFormatted, type ReservationStatus } from "@/lib/types";
 import { renderPdfToDataUrl } from "@/lib/pdf-preview";
-import { calculateReservationPrice, courtConfigsToMap } from "@/features/operaciones/utils";
 import type { CourtFieldConfig } from "@/lib/court-config";
 import { getCourtSizeLabel } from "@/lib/court-config";
+import { calculateReservationPrice, courtConfigsToMap } from "@/features/operaciones/utils";
 
 // ─── WhatsApp icon (reutilizado) ─────────────────────────────────────────────
 
@@ -93,9 +93,10 @@ interface PaymentSidebarProps {
   /** Para inicializar el input al editar: usamos custom_name (solo eso se edita) */
   userCustomName?: string;
   onRevokeManualPayment: (transferId: string) => void;
-  onRegisterPayment: (amount: number, method: PaymentMethod, mediaUrl?: string) => void;
-  onUpdatePrice?: (totalPrice: number) => Promise<boolean>;
-  onUpdateAmountPaid?: (amountPaid: number) => Promise<boolean>;
+  onRegisterPayment: (reservationId: string, amount: number, method: PaymentMethod, mediaUrl?: string) => void;
+  onToggleApplied?: (transferId: string, applied: boolean) => void;
+  onUpdatePrice?: (totalPrice: number, reservationId?: string) => Promise<boolean>;
+  onUpdateAmountPaid?: (amountPaid: number, reservationId?: string) => Promise<boolean>;
   clientType: ClientType;
   clientTypeLoading?: boolean;
   clientTypeUpdating?: boolean;
@@ -108,6 +109,8 @@ interface PaymentSidebarProps {
   courtConfigs?: CourtFieldConfig[] | null;
   /** Todas las reservas del cliente esta semana (incl. actual), ordenadas por fecha. */
   allReservationsThisWeek?: Reservation[];
+  /** Todas las reservas del cliente (pasadas, esta semana, futuras) para el tab Cobros. */
+  allClientReservations?: Reservation[];
   /** Al hacer click en una reserva de la lista: navegar a ella (ej. cambiar día en operaciones). */
   onSelectReservationFromList?: (reservation: Reservation) => void;
 }
@@ -174,21 +177,52 @@ function wspLink(phone: string) {
   return `https://wa.me/${phone.startsWith("51") ? phone : `51${phone}`}?text=.`;
 }
 
-// ─── Register Payment Form ───────────────────────────────────────────────────
+// ─── Register Payment Form (Cobros: con selector de reserva) ───────────────────
 
-function RegisterPaymentForm({
-  remaining,
+const PENCIL_ICON = (
+  <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" />
+  </svg>
+);
+
+function RegisterPaymentFormCobros({
+  reservationsWithDebt,
+  totalRemaining,
   loading,
   onSubmit,
-  isCancelled = false,
+  open: openControlled,
+  onOpenChange,
+  initialTargetId,
+  hideButton = false,
 }: {
-  remaining: number;
+  reservationsWithDebt: Reservation[];
+  totalRemaining: number;
   loading: boolean;
-  onSubmit: (amount: number, method: PaymentMethod, mediaUrl?: string) => void;
-  isCancelled?: boolean;
+  onSubmit: (reservationId: string, amount: number, method: PaymentMethod, mediaUrl?: string) => void;
+  open?: boolean;
+  onOpenChange?: (open: boolean) => void;
+  initialTargetId?: string;
+  hideButton?: boolean;
 }) {
-  const [open, setOpen] = useState(false);
-  const [amount, setAmount] = useState(remaining.toFixed(2));
+  const defaultTarget = reservationsWithDebt[0];
+  const [openInternal, setOpenInternal] = useState(false);
+  const open = openControlled ?? openInternal;
+  const setOpen = onOpenChange ? (v: boolean) => onOpenChange(v) : setOpenInternal;
+  const [targetId, setTargetId] = useState(defaultTarget?.id ?? "");
+  const selectedRes = reservationsWithDebt.find((r) => r.id === targetId) ?? defaultTarget;
+  const remainingForSelected = selectedRes
+    ? Math.max(0, (selectedRes.total_price ?? 0) - (selectedRes.amount_paid ?? 0))
+    : totalRemaining;
+  const [amount, setAmount] = useState(remainingForSelected.toFixed(2));
+
+  useEffect(() => {
+    if (open && initialTargetId && reservationsWithDebt.some((r) => r.id === initialTargetId)) {
+      setTargetId(initialTargetId);
+      const r = reservationsWithDebt.find((x) => x.id === initialTargetId);
+      const rem = r ? Math.max(0, (r.total_price ?? 0) - (r.amount_paid ?? 0)) : 0;
+      setAmount((rem > 0 ? rem : 1).toFixed(2));
+    }
+  }, [open, initialTargetId, reservationsWithDebt]);
   const [method, setMethod] = useState<PaymentMethod>("efectivo");
   const [file, setFile] = useState<File | null>(null);
   const [preview, setPreview] = useState<string | null>(null);
@@ -196,7 +230,7 @@ function RegisterPaymentForm({
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const parsedAmount = parseFloat(amount);
-  const isValid = !isNaN(parsedAmount) && parsedAmount > 0;
+  const isValid = !isNaN(parsedAmount) && parsedAmount > 0 && targetId;
   const busy = loading || uploading;
 
   function clearFile() {
@@ -212,8 +246,20 @@ function RegisterPaymentForm({
     setPreview(URL.createObjectURL(selected));
   }
 
+  function formatResLabel(r: Reservation) {
+    const d = new Date(r.date + "T12:00:00");
+    const dayName = d.toLocaleDateString("es-PE", { weekday: "short" });
+    const dayNum = d.getDate();
+    const start = r.time_slots?.[0] || "";
+    const lastH = r.time_slots?.length ? parseInt(r.time_slots[r.time_slots.length - 1].split(":")[0]) + 1 : 0;
+    const timeStr = `${formatHour12(start).replace(/:00\s?/g, "").replace(/\s/g, "")}-${formatHour12(`${lastH}:00`).replace(/:00\s?/g, "").replace(/\s/g, "")}`;
+    const field = r.field ? `C${r.field}` : "";
+    const rem = Math.max(0, (r.total_price ?? 0) - (r.amount_paid ?? 0));
+    return `${dayName} ${dayNum} · ${timeStr} ${field ? `· ${field}` : ""} — S/ ${rem.toFixed(2)} pendiente`;
+  }
+
   async function handleConfirm() {
-    if (!isValid || busy) return;
+    if (!isValid || busy || !targetId) return;
 
     let mediaUrl: string | undefined;
     if (method === "digital" && file) {
@@ -233,39 +279,72 @@ function RegisterPaymentForm({
       setUploading(false);
     }
 
-    onSubmit(parsedAmount, method, mediaUrl);
+    onSubmit(targetId, parsedAmount, method, mediaUrl);
     setOpen(false);
-    setAmount((remaining > 0 ? remaining : 1).toFixed(2));
+    setAmount((remainingForSelected > 0 ? remainingForSelected : 1).toFixed(2));
     setMethod("efectivo");
     clearFile();
   }
 
-  if (isCancelled) return null;
+  if (reservationsWithDebt.length === 0) return null;
 
   if (!open) {
+    if (hideButton) return null;
     return (
-      <button
-        onClick={() => { setOpen(true); setAmount((remaining > 0 ? remaining : 1).toFixed(2)); }}
-        className="w-full py-3 px-4 rounded-xl font-bold text-sm bg-blue-600 text-white hover:bg-blue-700 transition-colors flex items-center justify-center gap-2 shadow-sm"
-      >
-        <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
-        </svg>
-        Registrar cobro
-      </button>
+      <div className="space-y-1">
+        <button
+          onClick={() => {
+            setOpen(true);
+            setTargetId(defaultTarget?.id ?? "");
+            setAmount((remainingForSelected > 0 ? remainingForSelected : 1).toFixed(2));
+          }}
+          className="w-full py-3 px-4 rounded-xl font-bold text-sm bg-blue-600 text-white hover:bg-blue-700 transition-colors flex items-center justify-center gap-2 shadow-sm"
+        >
+          <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
+          </svg>
+          Anotar pago recibido
+        </button>
+        <p className="text-xs text-gray-500 text-center">Cuando el cliente te paga y quieres dejar registro</p>
+      </div>
     );
   }
 
   return (
     <div className="rounded-2xl border-2 border-blue-200 bg-white p-5 space-y-4">
       <div className="flex items-center justify-between">
-        <h4 className="font-bold text-gray-900">Registrar cobro</h4>
+        <div>
+          <h4 className="font-bold text-gray-900">Anotar pago recibido</h4>
+          <p className="text-xs text-gray-500 mt-0.5">Deja registro de que el cliente te pagó</p>
+        </div>
         <button onClick={() => { setOpen(false); clearFile(); }} className="text-gray-400 hover:text-gray-600 p-1">
           <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
           </svg>
         </button>
       </div>
+
+      {reservationsWithDebt.length > 1 && (
+        <div>
+          <label className="block text-sm font-medium text-gray-600 mb-2">¿A qué reserva va este pago?</label>
+          <select
+            value={targetId}
+            onChange={(e) => {
+              setTargetId(e.target.value);
+              const r = reservationsWithDebt.find((x) => x.id === e.target.value);
+              const rem = r ? Math.max(0, (r.total_price ?? 0) - (r.amount_paid ?? 0)) : 0;
+              setAmount((rem > 0 ? rem : 1).toFixed(2));
+            }}
+            className="w-full rounded-xl border-2 border-gray-200 px-3 py-2.5 text-sm font-medium focus:border-blue-500 focus:outline-none"
+          >
+            {reservationsWithDebt.map((r) => (
+              <option key={r.id} value={r.id}>
+                {formatResLabel(r)}
+              </option>
+            ))}
+          </select>
+        </div>
+      )}
 
       <div>
         <label className="block text-sm font-medium text-gray-600 mb-2">Método de pago</label>
@@ -329,7 +408,7 @@ function RegisterPaymentForm({
       )}
 
       <div>
-        <label className="block text-sm font-medium text-gray-600 mb-2">Monto a cobrar (S/)</label>
+        <label className="block text-sm font-medium text-gray-600 mb-2">Monto (S/)</label>
         <input
           type="number"
           step="0.01"
@@ -339,7 +418,7 @@ function RegisterPaymentForm({
           className="w-full px-4 py-3 text-lg font-bold rounded-xl border-2 border-gray-200 focus:border-blue-500 focus:outline-none bg-gray-50"
         />
         <p className="text-xs text-gray-400 mt-1">
-          Deuda actual sugerida: S/ {Math.max(remaining, 0).toFixed(2)}. Puedes cobrar un monto mayor si necesitas ajustar deudas previas.
+          Pendiente de esta reserva: S/ {remainingForSelected.toFixed(2)}
         </p>
       </div>
 
@@ -356,9 +435,127 @@ function RegisterPaymentForm({
           disabled={!isValid || busy}
           className="flex-1 py-3 px-4 font-semibold rounded-xl bg-blue-600 text-white hover:bg-blue-700 transition-colors disabled:opacity-50 text-sm"
         >
-          {uploading ? "Subiendo..." : loading ? "Procesando..." : "Cobrar"}
+          {uploading ? "Subiendo..." : loading ? "Procesando..." : "Registrar"}
         </button>
       </div>
+    </div>
+  );
+}
+
+// ─── Payment Accordion (compacto → expande TransferCard completo) ─────────────
+
+function PaymentAccordionList({
+  transfers,
+  invoices,
+  emittingInvoiceId,
+  attachingInvoiceId,
+  onVerifyTransfer,
+  onEmitInvoice,
+  onAttachInvoice,
+  onDetachInvoice,
+  onRevokeManualPayment,
+  onToggleApplied,
+  onViewImage,
+  onHover,
+  chatId,
+  clientDni,
+}: {
+  transfers: Transfer[];
+  invoices: Invoice[];
+  emittingInvoiceId: string | null;
+  attachingInvoiceId: string | null;
+  onVerifyTransfer: (id: string, verified: boolean) => void;
+  onEmitInvoice: (t: Transfer, p: { tipo_comprobante: "boleta" | "factura"; doc_num: string }) => void;
+  onAttachInvoice: (t: Transfer, f: File) => void;
+  onDetachInvoice: (id: string) => Promise<boolean>;
+  onRevokeManualPayment: (id: string) => void;
+  onToggleApplied: (transferId: string, applied: boolean) => void;
+  onViewImage: (url: string) => void;
+  onHover: (id: string | null) => void;
+  chatId: string;
+  clientDni?: string | null;
+}) {
+  const [expandedId, setExpandedId] = useState<string | null>(null);
+
+  return (
+    <div className="space-y-2">
+      {transfers.map((t) => {
+        const dateStr = formatTransferDate(t.created_at);
+        const isApplied = t.applied ?? (t.status === "applied" || t.status === "partial");
+        const inv = invoices.find((i) => i.transfer_id === t.id);
+        const isExpanded = expandedId === t.id;
+
+        return (
+          <div
+            key={t.id}
+            className={`rounded-xl border-2 overflow-hidden transition-all ${isExpanded ? "border-blue-300" : "border-gray-200 bg-white"}`}
+          >
+            <button
+              type="button"
+              onClick={() => setExpandedId(isExpanded ? null : t.id)}
+              className="w-full flex items-center justify-between gap-3 py-2.5 px-4 hover:bg-gray-50 transition-colors text-left"
+              onMouseEnter={() => onHover(t.id)}
+              onMouseLeave={() => onHover(null)}
+            >
+              <div className="flex items-center gap-3 min-w-0">
+                {t.media_url ? (
+                  <div className="w-10 h-10 rounded-lg overflow-hidden shrink-0 bg-gray-100">
+                    {/* eslint-disable-next-line @next/next/no-img-element */}
+                    <img src={t.media_url} alt="" className="w-full h-full object-cover" />
+                  </div>
+                ) : (
+                  <div className="w-10 h-10 rounded-lg bg-gray-100 shrink-0 flex items-center justify-center">
+                    <svg className="w-5 h-5 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M17 9V7a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2m2 4h10a2 2 0 002-2v-6a2 2 0 00-2-2H9a2 2 0 00-2 2v6a2 2 0 002 2zm7-5a2 2 0 11-4 0 2 2 0 014 0z" />
+                    </svg>
+                  </div>
+                )}
+                <span className="text-sm font-medium text-gray-700">{dateStr}</span>
+                <span className="text-sm font-bold text-gray-900">S/ {(t.amount ?? 0).toFixed(2)}</span>
+              </div>
+              <label
+                onClick={(e) => e.stopPropagation()}
+                className="flex items-center gap-2 cursor-pointer shrink-0"
+              >
+                <input
+                  type="checkbox"
+                  checked={!!isApplied}
+                  onChange={(e) => onToggleApplied(t.id, e.target.checked)}
+                  className="rounded border-gray-300 text-blue-600 focus:ring-blue-500 w-5 h-5 cursor-pointer"
+                />
+                <span className="text-xs font-medium text-gray-600">Aplicado</span>
+              </label>
+              <svg
+                className={`w-5 h-5 text-gray-400 shrink-0 transition-transform ${isExpanded ? "rotate-180" : ""}`}
+                fill="none"
+                viewBox="0 0 24 24"
+                stroke="currentColor"
+              >
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+              </svg>
+            </button>
+            {isExpanded && (
+              <div className="p-2 border-t border-gray-200 bg-gray-50/50">
+                <TransferCard
+                  transfer={t}
+                  invoice={inv}
+                  emittingInvoiceId={emittingInvoiceId}
+                  attachingInvoiceId={attachingInvoiceId}
+                  onVerify={onVerifyTransfer}
+                  onEmitInvoice={onEmitInvoice}
+                  onAttachInvoice={onAttachInvoice}
+                  onDetachInvoice={onDetachInvoice}
+                  onRevoke={onRevokeManualPayment}
+                  onViewImage={onViewImage}
+                  onHover={(h) => onHover(h ? t.id : null)}
+                  chatId={chatId}
+                  clientDni={clientDni}
+                />
+              </div>
+            )}
+          </div>
+        );
+      })}
     </div>
   );
 }
@@ -710,6 +907,331 @@ function TransferCard({
   );
 }
 
+// ─── Cobros Tab Content ─────────────────────────────────────────────────────
+
+function CobrosTabContent({
+  allClientReservations,
+  reservation,
+  transfers,
+  invoices,
+  loading,
+  emittingInvoiceId,
+  attachingInvoiceId,
+  onVerifyTransfer,
+  onEmitInvoice,
+  onAttachInvoice,
+  onDetachInvoice,
+  onRevokeManualPayment,
+  onRegisterPayment,
+  onToggleApplied,
+  onUpdatePrice,
+  onUpdateAmountPaid,
+  paymentLoading,
+  chatId,
+  clientDni,
+  setViewingImage,
+  setHoveredTransferId,
+}: {
+  allClientReservations: Reservation[];
+  reservation: Reservation;
+  transfers: Transfer[];
+  invoices: Invoice[];
+  loading: boolean;
+  emittingInvoiceId: string | null;
+  attachingInvoiceId: string | null;
+  onVerifyTransfer: (id: string, verified: boolean) => void;
+  onEmitInvoice: (t: Transfer, p: { tipo_comprobante: "boleta" | "factura"; doc_num: string }) => void;
+  onAttachInvoice: (t: Transfer, f: File) => void;
+  onDetachInvoice: (id: string) => Promise<boolean>;
+  onRevokeManualPayment: (id: string) => void;
+  onRegisterPayment: (reservationId: string, amount: number, method: PaymentMethod, mediaUrl?: string) => void;
+  onToggleApplied: (transferId: string, applied: boolean) => void;
+  onUpdatePrice?: (totalPrice: number, reservationId?: string) => Promise<boolean>;
+  onUpdateAmountPaid?: (amountPaid: number, reservationId?: string) => Promise<boolean>;
+  paymentLoading: boolean;
+  chatId: string;
+  clientDni?: string | null;
+  setViewingImage: (src: string) => void;
+  setHoveredTransferId: (id: string | null) => void;
+}) {
+  const resDate = new Date(reservation.date + "T12:00:00");
+  const day = resDate.getDay();
+  const diffToMon = day === 0 ? -6 : 1 - day;
+  const mon = new Date(resDate);
+  mon.setDate(mon.getDate() + diffToMon);
+  const sun = new Date(mon);
+  sun.setDate(sun.getDate() + 6);
+  const weekStart = mon.toISOString().slice(0, 10);
+  const weekEnd = sun.toISOString().slice(0, 10);
+
+  const [modifiedInSessionReservationIds, setModifiedInSessionReservationIds] = useState<Set<string>>(new Set());
+  const [modifiedInSessionTransferIds, setModifiedInSessionTransferIds] = useState<Set<string>>(new Set());
+
+  const isPaid = (r: Reservation) => (r.amount_paid ?? 0) >= (r.total_price ?? 0) && (r.total_price ?? 0) > 0;
+  const isThisWeek = (d: string) => d >= weekStart && d <= weekEnd;
+  const visibleReservations = allClientReservations.filter(
+    (r) => !isPaid(r) || isThisWeek(r.date) || modifiedInSessionReservationIds.has(r.id)
+  );
+  const past = visibleReservations.filter((r) => r.date < weekStart);
+  const thisWeekRes = visibleReservations.filter((r) => r.date >= weekStart && r.date <= weekEnd);
+  const future = visibleReservations.filter((r) => r.date > weekEnd);
+  const allOrdered = [...past, ...thisWeekRes, ...future];
+
+  const totalCost = allClientReservations.reduce((s, r) => s + (r.total_price ?? 0), 0);
+  const totalPaid = allClientReservations.reduce((s, r) => s + (r.amount_paid ?? 0), 0);
+  const totalRemaining = Math.max(0, totalCost - totalPaid);
+  const reservationsWithDebt = allClientReservations.filter((r) => (r.total_price ?? 0) - (r.amount_paid ?? 0) > 0);
+
+  const addDays = (dateStr: string, days: number) => {
+    const d = new Date(dateStr + "T12:00:00");
+    d.setDate(d.getDate() + days);
+    return d.toISOString().slice(0, 10);
+  };
+  const lastWeekStart = addDays(weekStart, -7);
+  const lastWeekEnd = addDays(weekEnd, -7);
+  const monthNames = ["Enero", "Febrero", "Marzo", "Abril", "Mayo", "Junio", "Julio", "Agosto", "Septiembre", "Octubre", "Noviembre", "Diciembre"] as const;
+  const getPeriodLabel = (dateStr: string): string => {
+    if (dateStr >= weekStart && dateStr <= weekEnd) return "Esta semana";
+    if (dateStr >= lastWeekStart && dateStr <= lastWeekEnd) return "Semana pasada";
+    const d = new Date(dateStr + "T12:00:00");
+    return monthNames[d.getMonth()] + " " + d.getFullYear();
+  };
+  const pendingByPeriod = reservationsWithDebt.reduce((acc, r) => {
+    const pending = Math.max(0, (r.total_price ?? 0) - (r.amount_paid ?? 0));
+    const label = getPeriodLabel(r.date);
+    acc[label] = (acc[label] ?? 0) + pending;
+    return acc;
+  }, {} as Record<string, number>);
+  const clientSearch = String(reservation.phone_number || reservation.chat_id || "").replace(/\D/g, "").slice(-9);
+  const historicoUrl = `/verificacion?search=${encodeURIComponent(clientSearch)}`;
+
+  const ReservationRow = ({
+    r,
+    onUpdatePrice,
+    onUpdateAmountPaid,
+    onMarkedInSession,
+    paymentLoading,
+  }: {
+    r: Reservation;
+    onUpdatePrice?: (totalPrice: number, reservationId?: string) => Promise<boolean>;
+    onUpdateAmountPaid?: (amountPaid: number, reservationId?: string) => Promise<boolean>;
+    onMarkedInSession?: (reservationId: string) => void;
+    paymentLoading: boolean;
+  }) => {
+    const price = r.total_price ?? 0;
+    const paid = r.amount_paid ?? 0;
+    const dateObj = new Date(r.date + "T12:00:00");
+    const dayName = dateObj.toLocaleDateString("es-PE", { weekday: "short" });
+    const dayNum = dateObj.getDate();
+    const start = r.time_slots?.[0] || "";
+    const lastH = r.time_slots?.length ? parseInt(r.time_slots[r.time_slots.length - 1].split(":")[0]) + 1 : 0;
+    const timeStr = `${formatHour12(start).replace(/:00\s?/g, "").replace(/\s/g, "")}-${formatHour12(`${lastH}:00`).replace(/:00\s?/g, "").replace(/\s/g, "")}`;
+    const fieldShort = r.field ? `C${r.field}` : "—";
+
+    const [editingPrice, setEditingPrice] = useState(false);
+    const [priceInput, setPriceInput] = useState(String(price));
+    const [updating, setUpdating] = useState(false);
+    const lastAmountBeforeFull = useRef<number>(0);
+    const isTogglingPaidRef = useRef(false);
+    useEffect(() => {
+      if (!editingPrice) setPriceInput(String(r.total_price ?? 0));
+    }, [r.id, r.total_price, editingPrice]);
+
+    const handleSavePrice = async () => {
+      const parsed = parseFloat(priceInput.replace(",", "."));
+      if (isNaN(parsed) || parsed < 0 || !onUpdatePrice) return;
+      setUpdating(true);
+      const ok = await onUpdatePrice(parsed, r.id);
+      setUpdating(false);
+      if (ok) setEditingPrice(false);
+    };
+
+    const handleTogglePaid = async (checked: boolean) => {
+      if (!onUpdateAmountPaid || isTogglingPaidRef.current) return;
+      isTogglingPaidRef.current = true;
+      setUpdating(true);
+      try {
+        if (checked) {
+          lastAmountBeforeFull.current = paid;
+          await onUpdateAmountPaid(price, r.id);
+          onMarkedInSession?.(r.id);
+        } else {
+          await onUpdateAmountPaid(lastAmountBeforeFull.current, r.id);
+        }
+      } finally {
+        isTogglingPaidRef.current = false;
+        setUpdating(false);
+      }
+    };
+
+    return (
+      <tr className="border-b border-gray-100 bg-white">
+        <td className="py-2.5 px-3 text-sm font-medium text-gray-900">
+          {dayName} {dayNum} · {timeStr} · {fieldShort}
+        </td>
+        <td className="py-2.5 px-3 text-sm text-gray-600 font-medium">
+          {editingPrice && onUpdatePrice ? (
+            <div className="flex items-center gap-1">
+              <span className="text-gray-500">S/</span>
+              <input
+                type="text"
+                inputMode="decimal"
+                value={priceInput}
+                onChange={(e) => setPriceInput(e.target.value.replace(/[^\d.,]/g, ""))}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter") void handleSavePrice();
+                  if (e.key === "Escape") { setEditingPrice(false); setPriceInput(String(price)); }
+                }}
+                className="w-16 px-1.5 py-0.5 rounded border border-blue-300 text-sm font-medium focus:outline-none focus:ring-1 focus:ring-blue-500"
+                autoFocus
+              />
+              <button onClick={() => void handleSavePrice()} disabled={updating} className="p-1 text-blue-600 hover:bg-blue-50 rounded" title="Guardar">
+                <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" /></svg>
+              </button>
+            </div>
+          ) : (
+            <button
+              type="button"
+              onClick={() => onUpdatePrice && setEditingPrice(true)}
+              className="flex items-center gap-1 group hover:bg-gray-50 rounded px-1 -mx-1 py-0.5"
+            >
+              S/ {price.toFixed(2)}
+              {onUpdatePrice && <span className="text-gray-400">{PENCIL_ICON}</span>}
+            </button>
+          )}
+        </td>
+        <td className="py-2.5 px-3 text-center">
+          {onUpdateAmountPaid && (
+            <label className="inline-flex items-center justify-center cursor-pointer" title={paid >= price ? "Quitar pago" : "Marcar como pagado"}>
+              <input
+                type="checkbox"
+                checked={paid >= price && price > 0}
+                onChange={(e) => void handleTogglePaid(e.target.checked)}
+                disabled={updating || paymentLoading}
+                className="rounded border-gray-300 text-green-600 focus:ring-green-500 w-5 h-5 cursor-pointer"
+              />
+            </label>
+          )}
+        </td>
+      </tr>
+    );
+  };
+
+  return (
+    <div className="flex-1 overflow-y-auto flex flex-col">
+      {/* Resumen: enfoque en lo que falta por cobrar */}
+      <div className="px-6 py-4 border-b border-gray-200 bg-gray-50 shrink-0">
+        <div className={`rounded-xl px-4 py-4 text-center border-2 min-h-[7.5rem] flex flex-col justify-center ${totalRemaining <= 0 ? "bg-green-50 border-green-200" : "bg-orange-50 border-orange-200"}`}>
+          <p className={`text-xs font-bold uppercase tracking-wide ${totalRemaining <= 0 ? "text-green-600" : "text-orange-600"}`}>Por cobrar</p>
+          <p className={`text-2xl font-bold mt-1 ${totalRemaining <= 0 ? "text-green-700" : "text-orange-600"}`}>S/ {totalRemaining.toFixed(2)}</p>
+          {Object.keys(pendingByPeriod).length > 0 && (
+            <div className="flex flex-wrap justify-center gap-x-3 gap-y-1 mt-2 text-xs font-medium text-gray-600">
+              {Object.entries(pendingByPeriod)
+                .sort(([a], [b]) => {
+                  const order = ["Esta semana", "Semana pasada"];
+                  const ai = order.indexOf(a);
+                  const bi = order.indexOf(b);
+                  if (ai >= 0 && bi >= 0) return ai - bi;
+                  if (ai >= 0) return -1;
+                  if (bi >= 0) return 1;
+                  return a.localeCompare(b);
+                })
+                .map(([label, amt]) => (
+                  <span key={label}>{label}: S/ {amt.toFixed(2)}</span>
+                ))}
+            </div>
+          )}
+        </div>
+      </div>
+
+      {/* Tabla de reservas con headers */}
+      <div className="flex-1 overflow-y-auto p-6 space-y-6 bg-gray-50">
+        <section>
+          <div className="flex items-center justify-between mb-2">
+            <h4 className="text-xs font-bold text-gray-500 uppercase tracking-wide">Reservas del cliente</h4>
+            <a
+              href={historicoUrl}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="text-xs font-semibold text-blue-600 hover:text-blue-700 hover:underline"
+            >
+              Ver histórico
+            </a>
+          </div>
+          <div className="rounded-xl border border-gray-200 bg-white overflow-hidden">
+            <table className="w-full text-left">
+              <thead>
+                <tr className="bg-gray-100 border-b border-gray-200">
+                  <th className="py-2.5 px-3 text-xs font-bold text-gray-500 uppercase">Reserva</th>
+                  <th className="py-2.5 px-3 text-xs font-bold text-gray-500 uppercase">Precio</th>
+                  <th className="py-2.5 px-3 text-xs font-bold text-gray-500 uppercase text-center w-14">Pagado</th>
+                </tr>
+              </thead>
+              <tbody>
+                {allOrdered.map((r) => (
+                  <ReservationRow
+                    key={r.id}
+                    r={r}
+                    onUpdatePrice={onUpdatePrice}
+                    onUpdateAmountPaid={onUpdateAmountPaid}
+                    onMarkedInSession={(id) => setModifiedInSessionReservationIds((prev) => new Set(prev).add(id))}
+                    paymentLoading={paymentLoading}
+                  />
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </section>
+
+        {/* Registrar pago + Últimos pagos */}
+        <section className="space-y-3">
+          <h4 className="text-xs font-bold text-gray-500 uppercase tracking-wide">Últimos pagos</h4>
+          <div className="flex flex-col gap-4">
+            <RegisterPaymentFormCobros
+              reservationsWithDebt={reservationsWithDebt}
+              totalRemaining={totalRemaining}
+              loading={paymentLoading}
+              onSubmit={onRegisterPayment}
+            />
+          {loading && transfers.length === 0 ? (
+            <><SkeletonCard /><SkeletonCard /></>
+          ) : transfers.length > 0 ? (
+            <PaymentAccordionList
+              transfers={transfers.filter((t) => {
+                const isApplied = t.applied ?? (t.status === "applied" || t.status === "partial");
+                const transferDate = t.created_at?.split?.("T")?.[0] ?? "";
+                const isFromThisWeek = transferDate >= weekStart && transferDate <= weekEnd;
+                return !isApplied || isFromThisWeek || modifiedInSessionTransferIds.has(t.id);
+              })}
+              invoices={invoices}
+              emittingInvoiceId={emittingInvoiceId}
+              attachingInvoiceId={attachingInvoiceId}
+              onVerifyTransfer={onVerifyTransfer}
+              onEmitInvoice={onEmitInvoice}
+              onAttachInvoice={onAttachInvoice}
+              onDetachInvoice={onDetachInvoice}
+              onRevokeManualPayment={onRevokeManualPayment}
+              onToggleApplied={(id, applied) => {
+                onToggleApplied(id, applied);
+                if (applied) setModifiedInSessionTransferIds((prev) => new Set(prev).add(id));
+              }}
+              onViewImage={setViewingImage}
+              onHover={setHoveredTransferId}
+              chatId={chatId}
+              clientDni={clientDni}
+            />
+          ) : (
+            <div className="p-8 text-center border-2 border-dashed border-gray-200 rounded-2xl bg-white">
+              <p className="text-gray-500 font-medium">No hay pagos registrados</p>
+            </div>
+          )}
+          </div>
+        </section>
+      </div>
+    </div>
+  );
+}
+
 function SkeletonCard() {
   return (
     <div className="rounded-2xl border-2 border-gray-200 bg-white animate-pulse">
@@ -756,7 +1278,9 @@ export default function PaymentSidebar({
   userCustomName,
   onRevokeManualPayment,
   onRegisterPayment,
+  onToggleApplied,
   onUpdatePrice,
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars -- pasado por parent para compatibilidad
   onUpdateAmountPaid,
   clientType,
   clientTypeLoading = false,
@@ -768,8 +1292,10 @@ export default function PaymentSidebar({
   onClose,
   courtConfigs,
   allReservationsThisWeek = [],
+  allClientReservations = [],
   onSelectReservationFromList,
 }: PaymentSidebarProps) {
+  const [activeTab, setActiveTab] = useState<"detalles" | "cobros">("detalles");
   const [viewingImage, setViewingImage] = useState<string | null>(null);
   const configMap = courtConfigsToMap(courtConfigs);
   const fieldConfig = reservation.field && courtConfigs?.length
@@ -832,24 +1358,14 @@ export default function PaymentSidebar({
   const [editingPrice, setEditingPrice] = useState(false);
   const [priceInput, setPriceInput] = useState(String(reservation.total_price ?? 0));
   const [priceUpdating, setPriceUpdating] = useState(false);
-  const [editingAmountPaid, setEditingAmountPaid] = useState(false);
-  const [amountPaidInput, setAmountPaidInput] = useState(String(reservation.amount_paid ?? 0));
-  const [amountPaidUpdating, setAmountPaidUpdating] = useState(false);
-
   useEffect(() => {
     setPriceInput(String(reservation.total_price ?? 0));
   }, [reservation.id, reservation.total_price]);
-  useEffect(() => {
-    setAmountPaidInput(String(reservation.amount_paid ?? 0));
-  }, [reservation.id, reservation.amount_paid]);
 
   const calculatedPrice = reservation.field && reservation.time_slots
     ? calculateReservationPrice(reservation.field, reservation.date, reservation.time_slots, configMap)
     : 0;
   const totalPrice = calculatedPrice || reservation.total_price || 0;
-  const amountPaid = reservation.amount_paid || 0;
-  const remaining = Math.max(0, totalPrice - amountPaid);
-  const fullyPaid = remaining <= 0;
   const isCancelled = reservation.status === "cancelled";
 
   async function handleSavePrice() {
@@ -860,16 +1376,6 @@ export default function PaymentSidebar({
     const ok = await onUpdatePrice(parsed);
     setPriceUpdating(false);
     if (ok) setEditingPrice(false);
-  }
-
-  async function handleSaveAmountPaid() {
-    if (!onUpdateAmountPaid) return;
-    const parsed = parseFloat(amountPaidInput.replace(",", "."));
-    if (isNaN(parsed) || parsed < 0) return;
-    setAmountPaidUpdating(true);
-    const ok = await onUpdateAmountPaid(parsed);
-    setAmountPaidUpdating(false);
-    if (ok) setEditingAmountPaid(false);
   }
 
   return (
@@ -913,24 +1419,31 @@ export default function PaymentSidebar({
         <div className="px-6 py-4 border-b border-gray-200 bg-gray-50 shrink-0">
           <div className="flex items-center justify-between">
             <div>
-              <h3 className="text-xl font-bold text-gray-900">Detalle de reserva</h3>
-              <div className="flex flex-wrap items-center gap-x-3 gap-y-1 mt-1 text-sm text-gray-500">
-                <span className="font-semibold text-gray-700">
-                  {reservation.field
-                    ? courtSizeLabel
-                      ? `Cancha ${reservation.field} · ${courtSizeLabel}`
-                      : `Cancha ${reservation.field}`
-                    : "Sin cancha"}
-                </span>
-                <span className="text-gray-300">·</span>
-                <span>{formatReservationTime(reservation)}</span>
-                <span className="text-gray-300">·</span>
-                <span>
-                  {new Date(reservation.date + "T12:00:00").toLocaleDateString("es-PE", {
-                    weekday: "short", day: "numeric", month: "short",
-                  })}
-                </span>
-              </div>
+              <h3 className="text-xl font-bold text-gray-900">
+                {activeTab === "detalles" ? "Detalle de reserva" : "Gestionar cobros"}
+              </h3>
+              {activeTab === "detalles" && (
+                <div className="flex flex-wrap items-center gap-x-3 gap-y-1 mt-1 text-sm text-gray-500">
+                  <span className="font-semibold text-gray-700">
+                    {reservation.field
+                      ? courtSizeLabel
+                        ? `Cancha ${reservation.field} · ${courtSizeLabel}`
+                        : `Cancha ${reservation.field}`
+                      : "Sin cancha"}
+                  </span>
+                  <span className="text-gray-300">·</span>
+                  <span>{formatReservationTime(reservation)}</span>
+                  <span className="text-gray-300">·</span>
+                  <span>
+                    {new Date(reservation.date + "T12:00:00").toLocaleDateString("es-PE", {
+                      weekday: "short", day: "numeric", month: "short",
+                    })}
+                  </span>
+                </div>
+              )}
+              {activeTab === "cobros" && (
+                <p className="mt-1 text-sm text-gray-500">{effectiveDisplayName || "Cliente"}</p>
+              )}
             </div>
             <button
               onClick={onClose}
@@ -942,48 +1455,35 @@ export default function PaymentSidebar({
               </svg>
             </button>
           </div>
+          {/* Tabs */}
+          <div className="flex gap-1 mt-4 p-1 bg-gray-200 rounded-xl">
+            <button
+              type="button"
+              onClick={() => setActiveTab("detalles")}
+              className={`flex-1 py-2 px-4 rounded-lg text-sm font-semibold transition-colors ${
+                activeTab === "detalles" ? "bg-white text-gray-900 shadow-sm" : "text-gray-600 hover:text-gray-900"
+              }`}
+            >
+              Detalles
+            </button>
+            <button
+              type="button"
+              onClick={() => setActiveTab("cobros")}
+              className={`flex-1 py-2 px-4 rounded-lg text-sm font-semibold transition-colors ${
+                activeTab === "cobros" ? "bg-white text-gray-900 shadow-sm" : "text-gray-600 hover:text-gray-900"
+              }`}
+            >
+              Cobros
+            </button>
+          </div>
         </div>
 
-        {/* Reservas del cliente esta semana (navegables) */}
-        {allReservationsThisWeek.length > 0 && (
-          <div className="px-6 py-3 border-b border-gray-200 bg-amber-50/50 shrink-0">
-            <p className="text-xs font-semibold text-amber-700 uppercase tracking-wide mb-1.5">
-              {allReservationsThisWeek.length} reserva{allReservationsThisWeek.length !== 1 ? "s" : ""} esta semana
-            </p>
-            <div className="flex flex-wrap gap-1.5">
-              {allReservationsThisWeek.map((r) => {
-                const dateObj = new Date(r.date + "T12:00:00");
-                const dayName = dateObj.toLocaleDateString("es-PE", { weekday: "long" });
-                const dayNum = dateObj.getDate();
-                const start = r.time_slots?.[0] || "";
-                const lastH = r.time_slots?.length ? parseInt(r.time_slots[r.time_slots.length - 1].split(":")[0]) + 1 : 0;
-                const end = `${lastH}:00`;
-                const timeShort = `${formatHour12(start).replace(/:00\s?/g, "").replace(/\s/g, "")}-${formatHour12(end).replace(/:00\s?/g, "").replace(/\s/g, "")}`;
-                const fieldShort = r.field ? `C${r.field}` : "—";
-                const isCurrent = r.id === reservation.id;
-                const label = `${dayName} ${dayNum}  ·  ${timeShort}  ·  ${fieldShort}`;
-                return (
-                  <button
-                    key={r.id}
-                    type="button"
-                    onClick={() => onSelectReservationFromList?.(r)}
-                    className={`min-w-[12rem] px-2.5 py-1 rounded-lg text-xs font-medium transition-colors text-center ${
-                      isCurrent
-                        ? "bg-amber-600 text-white underline underline-offset-2"
-                        : "bg-white/80 text-amber-900 hover:bg-amber-200 border border-amber-200"
-                    }`}
-                  >
-                    {label}
-                  </button>
-                );
-              })}
-            </div>
-          </div>
-        )}
-
+        {activeTab === "detalles" && (
+        <>
         {/* Client Info */}
         <div className="px-6 py-4 border-b border-gray-200 bg-white shrink-0 space-y-4">
-          <div className="flex flex-col space-y-1">
+          <div className="flex items-start justify-between gap-4">
+            <div className="flex flex-col space-y-1 min-w-0 flex-1">
             {onUpdateName && editingName ? (
               <div className="flex flex-col gap-1">
                 <div className="flex items-center gap-2">
@@ -1092,6 +1592,16 @@ export default function PaymentSidebar({
               )}
             </div>
           </div>
+          {!isCancelled && (
+            <button
+              onClick={onCancelReservation}
+              disabled={cancellingReservation}
+              className="px-4 py-2.5 rounded-xl font-bold text-sm transition-all disabled:opacity-50 bg-red-600 text-white shadow-sm hover:bg-red-700 shrink-0"
+            >
+              {cancellingReservation ? "Cancelando..." : "Cancelar reserva"}
+            </button>
+          )}
+          </div>
 
           {/* Controles: fila horizontal */}
           <div className="flex flex-wrap items-end gap-4 pt-2 border-t border-gray-100">
@@ -1146,192 +1656,119 @@ export default function PaymentSidebar({
                 </select>
               )}
             </div>
-            {!isCancelled && (
-              <button
-                onClick={onCancelReservation}
-                disabled={cancellingReservation}
-                className="px-4 py-2.5 rounded-xl font-bold text-sm transition-all disabled:opacity-50 bg-red-600 text-white shadow-sm hover:bg-red-700 shrink-0"
-              >
-                {cancellingReservation ? "Cancelando..." : "Cancelar reserva"}
-              </button>
+            {onUpdatePrice && !isCancelled && (
+              <div className="min-w-[140px] flex-1">
+                <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1">Precio</label>
+                <div className="bg-blue-100 rounded-xl px-4 py-3 border border-blue-200 shadow-sm">
+                  {editingPrice ? (
+                    <div className="flex flex-col items-center gap-1">
+                      <div className="flex items-center justify-center gap-1">
+                        <span className="text-lg font-bold text-blue-700">S/</span>
+                        <input
+                          type="text"
+                          inputMode="decimal"
+                          value={priceInput}
+                          onChange={(e) => setPriceInput(e.target.value.replace(/[^\d.,]/g, ""))}
+                          onKeyDown={(e) => {
+                            if (e.key === "Enter") void handleSavePrice();
+                            if (e.key === "Escape") { setEditingPrice(false); setPriceInput(String(reservation.total_price ?? 0)); }
+                          }}
+                          className="w-20 text-lg font-bold text-blue-700 border-b-2 border-blue-500 bg-transparent focus:outline-none text-center"
+                          autoFocus
+                        />
+                        <button onClick={() => void handleSavePrice()} disabled={priceUpdating} className="text-xs px-2 py-1 rounded-md bg-blue-600 text-white hover:bg-blue-700 disabled:opacity-50">
+                          {priceUpdating ? "..." : "Guardar"}
+                        </button>
+                        <button onClick={() => { setEditingPrice(false); setPriceInput(String(reservation.total_price ?? 0)); }} className="p-1 rounded-md hover:bg-blue-100 text-blue-600 disabled:opacity-50" title="Cancelar">
+                          <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg>
+                        </button>
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="flex flex-col items-center">
+                      <button onClick={() => setEditingPrice(true)} className="flex items-center justify-center gap-1 group">
+                        <p className="text-lg font-bold text-blue-700">S/ {totalPrice.toFixed(2)}</p>
+                        <svg className="w-4 h-4 text-blue-500 group-hover:text-blue-700" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" /></svg>
+                      </button>
+                      {calculatedPrice > 0 && (
+                        <p className="text-xs text-blue-500 mt-1">Precio estándar: S/ {calculatedPrice.toFixed(2)}</p>
+                      )}
+                    </div>
+                  )}
+                </div>
+              </div>
             )}
           </div>
-
-          {/* Resumen financiero */}
-          <div className="mt-6 pt-4 border-t border-gray-100 grid grid-cols-3 gap-4">
-            <div className="bg-gray-50 rounded-xl px-4 py-3 text-center">
-              <p className="text-xs font-medium text-gray-400 uppercase">Total</p>
-              {onUpdatePrice && !isCancelled && editingPrice ? (
-                <div className="flex flex-col items-center gap-1">
-                  <div className="flex items-center justify-center gap-1">
-                    <span className="text-lg font-bold text-gray-900">S/</span>
-                    <input
-                      type="text"
-                      inputMode="decimal"
-                      value={priceInput}
-                      onChange={(e) => setPriceInput(e.target.value.replace(/[^\d.,]/g, ""))}
-                      onKeyDown={(e) => {
-                        if (e.key === "Enter") void handleSavePrice();
-                        if (e.key === "Escape") {
-                          setEditingPrice(false);
-                          setPriceInput(String(reservation.total_price ?? 0));
-                        }
-                      }}
-                      className="w-20 text-lg font-bold text-gray-900 border-b-2 border-blue-500 bg-transparent focus:outline-none text-center"
-                      autoFocus
-                    />
-                    <button
-                      onClick={() => void handleSavePrice()}
-                      disabled={priceUpdating}
-                      className="text-xs px-2 py-1 rounded-md bg-blue-600 text-white hover:bg-blue-700 disabled:opacity-50"
-                    >
-                      {priceUpdating ? "..." : "Guardar"}
-                    </button>
-                    <button
-                      onClick={() => {
-                        setEditingPrice(false);
-                        setPriceInput(String(reservation.total_price ?? 0));
-                      }}
-                      disabled={priceUpdating}
-                      className="p-1 rounded-md hover:bg-gray-200 text-gray-500 hover:text-gray-700 disabled:opacity-50"
-                      title="Cancelar"
-                    >
-                      <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-                      </svg>
-                    </button>
-                  </div>
-                </div>
-              ) : (
-                <div className="flex items-center justify-center gap-1">
-                  <p className="text-lg font-bold text-gray-900">S/ {totalPrice.toFixed(2)}</p>
-                  {onUpdatePrice && !isCancelled && (
-                    <button
-                      onClick={() => setEditingPrice(true)}
-                      className="p-1 rounded-md hover:bg-gray-200 text-gray-500 hover:text-gray-700"
-                      title="Editar precio (clientes con trato especial)"
-                    >
-                      <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
-                      </svg>
-                    </button>
-                  )}
-                </div>
-              )}
-              {calculatedPrice > 0 && (
-                <p className="text-xs text-gray-500 mt-1">
-                  Precio estándar: S/ {calculatedPrice.toFixed(2)}
-                </p>
-              )}
-            </div>
-            <div className="bg-blue-50 rounded-xl px-4 py-3 text-center">
-              <p className="text-xs font-medium text-blue-400 uppercase">Pagado</p>
-              {onUpdateAmountPaid && !isCancelled && editingAmountPaid ? (
-                <div className="flex flex-col items-center gap-1">
-                  <div className="flex items-center justify-center gap-1">
-                    <span className="text-lg font-bold text-blue-700">S/</span>
-                    <input
-                      type="text"
-                      inputMode="decimal"
-                      value={amountPaidInput}
-                      onChange={(e) => setAmountPaidInput(e.target.value.replace(/[^\d.,]/g, ""))}
-                      onKeyDown={(e) => {
-                        if (e.key === "Enter") void handleSaveAmountPaid();
-                        if (e.key === "Escape") {
-                          setEditingAmountPaid(false);
-                          setAmountPaidInput(String(amountPaid));
-                        }
-                      }}
-                      className="w-20 text-lg font-bold text-blue-700 border-b-2 border-blue-500 bg-transparent focus:outline-none text-center"
-                      autoFocus
-                    />
-                    <button
-                      onClick={() => void handleSaveAmountPaid()}
-                      disabled={amountPaidUpdating}
-                      className="text-xs px-2 py-1 rounded-md bg-blue-600 text-white hover:bg-blue-700 disabled:opacity-50"
-                    >
-                      {amountPaidUpdating ? "..." : "Guardar"}
-                    </button>
-                    <button
-                      onClick={() => {
-                        setEditingAmountPaid(false);
-                        setAmountPaidInput(String(amountPaid));
-                      }}
-                      disabled={amountPaidUpdating}
-                      className="p-1 rounded-md hover:bg-gray-200 text-gray-500 hover:text-gray-700 disabled:opacity-50"
-                      title="Cancelar"
-                    >
-                      <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-                      </svg>
-                    </button>
-                  </div>
-                  <p className="text-xs text-blue-400">La deuda se recalcula automáticamente</p>
-                </div>
-              ) : (
-                <div className="flex items-center justify-center gap-1">
-                  <p className="text-lg font-bold text-blue-700">S/ {amountPaid.toFixed(2)}</p>
-                  {onUpdateAmountPaid && !isCancelled && (
-                    <button
-                      onClick={() => setEditingAmountPaid(true)}
-                      className="p-1 rounded-md hover:bg-blue-100 text-blue-600 hover:text-blue-800"
-                      title="Editar monto pagado (pago anticipado, varias reservas juntas, etc.)"
-                    >
-                      <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
-                      </svg>
-                    </button>
-                  )}
-                </div>
-              )}
-            </div>
-            <div className={`rounded-xl px-4 py-3 text-center ${fullyPaid ? "bg-green-50" : "bg-red-50"}`}>
-              <p className={`text-xs font-medium uppercase ${fullyPaid ? "text-green-400" : "text-red-400"}`}>Deuda</p>
-              <p className={`text-lg font-bold ${fullyPaid ? "text-green-700" : "text-red-600"}`}>S/ {remaining.toFixed(2)}</p>
-            </div>
-          </div>
         </div>
 
-        {/* Content */}
-        <div className="flex-1 overflow-y-auto p-6 space-y-5 bg-gray-50">
-          <RegisterPaymentForm
-            remaining={remaining}
-            loading={paymentLoading}
-            onSubmit={onRegisterPayment}
-            isCancelled={isCancelled}
-          />
-
-          {loading && transfers.length === 0 ? (
-            <><SkeletonCard /><SkeletonCard /></>
-          ) : transfers.length > 0 ? (
-            transfers.map((transfer) => {
-              const invoice = invoices.find((inv) => inv.transfer_id === transfer.id);
-              return (
-                <TransferCard
-                  key={transfer.id}
-                  transfer={transfer}
-                  invoice={invoice}
-                  emittingInvoiceId={emittingInvoiceId}
-                  attachingInvoiceId={attachingInvoiceId}
-                  onVerify={onVerifyTransfer}
-                  onEmitInvoice={onEmitInvoice}
-                  onAttachInvoice={onAttachInvoice}
-                  onDetachInvoice={onDetachInvoice}
-                  onRevoke={onRevokeManualPayment}
-                  onViewImage={setViewingImage}
-                  onHover={(h) => setHoveredTransferId(h ? transfer.id : null)}
-                  chatId={reservation.chat_id}
-                  clientDni={reservation.dni}
-                />
-              );
-            })
-          ) : (
-            <div className="p-12 text-center border-2 border-dashed border-gray-200 rounded-2xl bg-white">
-              <p className="text-gray-500 font-medium text-lg">No hay pagos registrados</p>
-              <p className="text-sm text-gray-400 mt-1">El cliente aún no ha enviado comprobantes.</p>
+        {/* Content - Tab Detalles: reservas próximas (no pasadas) */}
+        <div className="flex-1 overflow-y-auto p-6 bg-gray-50">
+          {loading ? null : allReservationsThisWeek.length > 0 ? (
+            <div className="space-y-3">
+              <p className="text-xs font-semibold text-amber-700 uppercase tracking-wide">
+                {allReservationsThisWeek.length} reserva{allReservationsThisWeek.length !== 1 ? "s" : ""} próximas
+              </p>
+              <div className="flex flex-wrap gap-1.5">
+                {allReservationsThisWeek.map((r) => {
+                  const dateObj = new Date(r.date + "T12:00:00");
+                  const dayName = dateObj.toLocaleDateString("es-PE", { weekday: "long" });
+                  const dayNum = dateObj.getDate();
+                  const start = r.time_slots?.[0] || "";
+                  const lastH = r.time_slots?.length ? parseInt(r.time_slots[r.time_slots.length - 1].split(":")[0]) + 1 : 0;
+                  const end = `${lastH}:00`;
+                  const timeShort = `${formatHour12(start).replace(/:00\s?/g, "").replace(/\s/g, "")}-${formatHour12(end).replace(/:00\s?/g, "").replace(/\s/g, "")}`;
+                  const fieldShort = r.field ? `C${r.field}` : "—";
+                  const isCurrent = r.id === reservation.id;
+                  const label = `${dayName} ${dayNum}  ·  ${timeShort}  ·  ${fieldShort}`;
+                  return (
+                    <button
+                      key={r.id}
+                      type="button"
+                      onClick={() => onSelectReservationFromList?.(r)}
+                      className={`min-w-[12rem] px-2.5 py-1 rounded-lg text-xs font-medium transition-colors text-center ${
+                        isCurrent
+                          ? "bg-amber-600 text-white underline underline-offset-2"
+                          : "bg-white/80 text-amber-900 hover:bg-amber-200 border border-amber-200"
+                      }`}
+                    >
+                      {label}
+                    </button>
+                  );
+                })}
+              </div>
             </div>
+          ) : (
+            <p className="text-sm text-gray-500">No hay reservas próximas para este cliente.</p>
           )}
         </div>
+        </>
+        )}
+
+        {activeTab === "cobros" && (
+          <CobrosTabContent
+            allClientReservations={allClientReservations}
+            reservation={reservation}
+            transfers={transfers}
+            invoices={invoices}
+            loading={loading}
+            emittingInvoiceId={emittingInvoiceId}
+            attachingInvoiceId={attachingInvoiceId}
+            onVerifyTransfer={onVerifyTransfer}
+            onEmitInvoice={onEmitInvoice}
+            onAttachInvoice={onAttachInvoice}
+            onDetachInvoice={onDetachInvoice}
+            onRevokeManualPayment={onRevokeManualPayment}
+            onRegisterPayment={onRegisterPayment}
+            onToggleApplied={onToggleApplied ?? (() => {})}
+            onUpdatePrice={onUpdatePrice}
+            onUpdateAmountPaid={onUpdateAmountPaid}
+            paymentLoading={paymentLoading}
+            chatId={reservation.chat_id || reservation.phone_number || ""}
+            clientDni={reservation.dni}
+            setViewingImage={setViewingImage}
+            setHoveredTransferId={setHoveredTransferId}
+          />
+        )}
       </div>
 
       {viewingImage && <ImageViewer src={viewingImage} onClose={() => setViewingImage(null)} />}

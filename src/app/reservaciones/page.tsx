@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect } from "react";
+import { useSearchParams } from "next/navigation";
 import ClientLayout, { useToastContext } from "@/components/ClientLayout";
 import ConfirmDialog from "@/components/ConfirmDialog";
 import { useStore } from "@/lib/hooks";
@@ -15,7 +16,13 @@ import {
 import type { CourtFieldConfig } from "@/lib/court-config";
 import { getCourtSizeLabel } from "@/lib/court-config";
 
+function norm(s: string) {
+  return String(s || "").replace(/\D/g, "").slice(-9);
+}
+
 export default function ReservacionesPage() {
+  const searchParams = useSearchParams();
+  const clientFilter = searchParams.get("phone_number") || searchParams.get("cliente") || "";
   const store = useStore();
   const toast = useToastContext();
   const reservations = store.getReservations();
@@ -46,6 +53,12 @@ export default function ReservacionesPage() {
 
   const filtered = reservations
     .filter((r) => {
+      if (clientFilter) {
+        const rPhone = norm(r.phone_number || "");
+        const rChat = norm(r.chat_id || "");
+        const filterNorm = norm(clientFilter);
+        if (filterNorm && rPhone !== filterNorm && rChat !== filterNorm) return false;
+      }
       if (filterDate && r.date !== filterDate) return false;
       if (filterCourt && r.court_type !== filterCourt) return false;
       if (filterStatus && r.status !== filterStatus) return false;

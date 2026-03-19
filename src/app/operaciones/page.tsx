@@ -543,6 +543,7 @@ export default function OperacionesPage() {
           cancellingReservation={sidebar.cancellingReservation}
           onRevokeManualPayment={sidebar.handleRevokeManualPayment}
           onRegisterPayment={sidebar.handleRegisterPayment}
+          onToggleApplied={sidebar.handleToggleApplied}
           onUpdatePrice={sidebar.handleUpdatePrice}
           onUpdateAmountPaid={sidebar.handleUpdateAmountPaid}
           clientType={sidebar.clientType}
@@ -554,6 +555,7 @@ export default function OperacionesPage() {
           onClose={sidebar.close}
           courtConfigs={courtConfigs}
           allReservationsThisWeek={sidebar.allReservationsThisWeek}
+          allClientReservations={sidebar.allClientReservations}
           onSelectReservationFromList={(r) => {
             preserveSidebarOnDayChangeRef.current = true;
             skipBlockingLoaderRef.current = true;

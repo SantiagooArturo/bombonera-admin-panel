@@ -282,6 +282,7 @@ export async function PATCH(request: NextRequest) {
         }
       } else if (adjustmentAmount !== 0) {
         const now = new Date().toISOString();
+        const chatId = resData.chat_id || resData.phone_number || phoneNumber;
         await db.collection("transfers").add({
           phone_number: phoneNumber,
           recipient_name: null,
@@ -289,6 +290,7 @@ export async function PATCH(request: NextRequest) {
           transaction_date: now.split("T")[0],
           operation_id: null,
           reservation_id: id,
+          chat_id: chatId,
           status: "applied",
           source: "manual_adjustment",
           payment_method: "ajuste",

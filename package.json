@@ -4,6 +4,7 @@
   "private": true,
   "scripts": {
     "sync-prices": "tsx scripts/sync-reservation-prices.ts",
+    "migrate:chat-id-transfers": "tsx scripts/add-chat-id-to-transfers.ts",
     "dev": "next dev",
     "build": "next build",
     "seed:court-config": "curl -s -X POST http://localhost:3000/api/court-config/seed",

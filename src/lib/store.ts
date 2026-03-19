@@ -437,6 +437,31 @@ class Store {
     }
   }
 
+  async fetchTransfersByChatId(chatId: string) {
+    try {
+      const normalized = String(chatId).replace(/\D/g, "");
+      const res = await fetch(`/api/transfers?chat_id=${encodeURIComponent(normalized)}`);
+      if (!res.ok) throw new Error("Failed to fetch transfers");
+      return await res.json() as import("./types").Transfer[];
+    } catch (error) {
+      console.error("Error fetching transfers by chat_id:", error);
+      return [];
+    }
+  }
+
+  async fetchInvoicesByTransferIds(transferIds: string[]) {
+    if (transferIds.length === 0) return [];
+    try {
+      const ids = transferIds.slice(0, 30).join(",");
+      const res = await fetch(`/api/invoices?transfer_ids=${encodeURIComponent(ids)}`);
+      if (!res.ok) throw new Error("Failed to fetch invoices");
+      return await res.json() as import("./types").Invoice[];
+    } catch (error) {
+      console.error("Error fetching invoices by transfer_ids:", error);
+      return [];
+    }
+  }
+
   async verifyTransfer(transferId: string, verified: boolean) {
     try {
       const res = await fetch("/api/transfers", {
@@ -447,6 +472,20 @@ class Store {
       return res.ok;
     } catch (error) {
       console.error("Error verifying transfer:", error);
+      return false;
+    }
+  }
+
+  async updateTransferApplied(transferId: string, applied: boolean) {
+    try {
+      const res = await fetch("/api/transfers", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ id: transferId, applied }),
+      });
+      return res.ok;
+    } catch (error) {
+      console.error("Error updating transfer applied:", error);
       return false;
     }
   }

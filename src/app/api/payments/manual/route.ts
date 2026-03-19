@@ -46,6 +46,7 @@ export async function POST(request: NextRequest) {
 
     await resRef.update(reservationUpdate);
 
+    const chatId = resData.chat_id || resData.phone_number || phone_number;
     const transferData: Record<string, unknown> = {
       phone_number,
       recipient_name: null,
@@ -53,6 +54,7 @@ export async function POST(request: NextRequest) {
       transaction_date: now.split("T")[0],
       operation_id: null,
       reservation_id,
+      chat_id: chatId,
       status: isFullyPaid ? "applied" : "partial",
       source: "manual",
       payment_method: payment_method as string,

@@ -50,11 +50,17 @@ function isDuplicateError(message?: string): boolean {
 export async function GET(request: NextRequest) {
   try {
     const reservationId = request.nextUrl.searchParams.get("reservation_id");
+    const transferIdsParam = request.nextUrl.searchParams.get("transfer_ids");
     const db = getDb();
 
     let query: FirebaseFirestore.Query = db.collection("invoices");
     if (reservationId) {
       query = query.where("reservation_id", "==", reservationId);
+    } else if (transferIdsParam) {
+      const ids = transferIdsParam.split(",").filter(Boolean).slice(0, 30);
+      if (ids.length > 0) {
+        query = query.where("transfer_id", "in", ids);
+      }
     }
 
     const snapshot = await query.get();
