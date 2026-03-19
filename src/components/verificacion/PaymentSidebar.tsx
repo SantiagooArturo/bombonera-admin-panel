@@ -177,6 +177,529 @@ function wspLink(phone: string) {
   return `https://wa.me/${phone.startsWith("51") ? phone : `51${phone}`}?text=.`;
 }
 
+// ─── Vista simplificada (1 reserva) ───────────────────────────────────────────
+// Sin tabs. Layout directo: cliente, controles, resumen financiero, RegisterPaymentForm,
+// lista de TransferCard (PAGO | BOLETA ASOCIADA). Soporta paste de boleta con hover.
+
+interface SimplifiedPaymentClientData {
+  userCustomName?: string;
+  effectiveDisplayName: string;
+  editingName: boolean;
+  nameValue: string;
+  setNameValue: (v: string) => void;
+  setEditingName: (v: boolean) => void;
+  onUpdateName?: (name: string) => Promise<boolean>;
+  editingDni: boolean;
+  dniValue: string;
+  setDniValue: (v: string) => void;
+  setEditingDni: (v: boolean) => void;
+  onUpdateDni: (dni: string) => Promise<boolean>;
+  clientType: ClientType;
+  clientTypeLoading?: boolean;
+  clientTypeUpdating?: boolean;
+  statusUpdating?: boolean;
+  cancellingReservation?: boolean;
+}
+
+interface SimplifiedPaymentTransferHandlers {
+  transfers: Transfer[];
+  invoices: Invoice[];
+  loading: boolean;
+  emittingInvoiceId: string | null;
+  attachingInvoiceId: string | null;
+  paymentLoading: boolean;
+  onVerifyTransfer: (transferId: string, currentStatus: boolean) => void;
+  onEmitInvoice: (t: Transfer, p: { tipo_comprobante: "boleta" | "factura"; doc_num: string }) => void;
+  onAttachInvoice: (t: Transfer, f: File) => void;
+  onDetachInvoice: (id: string) => Promise<boolean>;
+  onRevokeManualPayment: (id: string) => void;
+  onRegisterPayment: (reservationId: string, amount: number, method: PaymentMethod, mediaUrl?: string) => void;
+  onViewImage: (url: string) => void;
+  onHoverTransferChanged: (transferId: string | null) => void;
+  chatId: string;
+  clientDni?: string | null;
+}
+
+interface ReservationDetailContentProps {
+  reservation: Reservation;
+  courtConfigs?: CourtFieldConfig[] | null;
+  clientData: SimplifiedPaymentClientData;
+  onUpdatePrice?: (totalPrice: number, reservationId?: string) => Promise<boolean>;
+  onUpdateAmountPaid?: (amountPaid: number, reservationId?: string) => Promise<boolean>;
+  onUpdateStatus?: (status: "pending" | "confirmed") => Promise<boolean>;
+  onUpdateClientType: (clientType: ClientType) => Promise<boolean>;
+  onCancelReservation: () => Promise<boolean>;
+  transferHandlers: SimplifiedPaymentTransferHandlers;
+  /** Chips para cambiar de reserva cuando el cliente tiene 2+ reservas esta semana. */
+  reservationsForChips?: Reservation[];
+  onSelectReservationFromChips?: (r: Reservation) => void;
+  /** Oculta botón Registrar cobro y lista de pagos (para probar UI simplificada). */
+  hidePaymentsSection?: boolean;
+}
+
+function ReservationDetailContent({
+  reservation,
+  courtConfigs,
+  clientData,
+  onUpdatePrice,
+  onUpdateAmountPaid,
+  onUpdateStatus,
+  onUpdateClientType,
+  onCancelReservation,
+  transferHandlers,
+  reservationsForChips,
+  onSelectReservationFromChips,
+  hidePaymentsSection = false,
+}: ReservationDetailContentProps) {
+  const {
+    effectiveDisplayName,
+    userCustomName,
+    editingName,
+    nameValue,
+    setNameValue,
+    setEditingName,
+    onUpdateName,
+    editingDni,
+    dniValue,
+    setDniValue,
+    setEditingDni,
+    onUpdateDni,
+    clientType,
+    clientTypeLoading,
+    clientTypeUpdating,
+    statusUpdating,
+    cancellingReservation,
+  } = clientData;
+  const {
+    transfers,
+    invoices,
+    loading,
+    emittingInvoiceId,
+    attachingInvoiceId,
+    paymentLoading,
+    onVerifyTransfer,
+    onEmitInvoice,
+    onAttachInvoice,
+    onDetachInvoice,
+    onRevokeManualPayment,
+    onRegisterPayment,
+    onViewImage,
+    onHoverTransferChanged,
+    chatId,
+    clientDni,
+  } = transferHandlers;
+  const configMap = useMemo(() => courtConfigsToMap(courtConfigs), [courtConfigs]);
+  const transfersForRes = useMemo(
+    () => transfers.filter((t) => t.reservation_id === reservation.id),
+    [transfers, reservation.id]
+  );
+  const [editingPrice, setEditingPrice] = useState(false);
+  const [priceInput, setPriceInput] = useState(String(reservation.total_price ?? 0));
+  const [priceUpdating, setPriceUpdating] = useState(false);
+  const [editingAmountPaid, setEditingAmountPaid] = useState(false);
+  const [amountPaidInput, setAmountPaidInput] = useState(String(reservation.amount_paid ?? 0));
+  const [amountPaidUpdating, setAmountPaidUpdating] = useState(false);
+
+  const calculatedPrice = reservation.field && reservation.time_slots
+    ? calculateReservationPrice(reservation.field, reservation.date, reservation.time_slots, configMap)
+    : 0;
+  const totalPrice = calculatedPrice || reservation.total_price || 0;
+  const amountPaid = reservation.amount_paid ?? 0;
+  const remaining = Math.max(0, totalPrice - amountPaid);
+  const fullyPaid = remaining <= 0;
+  const isCancelled = reservation.status === "cancelled";
+
+  useEffect(() => {
+    setPriceInput(String(reservation.total_price ?? 0));
+  }, [reservation.id, reservation.total_price]);
+  useEffect(() => {
+    setAmountPaidInput(String(reservation.amount_paid ?? 0));
+  }, [reservation.id, reservation.amount_paid]);
+
+  async function handleSavePrice() {
+    if (!onUpdatePrice) return;
+    const parsed = parseFloat(priceInput.replace(",", "."));
+    if (isNaN(parsed) || parsed < 0) return;
+    setPriceUpdating(true);
+    const ok = await onUpdatePrice(parsed);
+    setPriceUpdating(false);
+    if (ok) setEditingPrice(false);
+  }
+
+  async function handleSaveAmountPaid() {
+    if (!onUpdateAmountPaid) return;
+    const parsed = parseFloat(amountPaidInput.replace(",", "."));
+    if (isNaN(parsed) || parsed < 0) return;
+    setAmountPaidUpdating(true);
+    const ok = await onUpdateAmountPaid(parsed);
+    setAmountPaidUpdating(false);
+    if (ok) setEditingAmountPaid(false);
+  }
+
+  const showChips = reservationsForChips && reservationsForChips.length > 1 && onSelectReservationFromChips;
+
+  const pendingChipRef = useRef<Reservation | null>(null);
+  const chipTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const handleChipClick = useCallback(
+    (r: Reservation) => {
+      if (r.id === reservation.id) return;
+      pendingChipRef.current = r;
+      if (chipTimeoutRef.current) clearTimeout(chipTimeoutRef.current);
+      chipTimeoutRef.current = setTimeout(() => {
+        const target = pendingChipRef.current;
+        pendingChipRef.current = null;
+        chipTimeoutRef.current = null;
+        if (target) onSelectReservationFromChips?.(target);
+      }, 180);
+    },
+    [reservation.id, onSelectReservationFromChips]
+  );
+  useEffect(() => () => { if (chipTimeoutRef.current) clearTimeout(chipTimeoutRef.current); }, []);
+
+  return (
+    <div className="flex flex-col h-full">
+      {showChips && (
+        <div className="px-6 py-3 border-b border-gray-100 bg-gray-50 shrink-0">
+          <p className="text-xs font-semibold text-amber-700 uppercase tracking-wide mb-2">
+            {reservationsForChips!.length} reservas esta semana
+          </p>
+          <div className="flex flex-wrap gap-1.5">
+            {reservationsForChips!.map((r) => {
+              const dateObj = new Date(r.date + "T12:00:00");
+              const dayName = dateObj.toLocaleDateString("es-PE", { weekday: "long" });
+              const dayNum = dateObj.getDate();
+              const start = r.time_slots?.[0] || "";
+              const lastH = r.time_slots?.length ? parseInt(r.time_slots[r.time_slots.length - 1].split(":")[0]) + 1 : 0;
+              const end = `${lastH}:00`;
+              const timeShort = `${formatHour12(start).replace(/:00\s?/g, "").replace(/\s/g, "")}-${formatHour12(end).replace(/:00\s?/g, "").replace(/\s/g, "")}`;
+              const fieldShort = r.field ? `C${r.field}` : "—";
+              const isCurrent = r.id === reservation.id;
+              const label = `${dayName} ${dayNum} · ${timeShort} · ${fieldShort}`;
+              return (
+                <button
+                  key={r.id}
+                  type="button"
+                  onClick={() => handleChipClick(r)}
+                  className={`min-w-[10rem] px-2.5 py-1.5 rounded-lg text-xs font-medium transition-all duration-200 ${
+                    isCurrent
+                      ? "bg-amber-500 text-white shadow-sm"
+                      : "bg-white text-amber-800 hover:bg-amber-100 border border-amber-200"
+                  }`}
+                >
+                  {label}
+                </button>
+              );
+            })}
+          </div>
+        </div>
+      )}
+      {/* Datos del cliente */}
+      <div className="px-6 py-4 border-b border-gray-200 bg-white shrink-0 space-y-4">
+        <div className="flex flex-col space-y-1">
+            {onUpdateName && editingName ? (
+              <div className="flex flex-col gap-1">
+                <div className="flex items-center gap-2">
+                  <input
+                    type="text"
+                    value={nameValue}
+                    onChange={(e) => setNameValue(e.target.value)}
+                    placeholder="Nombre personalizado"
+                    className="flex-1 min-w-0 rounded-lg border-2 border-blue-500 px-2 py-1.5 text-lg font-bold text-gray-900 focus:outline-none"
+                    autoFocus
+                  />
+                  <button
+                    onClick={async () => {
+                      const ok = await onUpdateName(nameValue.trim());
+                      if (ok) setEditingName(false);
+                    }}
+                    disabled={!nameValue.trim()}
+                    className="text-xs px-2 py-1 rounded-md bg-blue-600 text-white hover:bg-blue-700 disabled:opacity-50"
+                  >
+                    Guardar
+                  </button>
+                  <button
+                    onClick={() => {
+                      setEditingName(false);
+                      setNameValue(userCustomName ?? effectiveDisplayName);
+                    }}
+                    className="p-1 rounded-md hover:bg-gray-200 text-gray-500 hover:text-gray-700"
+                    title="Cancelar"
+                  >
+                    <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                    </svg>
+                  </button>
+                </div>
+              </div>
+            ) : (
+              <div className="flex items-center gap-1">
+                <p className="text-lg font-bold text-gray-900">
+                  {effectiveDisplayName || "Sin nombre"}
+                </p>
+                {onUpdateName && (
+                  <button
+                    onClick={() => setEditingName(true)}
+                    className="p-1 rounded-md hover:bg-gray-100 text-gray-500 hover:text-gray-700"
+                    title="Editar nombre"
+                  >
+                    <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
+                    </svg>
+                  </button>
+                )}
+              </div>
+            )}
+            {reservation.phone_number && (
+              <a
+                href={wspLink(reservation.phone_number)}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="inline-flex items-center gap-2 hover:bg-green-50 px-2 py-1 rounded-lg transition-colors group"
+                title="Abrir chat de WhatsApp"
+              >
+                <svg className="w-5 h-5 text-green-600" fill="currentColor" viewBox="0 0 24 24">
+                  <path d={WSP_ICON_PATH} />
+                </svg>
+                <span className="text-gray-500 text-base font-mono group-hover:text-green-700 group-hover:underline">
+                  {formatPhoneDisplay(reservation.phone_number)}
+                </span>
+              </a>
+            )}
+            <div className="flex items-center gap-2">
+              <span className="text-sm text-gray-500">DNI:</span>
+              {editingDni ? (
+                <>
+                  <input
+                    type="text"
+                    value={dniValue}
+                    onChange={(e) => setDniValue(e.target.value.replace(/\D/g, "").slice(0, 8))}
+                    placeholder="(opcional)"
+                    className="w-32 rounded-lg border border-gray-200 px-2 py-1 text-sm font-semibold text-gray-700 focus:outline-none focus:border-blue-500"
+                  />
+                  <button
+                    onClick={async () => {
+                      const ok = await onUpdateDni(dniValue);
+                      if (ok) setEditingDni(false);
+                    }}
+                    className="text-xs px-2 py-1 rounded-md bg-blue-600 text-white hover:bg-blue-700"
+                  >
+                    Guardar
+                  </button>
+                </>
+              ) : (
+                <>
+                  <span className={`text-sm font-semibold ${reservation.dni ? "text-gray-800" : "text-gray-400"}`}>
+                    {reservation.dni || "(vacío)"}
+                  </span>
+                  <button
+                    onClick={() => setEditingDni(true)}
+                    className="p-1 rounded-md hover:bg-gray-100 text-gray-500 hover:text-gray-700"
+                    title="Editar DNI"
+                  >
+                    <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
+                    </svg>
+                  </button>
+                </>
+              )}
+            </div>
+          </div>
+
+        {/* Controles: fila horizontal */}
+        <div className="flex flex-wrap items-end gap-4 pt-2 border-t border-gray-100">
+          <div className="min-w-[140px] flex-1">
+            <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1">Estado de Reserva</label>
+            {onUpdateStatus && (reservation.status === "pending" || reservation.status === "confirmed") ? (
+              statusUpdating ? (
+                <div className="h-[42px] w-full rounded-xl border-2 border-gray-200 bg-gray-100 animate-pulse" />
+              ) : (
+                <select
+                  value={reservation.status}
+                  disabled={statusUpdating}
+                  onChange={(e) => {
+                    const next = e.target.value as "pending" | "confirmed";
+                    if (next === reservation.status) return;
+                    void onUpdateStatus(next);
+                  }}
+                  className="w-full rounded-xl border-2 border-gray-200 bg-gray-50 px-3 py-2.5 text-sm font-bold text-gray-800 focus:border-blue-500 focus:outline-none disabled:opacity-60"
+                >
+                  <option value="pending">{STATUS_LABELS.pending}</option>
+                  <option value="confirmed">{STATUS_LABELS.confirmed}</option>
+                </select>
+              )
+            ) : (
+              <div className="rounded-xl border-2 border-gray-200 bg-gray-50 px-3 py-2.5 text-sm font-bold text-gray-800">
+                {STATUS_LABELS[reservation.status as ReservationStatus] ?? reservation.status}
+              </div>
+            )}
+          </div>
+          <div className="min-w-[140px] flex-1">
+            <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1">Tipo de cliente</label>
+            {clientTypeLoading ? (
+              <div className="h-[42px] w-full rounded-xl border-2 border-gray-200 bg-gray-100 animate-pulse" />
+            ) : (
+              <select
+                value={clientType}
+                disabled={clientTypeUpdating}
+                onChange={(e) => {
+                  const next = e.target.value as ClientType;
+                  if (next === clientType) return;
+                  void onUpdateClientType(next);
+                }}
+                className="w-full rounded-xl border-2 border-gray-200 bg-gray-50 px-3 py-2.5 text-sm font-bold text-gray-800 focus:border-blue-500 focus:outline-none disabled:opacity-60"
+              >
+                <option value="casual">{CLIENT_TYPE_LABELS.casual}</option>
+                <option value="recurrente">{CLIENT_TYPE_LABELS.recurrente}</option>
+                <option value="sospechoso_fraude">{CLIENT_TYPE_LABELS.sospechoso_fraude}</option>
+              </select>
+            )}
+          </div>
+          {!isCancelled && (
+            <button
+              onClick={onCancelReservation}
+              disabled={cancellingReservation}
+              className="px-4 py-2.5 rounded-xl font-bold text-sm transition-all disabled:opacity-50 bg-red-600 text-white shadow-sm hover:bg-red-700 shrink-0"
+            >
+              {cancellingReservation ? "Cancelando..." : "Cancelar reserva"}
+            </button>
+          )}
+        </div>
+
+        {/* Resumen financiero: Total, Pagado, Deuda */}
+        <div className="mt-6 pt-4 border-t border-gray-100 grid grid-cols-3 gap-4">
+          <div className="bg-gray-50 rounded-xl px-4 py-3 text-center">
+            <p className="text-xs font-medium text-gray-400 uppercase">Total</p>
+            {onUpdatePrice && !isCancelled && editingPrice ? (
+              <div className="flex flex-col items-center gap-1">
+                <div className="flex items-center justify-center gap-1">
+                  <span className="text-lg font-bold text-gray-900">S/</span>
+                  <input
+                    type="text"
+                    inputMode="decimal"
+                    value={priceInput}
+                    onChange={(e) => setPriceInput(e.target.value.replace(/[^\d.,]/g, ""))}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter") void handleSavePrice();
+                      if (e.key === "Escape") { setEditingPrice(false); setPriceInput(String(reservation.total_price ?? 0)); }
+                    }}
+                    className="w-20 text-lg font-bold text-gray-900 border-b-2 border-blue-500 bg-transparent focus:outline-none text-center"
+                    autoFocus
+                  />
+                  <button onClick={() => void handleSavePrice()} disabled={priceUpdating} className="text-xs px-2 py-1 rounded-md bg-blue-600 text-white hover:bg-blue-700 disabled:opacity-50">
+                    {priceUpdating ? "..." : "Guardar"}
+                  </button>
+                  <button onClick={() => { setEditingPrice(false); setPriceInput(String(reservation.total_price ?? 0)); }} disabled={priceUpdating} className="p-1 rounded-md hover:bg-gray-200 text-gray-500 hover:text-gray-700 disabled:opacity-50" title="Cancelar">
+                    <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg>
+                  </button>
+                </div>
+              </div>
+            ) : (
+              <div className="flex items-center justify-center gap-1">
+                <p className="text-lg font-bold text-gray-900">S/ {totalPrice.toFixed(2)}</p>
+                {onUpdatePrice && !isCancelled && (
+                  <button onClick={() => setEditingPrice(true)} className="p-1 rounded-md hover:bg-gray-200 text-gray-500 hover:text-gray-700" title="Editar precio (clientes con trato especial)">
+                    <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
+                    </svg>
+                  </button>
+                )}
+              </div>
+            )}
+            {calculatedPrice > 0 && (
+              <p className="text-xs text-gray-500 mt-1">Precio estándar: S/ {calculatedPrice.toFixed(2)}</p>
+            )}
+          </div>
+          <div className="bg-blue-50 rounded-xl px-4 py-3 text-center">
+            <p className="text-xs font-medium text-blue-400 uppercase">Pagado</p>
+            {onUpdateAmountPaid && !isCancelled && editingAmountPaid ? (
+              <div className="flex flex-col items-center gap-1">
+                <div className="flex items-center justify-center gap-1">
+                  <span className="text-lg font-bold text-blue-700">S/</span>
+                  <input
+                    type="text"
+                    inputMode="decimal"
+                    value={amountPaidInput}
+                    onChange={(e) => setAmountPaidInput(e.target.value.replace(/[^\d.,]/g, ""))}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter") void handleSaveAmountPaid();
+                      if (e.key === "Escape") { setEditingAmountPaid(false); setAmountPaidInput(String(amountPaid)); }
+                    }}
+                    className="w-20 text-lg font-bold text-blue-700 border-b-2 border-blue-500 bg-transparent focus:outline-none text-center"
+                    autoFocus
+                  />
+                  <button onClick={() => void handleSaveAmountPaid()} disabled={amountPaidUpdating} className="text-xs px-2 py-1 rounded-md bg-blue-600 text-white hover:bg-blue-700 disabled:opacity-50">
+                    {amountPaidUpdating ? "..." : "Guardar"}
+                  </button>
+                  <button onClick={() => { setEditingAmountPaid(false); setAmountPaidInput(String(amountPaid)); }} disabled={amountPaidUpdating} className="p-1 rounded-md hover:bg-gray-200 text-gray-500 hover:text-gray-700 disabled:opacity-50" title="Cancelar">
+                    <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg>
+                  </button>
+                </div>
+                <p className="text-xs text-blue-400">La deuda se recalcula automáticamente</p>
+              </div>
+            ) : (
+              <div className="flex items-center justify-center gap-1">
+                <p className="text-lg font-bold text-blue-700">S/ {amountPaid.toFixed(2)}</p>
+                {onUpdateAmountPaid && !isCancelled && (
+                  <button onClick={() => setEditingAmountPaid(true)} className="p-1 rounded-md hover:bg-blue-100 text-blue-600 hover:text-blue-800" title="Editar monto pagado (pago anticipado, varias reservas juntas, etc.)">
+                    <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
+                    </svg>
+                  </button>
+                )}
+              </div>
+            )}
+          </div>
+          <div className={`rounded-xl px-4 py-3 text-center ${fullyPaid ? "bg-green-50" : "bg-red-50"}`}>
+            <p className={`text-xs font-medium uppercase ${fullyPaid ? "text-green-400" : "text-red-400"}`}>Deuda</p>
+            <p className={`text-lg font-bold ${fullyPaid ? "text-green-700" : "text-red-600"}`}>S/ {remaining.toFixed(2)}</p>
+          </div>
+        </div>
+      </div>
+
+      {/* Content: RegisterPaymentForm + TransferCard (ocultado cuando hidePaymentsSection) */}
+      <div className="flex-1 overflow-y-auto p-6 space-y-5 bg-gray-50">
+        {!hidePaymentsSection && !isCancelled && (
+          <RegisterPaymentFormCobros
+            reservationsWithDebt={[reservation]}
+            totalRemaining={remaining}
+            loading={paymentLoading}
+            onSubmit={onRegisterPayment}
+            buttonLabel="Registrar cobro"
+            buttonSubtext={null}
+          />
+        )}
+        {!hidePaymentsSection && (loading && transfersForRes.length === 0 ? (
+          <><SkeletonCard /><SkeletonCard /></>
+        ) : transfersForRes.length > 0 ? (
+          <div className="space-y-4">
+            {transfersForRes.map((transfer) => {
+              const invoice = invoices.find((inv) => inv.transfer_id === transfer.id);
+              return (
+                <TransferCard
+                  key={transfer.id}
+                  transfer={transfer}
+                  invoice={invoice}
+                  emittingInvoiceId={emittingInvoiceId}
+                  attachingInvoiceId={attachingInvoiceId}
+                  onVerify={onVerifyTransfer}
+                  onEmitInvoice={onEmitInvoice}
+                  onAttachInvoice={onAttachInvoice}
+                  onDetachInvoice={onDetachInvoice}
+                  onRevoke={onRevokeManualPayment}
+                  onViewImage={onViewImage}
+                  onHover={(hovering) => onHoverTransferChanged(hovering ? transfer.id : null)}
+                  chatId={chatId}
+                  clientDni={clientDni}
+                />
+              );
+            })}
+          </div>
+        ) : null)}
+      </div>
+    </div>
+  );
+}
+
 // ─── Register Payment Form (Cobros: con selector de reserva) ───────────────────
 
 const PENCIL_ICON = (
@@ -194,6 +717,8 @@ function RegisterPaymentFormCobros({
   onOpenChange,
   initialTargetId,
   hideButton = false,
+  buttonLabel = "Anotar pago recibido",
+  buttonSubtext = "Cuando el cliente te paga y quieres dejar registro",
 }: {
   reservationsWithDebt: Reservation[];
   totalRemaining: number;
@@ -203,6 +728,10 @@ function RegisterPaymentFormCobros({
   onOpenChange?: (open: boolean) => void;
   initialTargetId?: string;
   hideButton?: boolean;
+  /** Etiqueta del botón cuando está cerrado. Por defecto "Anotar pago recibido". */
+  buttonLabel?: string;
+  /** Texto debajo del botón cuando está cerrado. Si es null, no se muestra. */
+  buttonSubtext?: string | null;
 }) {
   const defaultTarget = reservationsWithDebt[0];
   const [openInternal, setOpenInternal] = useState(false);
@@ -293,6 +822,7 @@ function RegisterPaymentFormCobros({
     return (
       <div className="space-y-1">
         <button
+          type="button"
           onClick={() => {
             setOpen(true);
             setTargetId(defaultTarget?.id ?? "");
@@ -303,9 +833,11 @@ function RegisterPaymentFormCobros({
           <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
           </svg>
-          Anotar pago recibido
+          {buttonLabel}
         </button>
-        <p className="text-xs text-gray-500 text-center">Cuando el cliente te paga y quieres dejar registro</p>
+        {buttonSubtext != null && (
+          <p className="text-xs text-gray-500 text-center">{buttonSubtext}</p>
+        )}
       </div>
     );
   }
@@ -314,8 +846,10 @@ function RegisterPaymentFormCobros({
     <div className="rounded-2xl border-2 border-blue-200 bg-white p-5 space-y-4">
       <div className="flex items-center justify-between">
         <div>
-          <h4 className="font-bold text-gray-900">Anotar pago recibido</h4>
-          <p className="text-xs text-gray-500 mt-0.5">Deja registro de que el cliente te pagó</p>
+          <h4 className="font-bold text-gray-900">{buttonLabel}</h4>
+          {reservationsWithDebt.length > 1 && (
+            <p className="text-xs text-gray-500 mt-0.5">Deja registro de que el cliente te pagó</p>
+          )}
         </div>
         <button onClick={() => { setOpen(false); clearFile(); }} className="text-gray-400 hover:text-gray-600 p-1">
           <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -1301,7 +1835,6 @@ const PaymentSidebar = memo(function PaymentSidebar({
   onRegisterPayment,
   onToggleApplied,
   onUpdatePrice,
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars -- pasado por parent para compatibilidad
   onUpdateAmountPaid,
   clientType,
   clientTypeLoading = false,
@@ -1318,7 +1851,6 @@ const PaymentSidebar = memo(function PaymentSidebar({
 }: PaymentSidebarProps) {
   const [activeTab, setActiveTab] = useState<"detalles" | "cobros">("detalles");
   const [viewingImage, setViewingImage] = useState<string | null>(null);
-  const configMap = useMemo(() => courtConfigsToMap(courtConfigs), [courtConfigs]);
   const fieldConfig = useMemo(
     () => (reservation.field && courtConfigs?.length ? courtConfigs.find((c) => c.field === reservation.field) : null),
     [reservation.field, courtConfigs]
@@ -1377,31 +1909,8 @@ const PaymentSidebar = memo(function PaymentSidebar({
     setNameValue(userCustomName ?? displayName ?? reservation.representative_name ?? "");
     setEditingName(false);
   }, [reservation.id, userCustomName, displayName, reservation.representative_name]);
-  const [editingPrice, setEditingPrice] = useState(false);
-  const [priceInput, setPriceInput] = useState(String(reservation.total_price ?? 0));
-  const [priceUpdating, setPriceUpdating] = useState(false);
-  useEffect(() => {
-    setPriceInput(String(reservation.total_price ?? 0));
-  }, [reservation.id, reservation.total_price]);
 
-  const calculatedPrice = useMemo(
-    () => (reservation.field && reservation.time_slots
-      ? calculateReservationPrice(reservation.field, reservation.date, reservation.time_slots, configMap)
-      : 0),
-    [reservation.field, reservation.date, reservation.time_slots, configMap]
-  );
-  const totalPrice = calculatedPrice || reservation.total_price || 0;
-  const isCancelled = reservation.status === "cancelled";
-
-  async function handleSavePrice() {
-    if (!onUpdatePrice) return;
-    const parsed = parseFloat(priceInput.replace(",", "."));
-    if (isNaN(parsed) || parsed < 0) return;
-    setPriceUpdating(true);
-    const ok = await onUpdatePrice(parsed);
-    setPriceUpdating(false);
-    if (ok) setEditingPrice(false);
-  }
+  const hasMultipleReservations = allReservationsThisWeek.length > 1;
 
   return (
     <>
@@ -1416,7 +1925,7 @@ const PaymentSidebar = memo(function PaymentSidebar({
             return (
               <div className="px-6 py-3 bg-amber-50 border-b border-amber-200">
                 <p className="text-sm font-semibold text-amber-900">
-                  Esta reserva se liberará solo cuando la canceles manualmente.
+                  Esta reserva no ha sido confirmada. Se liberará solo cuando la canceles manualmente.
                 </p>
               </div>
             );
@@ -1480,7 +1989,7 @@ const PaymentSidebar = memo(function PaymentSidebar({
               </svg>
             </button>
           </div>
-          {/* Tabs */}
+          {/* Tabs: siempre visibles para acceder al histórico de cobros */}
           <div className="flex gap-1 mt-4 p-1 bg-gray-200 rounded-xl">
             <button
               type="button"
@@ -1503,272 +2012,57 @@ const PaymentSidebar = memo(function PaymentSidebar({
           </div>
         </div>
 
-        {activeTab === "detalles" && (
-        <>
-        {/* Client Info */}
-        <div className="px-6 py-4 border-b border-gray-200 bg-white shrink-0 space-y-4">
-          <div className="flex items-start justify-between gap-4">
-            <div className="flex flex-col space-y-1 min-w-0 flex-1">
-            {onUpdateName && editingName ? (
-              <div className="flex flex-col gap-1">
-                <div className="flex items-center gap-2">
-                  <input
-                    type="text"
-                    value={nameValue}
-                    onChange={(e) => setNameValue(e.target.value)}
-                    placeholder="Nombre personalizado"
-                    className="flex-1 min-w-0 rounded-lg border-2 border-blue-500 px-2 py-1.5 text-lg font-bold text-gray-900 focus:outline-none"
-                    autoFocus
-                  />
-                  <button
-                    onClick={async () => {
-                      const ok = await onUpdateName(nameValue.trim());
-                      if (ok) setEditingName(false);
-                    }}
-                    disabled={!nameValue.trim()}
-                    className="text-xs px-2 py-1 rounded-md bg-blue-600 text-white hover:bg-blue-700 disabled:opacity-50"
-                  >
-                    Guardar
-                  </button>
-                  <button
-                    onClick={() => {
-                      setEditingName(false);
-                      setNameValue(userCustomName ?? effectiveDisplayName);
-                    }}
-                    className="p-1 rounded-md hover:bg-gray-200 text-gray-500 hover:text-gray-700"
-                    title="Cancelar"
-                  >
-                    <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-                    </svg>
-                  </button>
-                </div>
-              </div>
-            ) : (
-              <div className="flex items-center gap-1">
-                <p className="text-lg font-bold text-gray-900">
-                  {effectiveDisplayName || "Sin nombre"}
-                </p>
-                {onUpdateName && (
-                  <button
-                    onClick={() => setEditingName(true)}
-                    className="p-1 rounded-md hover:bg-gray-100 text-gray-500 hover:text-gray-700"
-                    title="Editar nombre"
-                  >
-                    <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
-                    </svg>
-                  </button>
-                )}
-              </div>
-            )}
-            {reservation.phone_number && (
-              <a
-                href={wspLink(reservation.phone_number)}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="inline-flex items-center gap-2 hover:bg-green-50 px-2 py-1 rounded-lg transition-colors group"
-                title="Abrir chat de WhatsApp"
-              >
-                <svg className="w-5 h-5 text-green-600" fill="currentColor" viewBox="0 0 24 24">
-                  <path d={WSP_ICON_PATH} />
-                </svg>
-                <span className="text-gray-500 text-base font-mono group-hover:text-green-700 group-hover:underline">
-                  {formatPhoneDisplay(reservation.phone_number)}
-                </span>
-              </a>
-            )}
-            <div className="flex items-center gap-2">
-              <span className="text-sm text-gray-500">DNI:</span>
-              {editingDni ? (
-                <>
-                  <input
-                    type="text"
-                    value={dniValue}
-                    onChange={(e) => setDniValue(e.target.value.replace(/\D/g, "").slice(0, 8))}
-                    placeholder="(opcional)"
-                    className="w-32 rounded-lg border border-gray-200 px-2 py-1 text-sm font-semibold text-gray-700 focus:outline-none focus:border-blue-500"
-                  />
-                  <button
-                    onClick={async () => {
-                      const ok = await onUpdateDni(dniValue);
-                      if (ok) setEditingDni(false);
-                    }}
-                    className="text-xs px-2 py-1 rounded-md bg-blue-600 text-white hover:bg-blue-700"
-                  >
-                    Guardar
-                  </button>
-                </>
-              ) : (
-                <>
-                  <span className={`text-sm font-semibold ${reservation.dni ? "text-gray-800" : "text-gray-400"}`}>
-                    {reservation.dni || "(vacío)"}
-                  </span>
-                  <button
-                    onClick={() => setEditingDni(true)}
-                    className="p-1 rounded-md hover:bg-gray-100 text-gray-500 hover:text-gray-700"
-                    title="Editar DNI"
-                  >
-                    <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
-                    </svg>
-                  </button>
-                </>
-              )}
-            </div>
-          </div>
-          {!isCancelled && (
-            <button
-              onClick={onCancelReservation}
-              disabled={cancellingReservation}
-              className="px-4 py-2.5 rounded-xl font-bold text-sm transition-all disabled:opacity-50 bg-red-600 text-white shadow-sm hover:bg-red-700 shrink-0"
-            >
-              {cancellingReservation ? "Cancelando..." : "Cancelar reserva"}
-            </button>
-          )}
-          </div>
-
-          {/* Controles: fila horizontal */}
-          <div className="flex flex-wrap items-end gap-4 pt-2 border-t border-gray-100">
-            <div className="min-w-[140px] flex-1">
-              <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1">
-                Estado de Reserva
-              </label>
-              {onUpdateStatus && (reservation.status === "pending" || reservation.status === "confirmed") ? (
-                statusUpdating ? (
-                  <div className="h-[42px] w-full rounded-xl border-2 border-gray-200 bg-gray-100 animate-pulse" />
-                ) : (
-                  <select
-                    value={reservation.status}
-                    disabled={statusUpdating}
-                    onChange={(e) => {
-                      const next = e.target.value as "pending" | "confirmed";
-                      if (next === reservation.status) return;
-                      void onUpdateStatus(next);
-                    }}
-                    className="w-full rounded-xl border-2 border-gray-200 bg-gray-50 px-3 py-2.5 text-sm font-bold text-gray-800 focus:border-blue-500 focus:outline-none disabled:opacity-60"
-                  >
-                    <option value="pending">{STATUS_LABELS.pending}</option>
-                    <option value="confirmed">{STATUS_LABELS.confirmed}</option>
-                  </select>
-                )
-              ) : (
-                <div className="rounded-xl border-2 border-gray-200 bg-gray-50 px-3 py-2.5 text-sm font-bold text-gray-800">
-                  {STATUS_LABELS[reservation.status as ReservationStatus] ?? reservation.status}
-                </div>
-              )}
-            </div>
-            <div className="min-w-[140px] flex-1">
-              <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1">
-                Tipo de cliente
-              </label>
-              {clientTypeLoading ? (
-                <div className="h-[42px] w-full rounded-xl border-2 border-gray-200 bg-gray-100 animate-pulse" />
-              ) : (
-                <select
-                  value={clientType}
-                  disabled={clientTypeUpdating}
-                  onChange={(e) => {
-                    const next = e.target.value as ClientType;
-                    if (next === clientType) return;
-                    void onUpdateClientType(next);
-                  }}
-                  className="w-full rounded-xl border-2 border-gray-200 bg-gray-50 px-3 py-2.5 text-sm font-bold text-gray-800 focus:border-blue-500 focus:outline-none disabled:opacity-60"
-                >
-                  <option value="casual">{CLIENT_TYPE_LABELS.casual}</option>
-                  <option value="recurrente">{CLIENT_TYPE_LABELS.recurrente}</option>
-                  <option value="sospechoso_fraude">{CLIENT_TYPE_LABELS.sospechoso_fraude}</option>
-                </select>
-              )}
-            </div>
-            {onUpdatePrice && !isCancelled && (
-              <div className="min-w-[140px] flex-1">
-                <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1">Precio</label>
-                <div className="bg-blue-100 rounded-xl px-4 py-3 border border-blue-200 shadow-sm">
-                  {editingPrice ? (
-                    <div className="flex flex-col items-center gap-1">
-                      <div className="flex items-center justify-center gap-1">
-                        <span className="text-lg font-bold text-blue-700">S/</span>
-                        <input
-                          type="text"
-                          inputMode="decimal"
-                          value={priceInput}
-                          onChange={(e) => setPriceInput(e.target.value.replace(/[^\d.,]/g, ""))}
-                          onKeyDown={(e) => {
-                            if (e.key === "Enter") void handleSavePrice();
-                            if (e.key === "Escape") { setEditingPrice(false); setPriceInput(String(reservation.total_price ?? 0)); }
-                          }}
-                          className="w-20 text-lg font-bold text-blue-700 border-b-2 border-blue-500 bg-transparent focus:outline-none text-center"
-                          autoFocus
-                        />
-                        <button onClick={() => void handleSavePrice()} disabled={priceUpdating} className="text-xs px-2 py-1 rounded-md bg-blue-600 text-white hover:bg-blue-700 disabled:opacity-50">
-                          {priceUpdating ? "..." : "Guardar"}
-                        </button>
-                        <button onClick={() => { setEditingPrice(false); setPriceInput(String(reservation.total_price ?? 0)); }} className="p-1 rounded-md hover:bg-blue-100 text-blue-600 disabled:opacity-50" title="Cancelar">
-                          <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg>
-                        </button>
-                      </div>
-                    </div>
-                  ) : (
-                    <div className="flex flex-col items-center">
-                      <button onClick={() => setEditingPrice(true)} className="flex items-center justify-center gap-1 group">
-                        <p className="text-lg font-bold text-blue-700">S/ {totalPrice.toFixed(2)}</p>
-                        <svg className="w-4 h-4 text-blue-500 group-hover:text-blue-700" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" /></svg>
-                      </button>
-                      {calculatedPrice > 0 && (
-                        <p className="text-xs text-blue-500 mt-1">Precio estándar: S/ {calculatedPrice.toFixed(2)}</p>
-                      )}
-                    </div>
-                  )}
-                </div>
-              </div>
-            )}
-          </div>
-        </div>
-
-        {/* Content - Tab Detalles: reservas próximas (no pasadas) */}
-        <div className="flex-1 overflow-y-auto p-6 bg-gray-50">
-          {loading ? null : allReservationsThisWeek.length > 0 ? (
-            <div className="space-y-3">
-              <p className="text-xs font-semibold text-amber-700 uppercase tracking-wide">
-                {allReservationsThisWeek.length} reserva{allReservationsThisWeek.length !== 1 ? "s" : ""} próximas
-              </p>
-              <div className="flex flex-wrap gap-1.5">
-                {allReservationsThisWeek.map((r) => {
-                  const dateObj = new Date(r.date + "T12:00:00");
-                  const dayName = dateObj.toLocaleDateString("es-PE", { weekday: "long" });
-                  const dayNum = dateObj.getDate();
-                  const start = r.time_slots?.[0] || "";
-                  const lastH = r.time_slots?.length ? parseInt(r.time_slots[r.time_slots.length - 1].split(":")[0]) + 1 : 0;
-                  const end = `${lastH}:00`;
-                  const timeShort = `${formatHour12(start).replace(/:00\s?/g, "").replace(/\s/g, "")}-${formatHour12(end).replace(/:00\s?/g, "").replace(/\s/g, "")}`;
-                  const fieldShort = r.field ? `C${r.field}` : "—";
-                  const isCurrent = r.id === reservation.id;
-                  const label = `${dayName} ${dayNum}  ·  ${timeShort}  ·  ${fieldShort}`;
-                  return (
-                    <button
-                      key={r.id}
-                      type="button"
-                      onClick={() => onSelectReservationFromList?.(r)}
-                      className={`min-w-[12rem] px-2.5 py-1 rounded-lg text-xs font-medium transition-colors text-center ${
-                        isCurrent
-                          ? "bg-amber-600 text-white underline underline-offset-2"
-                          : "bg-white/80 text-amber-900 hover:bg-amber-200 border border-amber-200"
-                      }`}
-                    >
-                      {label}
-                    </button>
-                  );
-                })}
-              </div>
-            </div>
-          ) : (
-            <p className="text-sm text-gray-500">No hay reservas próximas para este cliente.</p>
-          )}
-        </div>
-        </>
-        )}
-
+        {activeTab === "detalles" ? (
+          <ReservationDetailContent
+            reservation={reservation}
+            courtConfigs={courtConfigs}
+            clientData={{
+              userCustomName,
+              effectiveDisplayName,
+              editingName,
+              nameValue,
+              setNameValue,
+              setEditingName,
+              onUpdateName,
+              editingDni,
+              dniValue,
+              setDniValue,
+              setEditingDni,
+              onUpdateDni,
+              clientType,
+              clientTypeLoading,
+              clientTypeUpdating,
+              statusUpdating,
+              cancellingReservation,
+            }}
+            onUpdatePrice={onUpdatePrice}
+            onUpdateAmountPaid={onUpdateAmountPaid}
+            onUpdateStatus={onUpdateStatus}
+            onUpdateClientType={onUpdateClientType}
+            onCancelReservation={onCancelReservation}
+            transferHandlers={{
+              transfers,
+              invoices,
+              loading,
+              emittingInvoiceId,
+              attachingInvoiceId,
+              paymentLoading,
+              onVerifyTransfer,
+              onEmitInvoice,
+              onAttachInvoice,
+              onDetachInvoice,
+              onRevokeManualPayment,
+              onRegisterPayment,
+              onViewImage: (url) => setViewingImage(url),
+              onHoverTransferChanged: setHoveredTransferId,
+              chatId: reservation.chat_id || reservation.phone_number || "",
+              clientDni: reservation.dni,
+            }}
+            reservationsForChips={hasMultipleReservations ? allReservationsThisWeek : undefined}
+            onSelectReservationFromChips={hasMultipleReservations ? onSelectReservationFromList : undefined}
+            hidePaymentsSection
+          />
+        ) : null}
         {activeTab === "cobros" && (
           <CobrosTabContent
             allClientReservations={allClientReservations}
