@@ -718,7 +718,6 @@ function RegisterPaymentFormCobros({
   onSubmit,
   open: openControlled,
   onOpenChange,
-  initialTargetId,
   hideButton = false,
   buttonLabel = "Anotar pago recibido",
   buttonSubtext = "Cuando el cliente te paga y quieres dejar registro",
@@ -729,32 +728,30 @@ function RegisterPaymentFormCobros({
   onSubmit: (reservationId: string, amount: number, method: PaymentMethod, mediaUrl?: string) => void;
   open?: boolean;
   onOpenChange?: (open: boolean) => void;
-  initialTargetId?: string;
   hideButton?: boolean;
   /** Etiqueta del botón cuando está cerrado. Por defecto "Anotar pago recibido". */
   buttonLabel?: string;
   /** Texto debajo del botón cuando está cerrado. Si es null, no se muestra. */
   buttonSubtext?: string | null;
 }) {
-  const defaultTarget = reservationsWithDebt[0];
+  /** Reserva con más deuda: se aplica el pago al saldo total del cliente (sin pedir elegir reserva). */
+  const defaultTarget = useMemo(
+    () => reservationsWithDebt.reduce((best, r) => {
+      const debt = Math.max(0, (r.total_price ?? 0) - (r.amount_paid ?? 0));
+      const bestDebt = Math.max(0, (best.total_price ?? 0) - (best.amount_paid ?? 0));
+      return debt >= bestDebt ? r : best;
+    }, reservationsWithDebt[0]),
+    [reservationsWithDebt]
+  );
   const [openInternal, setOpenInternal] = useState(false);
   const open = openControlled ?? openInternal;
   const setOpen = onOpenChange ? (v: boolean) => onOpenChange(v) : setOpenInternal;
-  const [targetId, setTargetId] = useState(defaultTarget?.id ?? "");
-  const selectedRes = reservationsWithDebt.find((r) => r.id === targetId) ?? defaultTarget;
-  const remainingForSelected = selectedRes
-    ? Math.max(0, (selectedRes.total_price ?? 0) - (selectedRes.amount_paid ?? 0))
-    : totalRemaining;
-  const [amount, setAmount] = useState(remainingForSelected.toFixed(2));
+  const targetId = defaultTarget?.id ?? "";
+  const [amount, setAmount] = useState((totalRemaining > 0 ? totalRemaining : 1).toFixed(2));
 
   useEffect(() => {
-    if (open && initialTargetId && reservationsWithDebt.some((r) => r.id === initialTargetId)) {
-      setTargetId(initialTargetId);
-      const r = reservationsWithDebt.find((x) => x.id === initialTargetId);
-      const rem = r ? Math.max(0, (r.total_price ?? 0) - (r.amount_paid ?? 0)) : 0;
-      setAmount((rem > 0 ? rem : 1).toFixed(2));
-    }
-  }, [open, initialTargetId, reservationsWithDebt]);
+    if (open) setAmount((totalRemaining > 0 ? totalRemaining : 1).toFixed(2));
+  }, [open, totalRemaining]);
   const [method, setMethod] = useState<PaymentMethod>("efectivo");
   const [file, setFile] = useState<File | null>(null);
   const [preview, setPreview] = useState<string | null>(null);
@@ -776,18 +773,6 @@ function RegisterPaymentFormCobros({
     if (!selected) return;
     setFile(selected);
     setPreview(URL.createObjectURL(selected));
-  }
-
-  function formatResLabel(r: Reservation) {
-    const d = new Date(r.date + "T12:00:00");
-    const dayName = d.toLocaleDateString("es-PE", { weekday: "short" });
-    const dayNum = d.getDate();
-    const start = r.time_slots?.[0] || "";
-    const lastH = r.time_slots?.length ? parseInt(r.time_slots[r.time_slots.length - 1].split(":")[0]) + 1 : 0;
-    const timeStr = `${formatHour12(start).replace(/:00\s?/g, "").replace(/\s/g, "")}-${formatHour12(`${lastH}:00`).replace(/:00\s?/g, "").replace(/\s/g, "")}`;
-    const field = r.field ? `C${r.field}` : "";
-    const rem = Math.max(0, (r.total_price ?? 0) - (r.amount_paid ?? 0));
-    return `${dayName} ${dayNum} · ${timeStr} ${field ? `· ${field}` : ""} — S/ ${rem.toFixed(2)} pendiente`;
   }
 
   async function handleConfirm() {
@@ -813,7 +798,7 @@ function RegisterPaymentFormCobros({
 
     onSubmit(targetId, parsedAmount, method, mediaUrl);
     setOpen(false);
-    setAmount((remainingForSelected > 0 ? remainingForSelected : 1).toFixed(2));
+    setAmount((totalRemaining > 0 ? totalRemaining : 1).toFixed(2));
     setMethod("efectivo");
     clearFile();
   }
@@ -828,8 +813,7 @@ function RegisterPaymentFormCobros({
           type="button"
           onClick={() => {
             setOpen(true);
-            setTargetId(defaultTarget?.id ?? "");
-            setAmount((remainingForSelected > 0 ? remainingForSelected : 1).toFixed(2));
+            setAmount((totalRemaining > 0 ? totalRemaining : 1).toFixed(2));
           }}
           className="w-full py-3 px-4 rounded-xl font-bold text-sm bg-blue-600 text-white hover:bg-blue-700 transition-colors flex items-center justify-center gap-2 shadow-sm"
         >
@@ -850,9 +834,7 @@ function RegisterPaymentFormCobros({
       <div className="flex items-center justify-between">
         <div>
           <h4 className="font-bold text-gray-900">{buttonLabel}</h4>
-          {reservationsWithDebt.length > 1 && (
-            <p className="text-xs text-gray-500 mt-0.5">Deja registro de que el cliente te pagó</p>
-          )}
+          <p className="text-xs text-gray-500 mt-0.5">Se aplica al saldo total del cliente</p>
         </div>
         <button onClick={() => { setOpen(false); clearFile(); }} className="text-gray-400 hover:text-gray-600 p-1">
           <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -860,28 +842,6 @@ function RegisterPaymentFormCobros({
           </svg>
         </button>
       </div>
-
-      {reservationsWithDebt.length > 1 && (
-        <div>
-          <label className="block text-sm font-medium text-gray-600 mb-2">¿A qué reserva va este pago?</label>
-          <select
-            value={targetId}
-            onChange={(e) => {
-              setTargetId(e.target.value);
-              const r = reservationsWithDebt.find((x) => x.id === e.target.value);
-              const rem = r ? Math.max(0, (r.total_price ?? 0) - (r.amount_paid ?? 0)) : 0;
-              setAmount((rem > 0 ? rem : 1).toFixed(2));
-            }}
-            className="w-full rounded-xl border-2 border-gray-200 px-3 py-2.5 text-sm font-medium focus:border-blue-500 focus:outline-none"
-          >
-            {reservationsWithDebt.map((r) => (
-              <option key={r.id} value={r.id}>
-                {formatResLabel(r)}
-              </option>
-            ))}
-          </select>
-        </div>
-      )}
 
       <div>
         <label className="block text-sm font-medium text-gray-600 mb-2">Método de pago</label>
@@ -955,7 +915,7 @@ function RegisterPaymentFormCobros({
           className="w-full px-4 py-3 text-lg font-bold rounded-xl border-2 border-gray-200 focus:border-blue-500 focus:outline-none bg-gray-50"
         />
         <p className="text-xs text-gray-400 mt-1">
-          Pendiente de esta reserva: S/ {remainingForSelected.toFixed(2)}
+          Saldo total del cliente: S/ {totalRemaining.toFixed(2)}
         </p>
       </div>
 

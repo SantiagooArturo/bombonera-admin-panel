@@ -19,6 +19,8 @@ export function usePaymentSidebar(options?: UsePaymentSidebarOptions) {
   const [allReservationsThisWeek, setAllReservationsThisWeek] = useState<Reservation[]>([]);
   const [allClientReservations, setAllClientReservations] = useState<Reservation[]>([]);
   const allReservationsChatIdRef = useRef<string | null>(null);
+  /** ID de la reserva que estamos abriendo; si close() se llama antes de que termine el fetch, no actualizamos al completar. */
+  const openRequestIdRef = useRef<string | null>(null);
   const [transfers, setTransfers] = useState<Transfer[]>([]);
   const [invoices, setInvoices] = useState<Invoice[]>([]);
   const [loadingData, setLoadingData] = useState(false);
@@ -39,6 +41,7 @@ export function usePaymentSidebar(options?: UsePaymentSidebarOptions) {
   const isOpen = selectedReservation !== null;
 
   const open = useCallback(async (reservation: Reservation) => {
+    openRequestIdRef.current = reservation.id;
     const nextChatId = String(reservation.chat_id || reservation.phone_number || "").replace(/\D/g, "");
     if (allReservationsChatIdRef.current && allReservationsChatIdRef.current !== nextChatId) {
       setAllReservationsThisWeek([]);
@@ -75,6 +78,7 @@ export function usePaymentSidebar(options?: UsePaymentSidebarOptions) {
 
     try {
       await store.syncReservationPayments(reservation.id);
+      if (openRequestIdRef.current !== reservation.id) return;
 
       const rawChatId = String(reservation.chat_id || reservation.phone_number || "").replace(/\D/g, "");
       const chatIdForApi = reservation.chat_id || rawChatId || reservation.phone_number;
@@ -92,6 +96,8 @@ export function usePaymentSidebar(options?: UsePaymentSidebarOptions) {
       }
       const transferIds = (transfersByClient || []).map((t) => t.id).filter(Boolean);
       const invoicesData = transferIds.length > 0 ? await store.fetchInvoicesByTransferIds(transferIds) : [];
+
+      if (openRequestIdRef.current !== reservation.id) return;
 
       setTransfers(transfersByClient || []);
       setInvoices(invoicesData || []);
@@ -164,6 +170,7 @@ export function usePaymentSidebar(options?: UsePaymentSidebarOptions) {
   }, [store, toast]);
 
   const close = useCallback(() => {
+    openRequestIdRef.current = null;
     setSelectedReservation(null);
     setAllReservationsThisWeek([]);
     setAllClientReservations([]);
