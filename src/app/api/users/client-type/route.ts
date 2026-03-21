@@ -40,6 +40,8 @@ export async function GET(request: NextRequest) {
       custom_name: typeof data.custom_name === "string" ? data.custom_name : undefined,
       contact_name: typeof data.contact_name === "string" ? data.contact_name : undefined,
       push_name: typeof data.push_name === "string" ? data.push_name : undefined,
+      last_dni: typeof data.last_dni === "string" ? data.last_dni : undefined,
+      last_ruc: typeof data.last_ruc === "string" ? data.last_ruc : undefined,
     });
   } catch (error) {
     console.error("Error fetching user client_type:", error);

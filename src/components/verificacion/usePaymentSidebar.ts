@@ -36,6 +36,8 @@ export function usePaymentSidebar(options?: UsePaymentSidebarOptions) {
     custom_name?: string;
     contact_name?: string;
     push_name?: string;
+    last_dni?: string;
+    last_ruc?: string;
   }>({});
 
   const isOpen = selectedReservation !== null;
@@ -73,6 +75,8 @@ export function usePaymentSidebar(options?: UsePaymentSidebarOptions) {
         custom_name: cachedUser.custom_name,
         contact_name: cachedUser.contact_name,
         push_name: cachedUser.push_name,
+        last_dni: cachedUser.last_dni,
+        last_ruc: (cachedUser as { last_ruc?: string }).last_ruc,
       });
     }
 
@@ -130,6 +134,8 @@ export function usePaymentSidebar(options?: UsePaymentSidebarOptions) {
           custom_name: clientTypeData?.custom_name,
           contact_name: clientTypeData?.contact_name,
           push_name: clientTypeData?.push_name,
+          last_dni: typeof clientTypeData?.last_dni === "string" ? clientTypeData.last_dni : undefined,
+          last_ruc: typeof clientTypeData?.last_ruc === "string" ? clientTypeData.last_ruc : undefined,
         });
       } else {
         setClientType("casual");
@@ -265,7 +271,12 @@ export function usePaymentSidebar(options?: UsePaymentSidebarOptions) {
 
   const handleEmitInvoice = useCallback(async (
     transfer: Transfer,
-    params: { tipo_comprobante: "boleta" | "factura"; doc_num: string }
+    params: {
+      tipo_comprobante: "boleta" | "factura";
+      doc_num: string;
+      cliente_denominacion?: string;
+      descripcion?: string;
+    }
   ) => {
     if (!selectedReservation) {
       toast("No hay reserva seleccionada", "error");
@@ -283,6 +294,23 @@ export function usePaymentSidebar(options?: UsePaymentSidebarOptions) {
         const ids = transfers.map((t) => t.id).filter(Boolean);
         const newInvoices = ids.length > 0 ? await store.fetchInvoicesByTransferIds(ids) : [];
         setInvoices(newInvoices || []);
+
+        const docNum = params.doc_num.replace(/\D/g, "");
+        const chatId = String(selectedReservation.chat_id || selectedReservation.phone_number || "").replace(/\D/g, "");
+        const userDocId = chatId.length >= 9 ? normalizePeruPhone(chatId) : chatId;
+        if (params.tipo_comprobante === "boleta" && docNum.length === 8) {
+          if (!selectedReservation.dni) {
+            await store.updateReservationDni(selectedReservation.id, docNum);
+            setSelectedReservation((prev) => (prev ? { ...prev, dni: docNum } : prev));
+          }
+          if (!userNames.last_dni && userDocId) {
+            await store.updateUserDoc(userDocId, { last_dni: docNum });
+            setUserNames((prev) => ({ ...prev, last_dni: docNum }));
+          }
+        } else if (params.tipo_comprobante === "factura" && docNum.length === 11 && !userNames.last_ruc && userDocId) {
+          await store.updateUserDoc(userDocId, { last_ruc: docNum });
+          setUserNames((prev) => ({ ...prev, last_ruc: docNum }));
+        }
       } else {
         toast("Error al emitir comprobante", "error");
       }
@@ -293,7 +321,7 @@ export function usePaymentSidebar(options?: UsePaymentSidebarOptions) {
     } finally {
       setEmittingInvoiceId(null);
     }
-  }, [store, toast, selectedReservation, transfers]);
+  }, [store, toast, selectedReservation, transfers, userNames.last_dni, userNames.last_ruc]);
 
   const handleUpdateName = useCallback(async (name: string) => {
     if (!selectedReservation) return false;
@@ -337,10 +365,34 @@ export function usePaymentSidebar(options?: UsePaymentSidebarOptions) {
     const ok = await store.updateReservationDni(selectedReservation.id, clean);
     if (ok) {
       setSelectedReservation((prev) => (prev ? { ...prev, dni: clean } : prev));
+      setUserNames((prev) => ({ ...prev, last_dni: clean || undefined }));
       toast("DNI actualizado", "success");
       return true;
     }
     toast("No se pudo actualizar el DNI", "error");
+    return false;
+  }, [selectedReservation, store, toast]);
+
+  const handleUpdateRuc = useCallback(async (ruc: string) => {
+    if (!selectedReservation) return false;
+    const clean = ruc.replace(/\D/g, "").slice(0, 11);
+    if (clean && clean.length !== 11) {
+      toast("El RUC debe tener 11 dígitos", "error");
+      return false;
+    }
+    const chatId = String(selectedReservation.chat_id || selectedReservation.phone_number || "").replace(/\D/g, "");
+    const userDocId = chatId.length >= 9 ? normalizePeruPhone(chatId) : chatId;
+    if (!userDocId) {
+      toast("No se pudo identificar al cliente", "error");
+      return false;
+    }
+    const ok = await store.updateUserDoc(userDocId, { last_ruc: clean || undefined });
+    if (ok) {
+      setUserNames((prev) => ({ ...prev, last_ruc: clean || undefined }));
+      toast("RUC actualizado", "success");
+      return true;
+    }
+    toast("No se pudo actualizar el RUC", "error");
     return false;
   }, [selectedReservation, store, toast]);
 
@@ -422,22 +474,33 @@ export function usePaymentSidebar(options?: UsePaymentSidebarOptions) {
   }, [selectedReservation, toast]);
 
   const handleRevokeManualPayment = useCallback(async (transferId: string) => {
-    if (!selectedReservation) return;
+    const transfer = transfers.find((t) => t.id === transferId);
+    const reservationId = transfer?.reservation_id ?? selectedReservation?.id;
+    if (!reservationId) return;
     if (!confirm("¿Desvincular este pago de la reserva?\n\nEsta acción eliminará el pago y ajustará el monto pagado. Confirma solo si fue vinculado por error.")) return;
 
-    const result = await store.revokeManualPayment(transferId, selectedReservation.id);
+    const result = await store.revokeManualPayment(transferId, reservationId);
     if (result?.success) {
       toast("Pago desvinculado correctamente", "success");
       setTransfers((prev) => prev.filter((t) => t.id !== transferId));
       if (result.refunded) {
-        const newPaid = Math.max(0, (selectedReservation.amount_paid || 0) - result.refunded);
-        setSelectedReservation((prev) => prev ? { ...prev, amount_paid: newPaid } : null);
-        options?.onReservationUpdated?.(selectedReservation.id, { amount_paid: newPaid });
+        const affectedRes = allClientReservations.find((r) => r.id === reservationId);
+        const prevPaid = affectedRes?.amount_paid ?? 0;
+        const newPaid = Math.max(0, prevPaid - result.refunded);
+        const patch = { amount_paid: newPaid };
+        setSelectedReservation((prev) => (prev?.id === reservationId ? { ...prev, ...patch } : prev));
+        setAllClientReservations((prev) =>
+          prev.map((r) => (r.id === reservationId ? { ...r, ...patch } : r))
+        );
+        setAllReservationsThisWeek((prev) =>
+          prev.map((r) => (r.id === reservationId ? { ...r, ...patch } : r))
+        );
+        options?.onReservationUpdated?.(reservationId, patch);
       }
     } else {
       toast("Error al revocar pago", "error");
     }
-  }, [store, toast, selectedReservation, options]);
+  }, [store, toast, selectedReservation, transfers, allClientReservations, options]);
 
   const handleUpdateAmountPaid = useCallback(async (amountPaid: number, reservationId?: string) => {
     const id = reservationId ?? selectedReservation?.id;
@@ -588,6 +651,7 @@ export function usePaymentSidebar(options?: UsePaymentSidebarOptions) {
     handleVerifyTransfer,
     handleEmitInvoice,
     handleUpdateDni,
+    handleUpdateRuc,
     handleUpdateName,
     handleCancelReservation,
     handleUpdateClientType,

@@ -3,6 +3,7 @@ import { getDb } from "@/lib/firebase-admin";
 import { courtConfigDocId } from "@/lib/court-config";
 import {
   calculateReservationPrice,
+  normalizePeruPhone,
   type CourtConfigMap,
 } from "@/features/operaciones/utils";
 
@@ -369,6 +370,17 @@ export async function PATCH(request: NextRequest) {
     }
 
     await db.collection("reservations").doc(id).update(updateData);
+
+    if (updateData.dni !== undefined) {
+      const resDoc = await db.collection("reservations").doc(id).get();
+      const rawChatId = resDoc.exists ? resDoc.data()?.chat_id || resDoc.data()?.phone_number : null;
+      if (rawChatId) {
+        const userDocId = rawChatId.length >= 9 ? normalizePeruPhone(String(rawChatId)) : String(rawChatId).replace(/\D/g, "");
+        if (userDocId) {
+          await db.collection("users").doc(userDocId).set({ last_dni: updateData.dni || null }, { merge: true });
+        }
+      }
+    }
 
     return NextResponse.json({ success: true });
   } catch (error) {

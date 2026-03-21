@@ -517,7 +517,9 @@ export default function OperacionesPage() {
           onAttachInvoice={sidebar.handleAttachInvoice}
           onDetachInvoice={sidebar.handleDetachInvoice}
           onUpdateDni={sidebar.handleUpdateDni}
+          onUpdateRuc={sidebar.handleUpdateRuc}
           onUpdateName={sidebar.handleUpdateName}
+          clientRuc={sidebar.userNames?.last_ruc}
           displayName={sidebar.displayName}
           userCustomName={sidebar.userNames?.custom_name}
           onCancelReservation={sidebar.handleCancelReservation}

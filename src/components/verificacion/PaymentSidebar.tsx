@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useRef, useEffect, useCallback, useMemo, memo } from "react";
+import ReactDOM from "react-dom";
 import { compressImageForUpload } from "@/lib/compress-image";
 import { Transfer, Invoice, Reservation, PaymentMethod, ClientType, CLIENT_TYPE_LABELS, STATUS_LABELS, getPendingExpiryTimeFormatted, type ReservationStatus } from "@/lib/types";
 import { renderPdfToDataUrl } from "@/lib/pdf-preview";
@@ -81,12 +82,20 @@ interface PaymentSidebarProps {
   onVerifyTransfer: (transferId: string, currentStatus: boolean) => void;
   onEmitInvoice: (
     transfer: Transfer,
-    params: { tipo_comprobante: "boleta" | "factura"; doc_num: string }
+    params: {
+      tipo_comprobante: "boleta" | "factura";
+      doc_num: string;
+      cliente_denominacion?: string;
+      descripcion?: string;
+    }
   ) => void;
   onAttachInvoice: (transfer: Transfer, file: File) => void;
   onDetachInvoice: (invoiceId: string) => Promise<boolean>;
   onUpdateDni: (dni: string) => Promise<boolean>;
+  onUpdateRuc?: (ruc: string) => Promise<boolean>;
   onUpdateName?: (name: string) => Promise<boolean>;
+  /** RUC del cliente (desde user) para prellenar facturas. */
+  clientRuc?: string | null;
   onCancelReservation: () => Promise<boolean>;
   /** Nombre a mostrar: custom_name || contact_name || push_name || representative_name */
   displayName?: string;
@@ -194,6 +203,11 @@ interface SimplifiedPaymentClientData {
   setDniValue: (v: string) => void;
   setEditingDni: (v: boolean) => void;
   onUpdateDni: (dni: string) => Promise<boolean>;
+  editingRuc: boolean;
+  rucValue: string;
+  setRucValue: (v: string) => void;
+  setEditingRuc: (v: boolean) => void;
+  onUpdateRuc?: (ruc: string) => Promise<boolean>;
   clientType: ClientType;
   clientTypeLoading?: boolean;
   clientTypeUpdating?: boolean;
@@ -209,7 +223,7 @@ interface SimplifiedPaymentTransferHandlers {
   attachingInvoiceId: string | null;
   paymentLoading: boolean;
   onVerifyTransfer: (transferId: string, currentStatus: boolean) => void;
-  onEmitInvoice: (t: Transfer, p: { tipo_comprobante: "boleta" | "factura"; doc_num: string }) => void;
+  onEmitInvoice: (t: Transfer, p: { tipo_comprobante: "boleta" | "factura"; doc_num: string; cliente_denominacion?: string; descripcion?: string }) => void;
   onAttachInvoice: (t: Transfer, f: File) => void;
   onDetachInvoice: (id: string) => Promise<boolean>;
   onRevokeManualPayment: (id: string) => void;
@@ -218,6 +232,7 @@ interface SimplifiedPaymentTransferHandlers {
   onHoverTransferChanged: (transferId: string | null) => void;
   chatId: string;
   clientDni?: string | null;
+  clientRuc?: string | null;
 }
 
 interface ReservationDetailContentProps {
@@ -264,6 +279,11 @@ function ReservationDetailContent({
     setDniValue,
     setEditingDni,
     onUpdateDni,
+    editingRuc,
+    rucValue,
+    setRucValue,
+    setEditingRuc,
+    onUpdateRuc,
     clientType,
     clientTypeLoading,
     clientTypeUpdating,
@@ -287,6 +307,7 @@ function ReservationDetailContent({
     onHoverTransferChanged,
     chatId,
     clientDni,
+    clientRuc,
   } = transferHandlers;
   const configMap = useMemo(() => courtConfigsToMap(courtConfigs), [courtConfigs]);
   const transfersForRes = useMemo(
@@ -506,6 +527,46 @@ function ReservationDetailContent({
                 </>
               )}
             </div>
+            {onUpdateRuc != null && (
+              <div className="flex items-center gap-2">
+                <span className="text-sm text-gray-500">RUC:</span>
+                {editingRuc ? (
+                  <>
+                    <input
+                      type="text"
+                      value={rucValue}
+                      onChange={(e) => setRucValue(e.target.value.replace(/\D/g, "").slice(0, 11))}
+                      placeholder="(opcional)"
+                      className="w-36 rounded-lg border border-gray-200 px-2 py-1 text-sm font-semibold text-gray-700 focus:outline-none focus:border-blue-500"
+                    />
+                    <button
+                      onClick={async () => {
+                        const ok = await onUpdateRuc(rucValue);
+                        if (ok) setEditingRuc(false);
+                      }}
+                      className="text-xs px-2 py-1 rounded-md bg-blue-600 text-white hover:bg-blue-700"
+                    >
+                      Guardar
+                    </button>
+                  </>
+                ) : (
+                  <>
+                    <span className={`text-sm font-semibold ${rucValue ? "text-gray-800" : "text-gray-400"}`}>
+                      {rucValue || "(vacío)"}
+                    </span>
+                    <button
+                      onClick={() => setEditingRuc(true)}
+                      className="p-1 rounded-md hover:bg-gray-100 text-gray-500 hover:text-gray-700"
+                      title="Editar RUC"
+                    >
+                      <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
+                      </svg>
+                    </button>
+                  </>
+                )}
+              </div>
+            )}
           </div>
 
         {/* Controles: fila horizontal */}
@@ -682,6 +743,8 @@ function ReservationDetailContent({
                   key={transfer.id}
                   transfer={transfer}
                   invoice={invoice}
+                  reservation={reservation}
+                  courtConfigs={courtConfigs}
                   emittingInvoiceId={emittingInvoiceId}
                   attachingInvoiceId={attachingInvoiceId}
                   onVerify={onVerifyTransfer}
@@ -693,6 +756,7 @@ function ReservationDetailContent({
                   onHover={(hovering) => onHoverTransferChanged(hovering ? transfer.id : null)}
                   chatId={chatId}
                   clientDni={clientDni}
+                  clientRuc={clientRuc}
                 />
               );
             })}
@@ -944,6 +1008,8 @@ function RegisterPaymentFormCobros({
 const PaymentAccordionList = memo(function PaymentAccordionList({
   transfers,
   invoices,
+  allClientReservations,
+  courtConfigs,
   emittingInvoiceId,
   attachingInvoiceId,
   onVerifyTransfer,
@@ -956,13 +1022,16 @@ const PaymentAccordionList = memo(function PaymentAccordionList({
   onHover,
   chatId,
   clientDni,
+  clientRuc,
 }: {
   transfers: Transfer[];
   invoices: Invoice[];
+  allClientReservations: Reservation[];
+  courtConfigs: CourtFieldConfig[] | null | undefined;
   emittingInvoiceId: string | null;
   attachingInvoiceId: string | null;
   onVerifyTransfer: (id: string, verified: boolean) => void;
-  onEmitInvoice: (t: Transfer, p: { tipo_comprobante: "boleta" | "factura"; doc_num: string }) => void;
+  onEmitInvoice: (t: Transfer, p: { tipo_comprobante: "boleta" | "factura"; doc_num: string; cliente_denominacion?: string; descripcion?: string }) => void;
   onAttachInvoice: (t: Transfer, f: File) => void;
   onDetachInvoice: (id: string) => Promise<boolean>;
   onRevokeManualPayment: (id: string) => void;
@@ -971,6 +1040,7 @@ const PaymentAccordionList = memo(function PaymentAccordionList({
   onHover: (id: string | null) => void;
   chatId: string;
   clientDni?: string | null;
+  clientRuc?: string | null;
 }) {
   const [expandedId, setExpandedId] = useState<string | null>(null);
 
@@ -1036,6 +1106,8 @@ const PaymentAccordionList = memo(function PaymentAccordionList({
                 <TransferCard
                   transfer={t}
                   invoice={inv}
+                  reservation={allClientReservations.find((r) => r.id === t.reservation_id)}
+                  courtConfigs={courtConfigs}
                   emittingInvoiceId={emittingInvoiceId}
                   attachingInvoiceId={attachingInvoiceId}
                   onVerify={onVerifyTransfer}
@@ -1047,6 +1119,7 @@ const PaymentAccordionList = memo(function PaymentAccordionList({
                   onHover={(h) => onHover(h ? t.id : null)}
                   chatId={chatId}
                   clientDni={clientDni}
+                  clientRuc={clientRuc}
                 />
               </div>
             )}
@@ -1059,17 +1132,215 @@ const PaymentAccordionList = memo(function PaymentAccordionList({
 
 // ─── Transfer Card ───────────────────────────────────────────────────────────
 
+/** Construye la descripción que usará SUNAT (formato 12h: 10am-12pm). */
+function buildInvoiceDescription(reservation: Reservation | undefined, courtConfigs: CourtFieldConfig[] | null | undefined): string {
+  if (!reservation) return "Alquiler cancha — datos de reserva no disponibles";
+  const cfg = reservation.field && courtConfigs?.length ? courtConfigs.find((c) => c.field === reservation.field) : null;
+  const courtLabel = cfg ? getCourtSizeLabel(cfg) : (reservation.field === 9 ? "5 vs 5" : "6 vs 6");
+  let desc = `Alquiler cancha ${courtLabel}`;
+  if (reservation.date) {
+    const d = new Date(reservation.date + "T12:00:00");
+    desc += ` - ${d.toLocaleDateString("es-PE", { day: "2-digit", month: "2-digit", year: "numeric" })}`;
+  }
+  if (reservation.time_slots?.length) {
+    const start = reservation.time_slots[0];
+    const lastH = parseInt(reservation.time_slots[reservation.time_slots.length - 1].split(":")[0]) + 1;
+    const startStr = formatHour12(start).replace(/:00\s?/g, "").replace(/\s/g, "");
+    const endStr = formatHour12(`${lastH}:00`).replace(/:00\s?/g, "").replace(/\s/g, "");
+    desc += ` ${startStr}-${endStr}`;
+  }
+  return desc;
+}
+
+const EmitInvoiceModal = memo(function EmitInvoiceModal({
+  transfer,
+  reservation,
+  courtConfigs,
+  clientDni,
+  clientRuc,
+  docType,
+  setDocType,
+  docNumber,
+  setDocNumber,
+  clienteEdit,
+  setClienteEdit,
+  descripcionEdit,
+  setDescripcionEdit,
+  serieNum,
+  setSerieNum,
+  fetchingSerie,
+  setFetchingSerie,
+  emittingInvoiceId,
+  attachingInvoiceId,
+  onClose,
+  onEmitInvoice,
+  buildInvoiceDescription,
+}: {
+  transfer: Transfer;
+  reservation?: Reservation;
+  courtConfigs?: CourtFieldConfig[] | null;
+  clientDni?: string | null;
+  clientRuc?: string | null;
+  docType: "boleta" | "factura";
+  setDocType: (v: "boleta" | "factura") => void;
+  docNumber: string;
+  setDocNumber: (v: string) => void;
+  clienteEdit: string;
+  setClienteEdit: (v: string) => void;
+  descripcionEdit: string;
+  setDescripcionEdit: (v: string) => void;
+  serieNum: { serie: string; next_correlativo: number } | null;
+  setSerieNum: (v: { serie: string; next_correlativo: number } | null) => void;
+  fetchingSerie: boolean;
+  setFetchingSerie: (v: boolean) => void;
+  emittingInvoiceId: string | null;
+  attachingInvoiceId: string | null;
+  onClose: () => void;
+  onEmitInvoice: (t: Transfer, p: { tipo_comprobante: "boleta" | "factura"; doc_num: string; cliente_denominacion?: string; descripcion?: string }) => void;
+  buildInvoiceDescription: (r?: Reservation, c?: CourtFieldConfig[] | null) => string;
+}) {
+  const docValid = docType === "factura" ? docNumber.length === 11 : docNumber.length === 8;
+
+  useEffect(() => {
+    let cancelled = false;
+    setFetchingSerie(true);
+    fetch(`/api/invoices?next_correlativo=1&tipo=${docType}`)
+      .then((r) => r.json())
+      .then((data) => {
+        if (!cancelled && data?.serie != null && data?.next_correlativo != null) {
+          setSerieNum({ serie: String(data.serie), next_correlativo: Number(data.next_correlativo) });
+        }
+      })
+      .catch(() => { if (!cancelled) setSerieNum(null); })
+      .finally(() => { if (!cancelled) setFetchingSerie(false); });
+    return () => { cancelled = true; };
+  }, [docType]);
+
+
+  return (
+    <div className="fixed inset-0 z-[9999] flex items-center justify-center p-4 bg-black/55" role="dialog" aria-modal="true">
+      <div className="w-full max-w-2xl max-h-[90vh] overflow-y-auto rounded-2xl bg-white shadow-2xl p-6 space-y-5">
+        <div className="flex items-center justify-between">
+          <h4 className="text-xl font-bold text-gray-900">Vista previa — Emitir comprobante</h4>
+          <button onClick={onClose} className="p-1.5 rounded-lg text-gray-400 hover:bg-gray-100 hover:text-gray-700">
+            <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+            </svg>
+          </button>
+        </div>
+
+        <div className="flex border-b-2 border-gray-200">
+          <button
+            onClick={() => { setDocType("boleta"); setDocNumber(clientDni || ""); }}
+            className={`px-4 py-2 font-semibold border-b-2 -mb-0.5 transition-colors ${docType === "boleta" ? "border-blue-500 text-blue-600" : "border-transparent text-gray-500 hover:text-gray-700"}`}
+          >
+            Boleta (DNI)
+          </button>
+          <button
+            onClick={() => { setDocType("factura"); setDocNumber(clientRuc || ""); }}
+            className={`px-4 py-2 font-semibold border-b-2 -mb-0.5 transition-colors ${docType === "factura" ? "border-blue-500 text-blue-600" : "border-transparent text-gray-500 hover:text-gray-700"}`}
+          >
+            Factura (RUC)
+          </button>
+        </div>
+
+        <div className="rounded-xl border-2 border-amber-200 bg-amber-50/50 p-5 space-y-4">
+          <p className="text-xs font-bold text-amber-800 uppercase tracking-wide">Datos que usará SUNAT</p>
+          <div className="space-y-3 text-sm">
+            <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center gap-1">
+              <span className="text-gray-600 shrink-0">Serie / Número</span>
+              <span className="font-mono font-bold text-gray-900 text-base">
+                {fetchingSerie ? "Cargando..." : serieNum ? `${serieNum.serie}-${String(serieNum.next_correlativo).padStart(5, "0")}` : (docValid ? "—" : "Ingresa DNI/RUC válido")}
+              </span>
+            </div>
+            <div className="flex justify-between items-center gap-4">
+              <span className="text-gray-600 shrink-0">Tipo:</span>
+              <span className="font-semibold">{docType === "boleta" ? "Boleta" : "Factura"}</span>
+            </div>
+            <div>
+              <label className="block text-gray-600 text-xs font-medium mb-1">Doc. cliente</label>
+              <input
+                type="text"
+                value={docNumber}
+                onChange={(e) => {
+                  const onlyDigits = e.target.value.replace(/\D/g, "");
+                  setDocNumber(docType === "factura" ? onlyDigits.slice(0, 11) : onlyDigits.slice(0, 8));
+                }}
+                placeholder={docType === "factura" ? "RUC 11 dígitos" : "DNI 8 dígitos"}
+                className="w-full rounded-lg border-2 border-gray-200 bg-white px-3 py-2 font-mono focus:border-blue-500 focus:outline-none"
+              />
+            </div>
+            <div>
+              <label className="block text-gray-600 text-xs font-medium mb-1">Cliente</label>
+              <input
+                type="text"
+                value={clienteEdit}
+                onChange={(e) => setClienteEdit(e.target.value)}
+                placeholder="CLIENTE GENERAL si vacío"
+                className="w-full rounded-lg border-2 border-gray-200 bg-white px-3 py-2 font-medium focus:border-blue-500 focus:outline-none"
+              />
+            </div>
+            <div>
+              <label className="block text-gray-600 text-xs font-medium mb-1">Descripción</label>
+              <input
+                type="text"
+                value={descripcionEdit}
+                onChange={(e) => setDescripcionEdit(e.target.value)}
+                placeholder="Ej: Alquiler cancha 6 vs 6 - 06/02/2025 10am-12pm"
+                className="w-full rounded-lg border-2 border-gray-200 bg-white px-3 py-2 font-medium focus:border-blue-500 focus:outline-none"
+              />
+            </div>
+            <div className="flex justify-between items-center gap-4 pt-3 border-t border-amber-300">
+              <span className="text-gray-600">Monto total (IGV incl.):</span>
+              <span className="text-xl font-bold text-gray-900">S/ {(transfer.amount ?? 0).toFixed(2)}</span>
+            </div>
+          </div>
+        </div>
+
+        <div className="flex gap-3">
+          <button onClick={onClose} className="flex-1 py-3 px-4 rounded-xl border-2 border-gray-300 text-gray-700 font-semibold hover:bg-gray-100">
+            Cancelar
+          </button>
+          <button
+            onClick={() => {
+              if (!docValid) return;
+              onEmitInvoice(transfer, {
+                tipo_comprobante: docType,
+                doc_num: docNumber,
+                cliente_denominacion: clienteEdit.trim() || undefined,
+                descripcion: descripcionEdit.trim() || undefined,
+              });
+              onClose();
+            }}
+            disabled={attachingInvoiceId === transfer.id || emittingInvoiceId === transfer.id || !docValid}
+            className="flex-1 py-3 px-4 rounded-xl bg-green-600 text-white font-semibold hover:bg-green-700 disabled:opacity-60"
+          >
+            {emittingInvoiceId === transfer.id ? "Emitiendo..." : "Confirmar y emitir"}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+});
+
 const TransferCard = memo(function TransferCard({
-  transfer, invoice, emittingInvoiceId, attachingInvoiceId, onVerify, onEmitInvoice, onAttachInvoice, onDetachInvoice, onRevoke, onViewImage, onHover, chatId, clientDni,
+  transfer, invoice, reservation, courtConfigs, emittingInvoiceId, attachingInvoiceId, onVerify, onEmitInvoice, onAttachInvoice, onDetachInvoice, onRevoke, onViewImage, onHover, chatId, clientDni, clientRuc,
 }: {
   transfer: Transfer;
   invoice: Invoice | undefined;
+  reservation?: Reservation | undefined;
+  courtConfigs?: CourtFieldConfig[] | null;
   emittingInvoiceId: string | null;
   attachingInvoiceId: string | null;
   onVerify: (transferId: string, currentStatus: boolean) => void;
   onEmitInvoice: (
     transfer: Transfer,
-    params: { tipo_comprobante: "boleta" | "factura"; doc_num: string }
+    params: {
+      tipo_comprobante: "boleta" | "factura";
+      doc_num: string;
+      cliente_denominacion?: string;
+      descripcion?: string;
+    }
   ) => void;
   onAttachInvoice: (transfer: Transfer, file: File) => void;
   onDetachInvoice: (invoiceId: string) => Promise<boolean>;
@@ -1078,12 +1349,17 @@ const TransferCard = memo(function TransferCard({
   onHover: (hovering: boolean) => void;
   chatId: string;
   clientDni?: string | null;
+  clientRuc?: string | null;
 }) {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [dragOver, setDragOver] = useState(false);
   const [showEmitModal, setShowEmitModal] = useState(false);
   const [docType, setDocType] = useState<"boleta" | "factura">("boleta");
   const [docNumber, setDocNumber] = useState("");
+  const [clienteEdit, setClienteEdit] = useState("");
+  const [descripcionEdit, setDescripcionEdit] = useState("");
+  const [serieNum, setSerieNum] = useState<{ serie: string; next_correlativo: number } | null>(null);
+  const [fetchingSerie, setFetchingSerie] = useState(false);
   const [wspStatus, setWspStatus] = useState<"idle" | "sending" | "sent" | "error">("idle");
   const [wspError, setWspError] = useState<string | null>(null);
   const [detachingInvoice, setDetachingInvoice] = useState(false);
@@ -1307,6 +1583,9 @@ const TransferCard = memo(function TransferCard({
                 onClick={() => {
                   setDocType("boleta");
                   setDocNumber(clientDni || "");
+                  setSerieNum(null);
+                  setClienteEdit(reservation?.representative_name?.trim() ?? "");
+                  setDescripcionEdit(buildInvoiceDescription(reservation, courtConfigs));
                   setShowEmitModal(true);
                 }}
                 disabled={attachingInvoiceId === transfer.id || emittingInvoiceId === transfer.id || !hasPositiveAmount}
@@ -1324,81 +1603,32 @@ const TransferCard = memo(function TransferCard({
         </div>
       </div>
 
-      {showEmitModal && (
-        <div className="fixed inset-0 z-[70] bg-black/40 flex items-center justify-center p-4">
-          <div className="w-full max-w-md rounded-2xl bg-white shadow-2xl p-5 space-y-4">
-            <div className="flex items-center justify-between">
-              <h4 className="text-lg font-bold text-gray-900">Emitir comprobante</h4>
-              <button onClick={() => setShowEmitModal(false)} className="p-1 text-gray-400 hover:text-gray-700">
-                <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-                </svg>
-              </button>
-            </div>
-
-            <div className="grid grid-cols-2 gap-2">
-              <button
-                onClick={() => {
-                  if (docType !== "boleta") {
-                    setDocType("boleta");
-                    setDocNumber(clientDni || "");
-                  }
-                }}
-                className={`py-2 rounded-lg border-2 font-semibold ${docType === "boleta" ? "border-blue-500 bg-blue-50 text-blue-700" : "border-gray-200 text-gray-600"
-                  }`}
-              >
-                Con DNI
-              </button>
-              <button
-                onClick={() => {
-                  if (docType !== "factura") {
-                    setDocType("factura");
-                    setDocNumber("");
-                  }
-                }}
-                className={`py-2 rounded-lg border-2 font-semibold ${docType === "factura" ? "border-blue-500 bg-blue-50 text-blue-700" : "border-gray-200 text-gray-600"
-                  }`}
-              >
-                Con RUC
-              </button>
-            </div>
-
-            <input
-              type="text"
-              value={docNumber}
-              onChange={(e) => {
-                const onlyDigits = e.target.value.replace(/\D/g, "");
-                setDocNumber(docType === "factura" ? onlyDigits.slice(0, 11) : onlyDigits.slice(0, 8));
-              }}
-              placeholder={docType === "factura" ? "RUC (11 dígitos)" : "DNI (8 dígitos)"}
-              className="w-full rounded-xl border-2 border-gray-200 bg-gray-50 px-4 py-3 font-semibold text-gray-800 focus:border-blue-500 focus:outline-none"
-            />
-
-            <div className="flex gap-3">
-              <button
-                onClick={() => setShowEmitModal(false)}
-                className="flex-1 py-2.5 px-4 rounded-xl border-2 border-gray-300 text-gray-700 font-semibold hover:bg-gray-100"
-              >
-                Cancelar
-              </button>
-              <button
-                onClick={() => {
-                  const isValid = docType === "factura" ? docNumber.length === 11 : docNumber.length === 8;
-                  if (!isValid) return;
-                  onEmitInvoice(transfer, {
-                    tipo_comprobante: docType,
-                    doc_num: docNumber,
-                  });
-                  setShowEmitModal(false);
-                }}
-                disabled={attachingInvoiceId === transfer.id || emittingInvoiceId === transfer.id || (docType === "factura" ? docNumber.length !== 11 : docNumber.length !== 8)}
-                className="flex-1 py-2.5 px-4 rounded-xl bg-green-600 text-white font-semibold hover:bg-green-700 disabled:opacity-60"
-              >
-                {emittingInvoiceId === transfer.id ? "Emitiendo..." : "Emitir"}
-              </button>
-            </div>
-          </div>
-        </div>
+      {showEmitModal && typeof document !== "undefined" && ReactDOM.createPortal(
+        <EmitInvoiceModal
+          transfer={transfer}
+          reservation={reservation}
+          courtConfigs={courtConfigs}
+          clientDni={clientDni}
+          clientRuc={clientRuc}
+          docType={docType}
+          setDocType={setDocType}
+          docNumber={docNumber}
+          setDocNumber={setDocNumber}
+          clienteEdit={clienteEdit}
+          setClienteEdit={setClienteEdit}
+          descripcionEdit={descripcionEdit}
+          setDescripcionEdit={setDescripcionEdit}
+          serieNum={serieNum}
+          setSerieNum={setSerieNum}
+          fetchingSerie={fetchingSerie}
+          setFetchingSerie={setFetchingSerie}
+          emittingInvoiceId={emittingInvoiceId}
+          attachingInvoiceId={attachingInvoiceId}
+          onClose={() => { setShowEmitModal(false); setSerieNum(null); }}
+          onEmitInvoice={onEmitInvoice}
+          buildInvoiceDescription={buildInvoiceDescription}
+        />,
+        document.body
       )}
     </div>
   );
@@ -1523,6 +1753,7 @@ const ReservationRow = memo(function ReservationRow({
 const CobrosTabContent = memo(function CobrosTabContent({
   allClientReservations,
   reservation,
+  courtConfigs,
   transfers,
   invoices,
   loading,
@@ -1540,18 +1771,20 @@ const CobrosTabContent = memo(function CobrosTabContent({
   paymentLoading,
   chatId,
   clientDni,
+  clientRuc,
   setViewingImage,
   setHoveredTransferId,
 }: {
   allClientReservations: Reservation[];
   reservation: Reservation;
+  courtConfigs?: CourtFieldConfig[] | null;
   transfers: Transfer[];
   invoices: Invoice[];
   loading: boolean;
   emittingInvoiceId: string | null;
   attachingInvoiceId: string | null;
   onVerifyTransfer: (id: string, verified: boolean) => void;
-  onEmitInvoice: (t: Transfer, p: { tipo_comprobante: "boleta" | "factura"; doc_num: string }) => void;
+  onEmitInvoice: (t: Transfer, p: { tipo_comprobante: "boleta" | "factura"; doc_num: string; cliente_denominacion?: string; descripcion?: string }) => void;
   onAttachInvoice: (t: Transfer, f: File) => void;
   onDetachInvoice: (id: string) => Promise<boolean>;
   onRevokeManualPayment: (id: string) => void;
@@ -1562,6 +1795,7 @@ const CobrosTabContent = memo(function CobrosTabContent({
   paymentLoading: boolean;
   chatId: string;
   clientDni?: string | null;
+  clientRuc?: string | null;
   setViewingImage: (src: string) => void;
   setHoveredTransferId: (id: string | null) => void;
 }) {
@@ -1627,12 +1861,27 @@ const CobrosTabContent = memo(function CobrosTabContent({
   const clientSearch = String(reservation.phone_number || reservation.chat_id || "").replace(/\D/g, "").slice(-9);
   const historicoUrl = `/verificacion?search=${encodeURIComponent(clientSearch)}`;
 
+  /** Ventana de fechas para pagos: 1 semana atrás y 1 semana adelante desde hoy (no la semana de la reserva). */
+  const { transferWindowStart, transferWindowEnd } = useMemo(() => {
+    const today = new Date();
+    const start = new Date(today);
+    start.setDate(start.getDate() - 7);
+    const end = new Date(today);
+    end.setDate(end.getDate() + 7);
+    return {
+      transferWindowStart: start.toISOString().slice(0, 10),
+      transferWindowEnd: end.toISOString().slice(0, 10),
+    };
+  }, []);
+
   const filteredTransfers = useMemo(() => transfers.filter((t) => {
     const isApplied = t.applied ?? (t.status === "applied" || t.status === "partial");
     const transferDate = t.created_at?.split?.("T")?.[0] ?? "";
-    const isFromThisWeek = transferDate >= weekStart && transferDate <= weekEnd;
-    return !isApplied || isFromThisWeek || modifiedInSessionTransferIds.has(t.id);
-  }), [transfers, weekStart, weekEnd, modifiedInSessionTransferIds]);
+    const isInWindow = transferDate >= transferWindowStart && transferDate <= transferWindowEnd;
+    const hasInvoice = invoices.some((inv) => inv.transfer_id === t.id);
+    const canEmitBoleta = (t.amount ?? 0) > 0 && !hasInvoice;
+    return !isApplied || isInWindow || modifiedInSessionTransferIds.has(t.id) || canEmitBoleta;
+  }), [transfers, transferWindowStart, transferWindowEnd, modifiedInSessionTransferIds, invoices]);
 
   const handleMarkedInSession = useCallback((id: string) => {
     setModifiedInSessionReservationIds((prev) => new Set(prev).add(id));
@@ -1725,6 +1974,8 @@ const CobrosTabContent = memo(function CobrosTabContent({
             <PaymentAccordionList
               transfers={filteredTransfers}
               invoices={invoices}
+              allClientReservations={allClientReservations}
+              courtConfigs={courtConfigs ?? null}
               emittingInvoiceId={emittingInvoiceId}
               attachingInvoiceId={attachingInvoiceId}
               onVerifyTransfer={onVerifyTransfer}
@@ -1737,6 +1988,7 @@ const CobrosTabContent = memo(function CobrosTabContent({
               onHover={setHoveredTransferId}
               chatId={chatId}
               clientDni={clientDni}
+              clientRuc={clientRuc}
             />
           ) : (
             <div className="p-8 text-center border-2 border-dashed border-gray-200 rounded-2xl bg-white">
@@ -1790,7 +2042,9 @@ const PaymentSidebar = memo(function PaymentSidebar({
   onAttachInvoice,
   onDetachInvoice,
   onUpdateDni,
+  onUpdateRuc,
   onUpdateName,
+  clientRuc,
   onCancelReservation,
   displayName,
   userCustomName,
@@ -1822,6 +2076,8 @@ const PaymentSidebar = memo(function PaymentSidebar({
   const [hoveredTransferId, setHoveredTransferId] = useState<string | null>(null);
   const [editingDni, setEditingDni] = useState(false);
   const [dniValue, setDniValue] = useState(reservation.dni || "");
+  const [editingRuc, setEditingRuc] = useState(false);
+  const [rucValue, setRucValue] = useState("");
   const [editingName, setEditingName] = useState(false);
   const effectiveDisplayName = displayName ?? reservation.representative_name ?? "";
   const initialNameForEdit = userCustomName ?? effectiveDisplayName;
@@ -1868,6 +2124,10 @@ const PaymentSidebar = memo(function PaymentSidebar({
     setDniValue(reservation.dni || "");
     setEditingDni(false);
   }, [reservation.id, reservation.dni]);
+  useEffect(() => {
+    setRucValue(clientRuc || "");
+    setEditingRuc(false);
+  }, [reservation.id, clientRuc]);
   useEffect(() => {
     setNameValue(userCustomName ?? displayName ?? reservation.representative_name ?? "");
     setEditingName(false);
@@ -1992,6 +2252,11 @@ const PaymentSidebar = memo(function PaymentSidebar({
               setDniValue,
               setEditingDni,
               onUpdateDni,
+              editingRuc,
+              rucValue,
+              setRucValue,
+              setEditingRuc,
+              onUpdateRuc,
               clientType,
               clientTypeLoading,
               clientTypeUpdating,
@@ -2020,6 +2285,7 @@ const PaymentSidebar = memo(function PaymentSidebar({
               onHoverTransferChanged: setHoveredTransferId,
               chatId: reservation.chat_id || reservation.phone_number || "",
               clientDni: reservation.dni,
+              clientRuc: clientRuc ?? undefined,
             }}
             reservationsForChips={hasMultipleReservations ? allReservationsThisWeek : undefined}
             onSelectReservationFromChips={hasMultipleReservations ? onSelectReservationFromList : undefined}
@@ -2030,6 +2296,7 @@ const PaymentSidebar = memo(function PaymentSidebar({
           <CobrosTabContent
             allClientReservations={allClientReservations}
             reservation={reservation}
+            courtConfigs={courtConfigs}
             transfers={transfers}
             invoices={invoices}
             loading={loading}
@@ -2047,6 +2314,7 @@ const PaymentSidebar = memo(function PaymentSidebar({
             paymentLoading={paymentLoading}
             chatId={reservation.chat_id || reservation.phone_number || ""}
             clientDni={reservation.dni}
+            clientRuc={clientRuc ?? undefined}
             setViewingImage={setViewingImage}
             setHoveredTransferId={setHoveredTransferId}
           />

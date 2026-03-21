@@ -357,6 +357,29 @@ class Store {
     }
   }
 
+  async updateUserDoc(
+    userId: string,
+    doc: { last_dni?: string; last_ruc?: string }
+  ): Promise<boolean> {
+    try {
+      const body: Record<string, unknown> = { id: userId, ...doc };
+      const res = await fetch("/api/users", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+      });
+      if (!res.ok) return false;
+      this.users = this.users.map((u) =>
+        u.id === userId ? { ...u, ...doc } : u
+      );
+      this.notify();
+      return true;
+    } catch (error) {
+      console.error("Error updating user doc:", error);
+      return false;
+    }
+  }
+
   // User Reservations (para la vista expandida de un usuario)
   async fetchUserReservations(phoneNumber: string): Promise<Reservation[]> {
     try {
@@ -566,28 +589,37 @@ class Store {
   async emitInvoice(
     reservation: Reservation,
     transfer: { id: string; amount: number } | undefined,
-    params: { tipo_comprobante: "boleta" | "factura"; doc_num: string }
+    params: {
+      tipo_comprobante: "boleta" | "factura";
+      doc_num: string;
+      cliente_denominacion?: string;
+      descripcion?: string;
+    }
   ) {
     try {
       const amountToBill = transfer?.amount || reservation.total_price;
 
+      const body: Record<string, unknown> = {
+        reservation_id: reservation.id,
+        user_id: reservation.chat_id,
+        phone_number: reservation.phone_number,
+        amount: amountToBill,
+        court_type: reservation.court_type,
+        field: reservation.field,
+        date: reservation.date,
+        time_slots: reservation.time_slots,
+        representative_name: reservation.representative_name,
+        transfer_id: transfer?.id,
+        tipo_comprobante: params.tipo_comprobante,
+        doc_num: params.doc_num,
+      };
+      if (params.cliente_denominacion?.trim()) body.cliente_denominacion = params.cliente_denominacion.trim();
+      if (params.descripcion?.trim()) body.descripcion = params.descripcion.trim();
+
       const res = await fetch("/api/invoices", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          reservation_id: reservation.id,
-          user_id: reservation.chat_id,
-          phone_number: reservation.phone_number,
-          amount: amountToBill,
-          court_type: reservation.court_type,
-          field: reservation.field,
-          date: reservation.date,
-          time_slots: reservation.time_slots,
-          representative_name: reservation.representative_name,
-          transfer_id: transfer?.id,
-          tipo_comprobante: params.tipo_comprobante,
-          doc_num: params.doc_num,
-        }),
+        body: JSON.stringify(body),
       });
       const result = await res.json();
       if (!res.ok) {

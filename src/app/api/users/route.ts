@@ -144,7 +144,7 @@ export async function PATCH(request: NextRequest) {
   try {
     const db = getDb();
     const body = await request.json();
-    const { id, is_automated, client_type, custom_name } = body;
+    const { id, is_automated, client_type, custom_name, last_dni, last_ruc } = body;
 
     if (!id) {
       return NextResponse.json(
@@ -176,6 +176,15 @@ export async function PATCH(request: NextRequest) {
 
     if (custom_name !== undefined) {
       updateData.custom_name = typeof custom_name === "string" ? custom_name.trim() : null;
+    }
+
+    if (last_dni !== undefined) {
+      const clean = typeof last_dni === "string" ? last_dni.replace(/\D/g, "").slice(0, 8) : "";
+      updateData.last_dni = clean.length === 8 ? clean : null;
+    }
+    if (last_ruc !== undefined) {
+      const clean = typeof last_ruc === "string" ? last_ruc.replace(/\D/g, "").slice(0, 11) : "";
+      updateData.last_ruc = clean.length === 11 ? clean : null;
     }
 
     if (Object.keys(updateData).length === 0) {

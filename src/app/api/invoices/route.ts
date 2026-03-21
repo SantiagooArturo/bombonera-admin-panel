@@ -37,6 +37,17 @@ async function getNextCorrelativo(
   });
 }
 
+/** Formato 12h para la descripción (ej: 10am, 6pm). */
+function formatHour12(hourStr: string): string {
+  const parts = hourStr.split(":");
+  const h = parseInt(parts[0] || "0");
+  const m = parseInt(parts[1] || "0");
+  if (h === 0) return m === 0 ? "12am" : `12:${String(m).padStart(2, "0")}am`;
+  if (h < 12) return m === 0 ? `${h}am` : `${h}:${String(m).padStart(2, "0")}am`;
+  if (h === 12) return m === 0 ? "12pm" : `12:${String(m).padStart(2, "0")}pm`;
+  return m === 0 ? `${h - 12}pm` : `${h - 12}:${String(m).padStart(2, "0")}pm`;
+}
+
 /**
  * Detecta si el error de apisunat es por documento duplicado.
  * Mensaje típico: "ERROR: Documento B001-1 fue emitido anteriormente"
@@ -45,13 +56,34 @@ function isDuplicateError(message?: string): boolean {
   return !!message?.toLowerCase().includes("fue emitido anteriormente");
 }
 
-// ── GET: Listar boletas por reserva ─────────────────────────────────────────
+/** Lee el siguiente correlativo sin consumirlo (solo lectura). */
+async function peekNextCorrelativo(
+  db: FirebaseFirestore.Firestore,
+  serie: string
+): Promise<number> {
+  const counterRef = db.collection("config").doc(`invoice_counter_${serie}`);
+  const doc = await counterRef.get();
+  const current = doc.exists ? (doc.data()?.last_correlativo || 0) : 0;
+  return current + 1;
+}
+
+// ── GET: Listar boletas por reserva | Obtener siguiente correlativo ───────────
 
 export async function GET(request: NextRequest) {
   try {
+    const db = getDb();
+    const nextCorrelativoParam = request.nextUrl.searchParams.get("next_correlativo");
+    const tipo = request.nextUrl.searchParams.get("tipo");
+
+    if (nextCorrelativoParam === "1" && tipo) {
+      const tipoComprobante = tipo === "factura" ? "factura" : "boleta";
+      const serie = tipoComprobante === "factura" ? APISUNAT_SERIE_FACTURA : APISUNAT_SERIE_BOLETA;
+      const next = await peekNextCorrelativo(db, serie);
+      return NextResponse.json({ serie, next_correlativo: next });
+    }
+
     const reservationId = request.nextUrl.searchParams.get("reservation_id");
     const transferIdsParam = request.nextUrl.searchParams.get("transfer_ids");
-    const db = getDb();
 
     let query: FirebaseFirestore.Query = db.collection("invoices");
     if (reservationId) {
@@ -114,6 +146,8 @@ export async function POST(request: NextRequest) {
       transfer_id,
       tipo_comprobante,
       doc_num,
+      cliente_denominacion: clienteOverride,
+      descripcion: descripcionOverride,
     } = body;
 
     if (!reservation_id || !user_id) {
@@ -155,22 +189,23 @@ export async function POST(request: NextRequest) {
     const valorUnitario = (totalAmount / 1.18).toFixed(6);
 
     // 2. Descripción del servicio (aparece en la boleta impresa)
-    const courtLabel = await getCourtLabelForReservation(field, court_type);
-    let descripcion = `Alquiler cancha ${courtLabel}`;
-    if (date) {
-      const dateObj = new Date(date + "T12:00:00");
-      const dateStr = dateObj.toLocaleDateString("es-PE", {
-        day: "2-digit",
-        month: "2-digit",
-        year: "numeric",
-      });
-      descripcion += ` - ${dateStr}`;
-    }
-    if (time_slots?.length > 0) {
-      const startH = time_slots[0];
-      const lastH = parseInt(time_slots[time_slots.length - 1].split(":")[0]) + 1;
-      descripcion += ` ${startH}-${lastH}:00`;
-    }
+    let descripcion =
+      typeof descripcionOverride === "string" && descripcionOverride.trim().length > 0
+        ? descripcionOverride.trim()
+        : (() => {
+            const courtLabel = getCourtLabelForReservation(field, court_type);
+            let d = `Alquiler cancha ${courtLabel}`;
+            if (date) {
+              const dateObj = new Date(date + "T12:00:00");
+              d += ` - ${dateObj.toLocaleDateString("es-PE", { day: "2-digit", month: "2-digit", year: "numeric" })}`;
+            }
+            if (time_slots?.length > 0) {
+              const startH = time_slots[0];
+              const lastH = parseInt(time_slots[time_slots.length - 1].split(":")[0]) + 1;
+              d += ` ${formatHour12(startH)}-${formatHour12(`${lastH}:00`)}`;
+            }
+            return d;
+          })();
 
     // 3. Fecha y hora de emisión (timezone Lima UTC-5)
     const now = new Date();
@@ -179,8 +214,13 @@ export async function POST(request: NextRequest) {
     const horaEmision = limaDate.toTimeString().split(" ")[0];
 
     // 4. Nombre del cliente
-    const rawName = String(representative_name || "").trim();
-    const clienteName = (rawName.length >= 3 ? rawName : "CLIENTE GENERAL").toUpperCase();
+    const clienteName =
+      typeof clienteOverride === "string" && clienteOverride.trim().length >= 3
+        ? clienteOverride.trim().toUpperCase()
+        : (() => {
+            const rawName = String(representative_name || "").trim();
+            return rawName.length >= 3 ? rawName.toUpperCase() : "CLIENTE GENERAL";
+          })();
 
     // 5. Request body base para apisunat.pe (Lucode) — sin "numero", se asigna en el loop
     //    Docs: https://docs.apisunat.pe/integracion/facturacion-electronica/boleta/boleta-simple

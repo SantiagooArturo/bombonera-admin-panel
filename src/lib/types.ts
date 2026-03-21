@@ -149,8 +149,10 @@ export interface User {
   custom_name?: string;
   /** Último nombre usado al crear reserva. */
   last_representative_name?: string;
-  /** Último DNI usado al crear reserva. */
+  /** Último DNI usado al crear reserva o emitir boleta. */
   last_dni?: string;
+  /** Último RUC usado al emitir factura. */
+  last_ruc?: string;
   /** Número de veces que ha reservado (denormalizado en users para query eficiente). */
   reservation_count: number;
   /** Saldo: negativo = debe dinero; positivo = canceló a tiempo (crédito). */
