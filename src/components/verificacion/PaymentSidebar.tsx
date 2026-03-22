@@ -1154,8 +1154,6 @@ function buildInvoiceDescription(reservation: Reservation | undefined, courtConf
 
 const EmitInvoiceModal = memo(function EmitInvoiceModal({
   transfer,
-  reservation,
-  courtConfigs,
   clientDni,
   clientRuc,
   docType,
@@ -1174,11 +1172,8 @@ const EmitInvoiceModal = memo(function EmitInvoiceModal({
   attachingInvoiceId,
   onClose,
   onEmitInvoice,
-  buildInvoiceDescription,
 }: {
   transfer: Transfer;
-  reservation?: Reservation;
-  courtConfigs?: CourtFieldConfig[] | null;
   clientDni?: string | null;
   clientRuc?: string | null;
   docType: "boleta" | "factura";
@@ -1197,7 +1192,6 @@ const EmitInvoiceModal = memo(function EmitInvoiceModal({
   attachingInvoiceId: string | null;
   onClose: () => void;
   onEmitInvoice: (t: Transfer, p: { tipo_comprobante: "boleta" | "factura"; doc_num: string; cliente_denominacion?: string; descripcion?: string }) => void;
-  buildInvoiceDescription: (r?: Reservation, c?: CourtFieldConfig[] | null) => string;
 }) {
   const docValid = docType === "factura" ? docNumber.length === 11 : docNumber.length === 8;
 
@@ -1214,7 +1208,7 @@ const EmitInvoiceModal = memo(function EmitInvoiceModal({
       .catch(() => { if (!cancelled) setSerieNum(null); })
       .finally(() => { if (!cancelled) setFetchingSerie(false); });
     return () => { cancelled = true; };
-  }, [docType]);
+  }, [docType, setFetchingSerie, setSerieNum]);
 
 
   return (
@@ -1606,8 +1600,6 @@ const TransferCard = memo(function TransferCard({
       {showEmitModal && typeof document !== "undefined" && ReactDOM.createPortal(
         <EmitInvoiceModal
           transfer={transfer}
-          reservation={reservation}
-          courtConfigs={courtConfigs}
           clientDni={clientDni}
           clientRuc={clientRuc}
           docType={docType}
@@ -1626,7 +1618,6 @@ const TransferCard = memo(function TransferCard({
           attachingInvoiceId={attachingInvoiceId}
           onClose={() => { setShowEmitModal(false); setSerieNum(null); }}
           onEmitInvoice={onEmitInvoice}
-          buildInvoiceDescription={buildInvoiceDescription}
         />,
         document.body
       )}

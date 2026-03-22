@@ -189,7 +189,7 @@ export async function POST(request: NextRequest) {
     const valorUnitario = (totalAmount / 1.18).toFixed(6);
 
     // 2. Descripción del servicio (aparece en la boleta impresa)
-    let descripcion =
+    const descripcion =
       typeof descripcionOverride === "string" && descripcionOverride.trim().length > 0
         ? descripcionOverride.trim()
         : (() => {
