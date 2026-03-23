@@ -183,11 +183,16 @@ export interface Invoice {
   amount: number;
   court_type: string;
   date: string;
-  transfer_id?: string;
+  transfer_id?: string | null;
   status: string;
   created_at: string;
   /** Si no viene en docs antiguos, se asume boleta. */
   tipo_comprobante?: "boleta" | "factura";
+  /** Ej. B001-123 desde SUNAT. */
+  serie_correlativo?: string;
+  /** Si se guarda en Firestore (emisión futura o migración). */
+  descripcion?: string;
+  sunat_estado?: string | null;
 }
 
 // Transferencias: colección transfers. Registro de todos los pagos procesados.

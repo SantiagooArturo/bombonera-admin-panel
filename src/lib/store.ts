@@ -415,30 +415,37 @@ class Store {
   }
 
   async processManualPayment(
-    reservationId: string,
+    reservationId: string | null,
     amount: number,
     phoneNumber: string,
     paymentMethod: "digital" | "efectivo",
     mediaUrl?: string,
+    chatIdForOrphan?: string,
   ) {
     try {
+      const body: Record<string, unknown> = {
+        amount,
+        phone_number: phoneNumber,
+        payment_method: paymentMethod,
+      };
+      if (mediaUrl) body.media_url = mediaUrl;
+      if (reservationId) {
+        body.reservation_id = reservationId;
+      } else if (chatIdForOrphan) {
+        body.chat_id = chatIdForOrphan;
+      }
       const res = await fetch("/api/payments/manual", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          reservation_id: reservationId,
-          amount,
-          phone_number: phoneNumber,
-          payment_method: paymentMethod,
-          media_url: mediaUrl,
-        }),
+        body: JSON.stringify(body),
       });
       if (!res.ok) throw new Error("Failed to process payment");
       return await res.json() as {
         success: boolean;
         transfer_id: string;
-        new_amount_paid: number;
-        fully_paid: boolean;
+        new_amount_paid?: number;
+        fully_paid?: boolean;
+        orphan?: boolean;
       };
     } catch (error) {
       console.error("Error processing manual payment:", error);
@@ -446,9 +453,13 @@ class Store {
     }
   }
 
-  async revokeManualPayment(transferId: string, reservationId: string) {
+  async revokeManualPayment(transferId: string, reservationId?: string | null) {
     try {
-      const res = await fetch(`/api/payments/manual?transfer_id=${transferId}&reservation_id=${reservationId}`, {
+      const params = new URLSearchParams({ transfer_id: transferId });
+      if (reservationId) {
+        params.set("reservation_id", reservationId);
+      }
+      const res = await fetch(`/api/payments/manual?${params.toString()}`, {
         method: "DELETE",
       });
       if (!res.ok) throw new Error("Failed to revoke payment");
@@ -509,6 +520,45 @@ class Store {
       return await res.json() as import("./types").Invoice[];
     } catch (error) {
       console.error("Error fetching invoices by transfer_ids:", error);
+      return [];
+    }
+  }
+
+  /** Todas las boletas vinculadas a transferencias del cliente (varios batches de 30). */
+  async fetchInvoicesByTransferIdsAll(transferIds: string[]) {
+    const unique = [...new Set(transferIds.filter(Boolean))];
+    const chunks: string[][] = [];
+    for (let i = 0; i < unique.length; i += 30) {
+      chunks.push(unique.slice(i, i + 30));
+    }
+    if (chunks.length === 0) return [];
+    try {
+      const batches = await Promise.all(chunks.map((c) => this.fetchInvoicesByTransferIds(c)));
+      const byId = new Map<string, import("./types").Invoice>();
+      for (const arr of batches) {
+        for (const inv of arr) {
+          byId.set(inv.id, inv);
+        }
+      }
+      return Array.from(byId.values());
+    } catch (error) {
+      console.error("Error fetching invoices by transfer_ids (all):", error);
+      return [];
+    }
+  }
+
+  /** Boletas/facturas donde `user_id` coincide con el cliente (incluye manuales sin transfer). */
+  async fetchInvoicesByUserIds(userIds: string[]) {
+    const unique = [...new Set(userIds.map((x) => String(x).trim()).filter(Boolean))].slice(0, 30);
+    if (unique.length === 0) return [];
+    try {
+      const res = await fetch(
+        `/api/invoices?user_id_in=${encodeURIComponent(unique.join(","))}`
+      );
+      if (!res.ok) throw new Error("Failed to fetch invoices");
+      return await res.json() as import("./types").Invoice[];
+    } catch (error) {
+      console.error("Error fetching invoices by user_id_in:", error);
       return [];
     }
   }

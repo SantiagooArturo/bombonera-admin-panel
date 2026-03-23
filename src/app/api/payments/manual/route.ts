@@ -5,18 +5,60 @@ import { FieldValue } from "firebase-admin/firestore";
 /**
  * POST /api/payments/manual
  * Registra un pago presencial (manual).
+ * Si no hay reservation_id, solo se crea la transferencia vinculada al cliente (chat_id).
  */
 export async function POST(request: NextRequest) {
   try {
     const db = getDb();
     const body = await request.json();
-    const { reservation_id, amount, phone_number, payment_method, media_url } = body;
+    const { reservation_id, amount, phone_number, payment_method, media_url, chat_id } = body;
 
-    if (!reservation_id || !amount || !phone_number || !payment_method) {
+    if (!amount || !phone_number || !payment_method) {
       return NextResponse.json(
-        { error: "Se requiere reservation_id, amount, phone_number y payment_method" },
+        { error: "Se requiere amount, phone_number y payment_method" },
         { status: 400 }
       );
+    }
+
+    const now = new Date().toISOString();
+
+    /** Cobro sin reserva: transferencia aplicada al cliente (mismo criterio de dígitos que GET /api/transfers). */
+    if (!reservation_id || String(reservation_id).trim() === "") {
+      const effectiveChatId =
+        String(chat_id ?? "").replace(/\D/g, "") ||
+        String(phone_number).replace(/\D/g, "") ||
+        "";
+      if (effectiveChatId.length < 9) {
+        return NextResponse.json(
+          { error: "Sin reserva se requiere chat_id o teléfono válido (mín. 9 dígitos) para vincular el pago al cliente" },
+          { status: 400 }
+        );
+      }
+
+      const transferData: Record<string, unknown> = {
+        phone_number,
+        recipient_name: null,
+        amount,
+        transaction_date: now.split("T")[0],
+        operation_id: null,
+        reservation_id: null,
+        chat_id: effectiveChatId,
+        status: "applied",
+        source: "manual",
+        payment_method: payment_method as string,
+        created_at: FieldValue.serverTimestamp(),
+      };
+      if (media_url) {
+        transferData.media_url = media_url;
+      }
+
+      const transferRef = await db.collection("transfers").add(transferData);
+
+      return NextResponse.json({
+        success: true,
+        transfer_id: transferRef.id,
+        orphan: true,
+      });
     }
 
     const resRef = db.collection("reservations").doc(reservation_id);
@@ -34,7 +76,6 @@ export async function POST(request: NextRequest) {
     const totalPrice = resData.total_price ?? 0;
     const newAmountPaid = currentAmountPaid + amount;
     const isFullyPaid = newAmountPaid >= totalPrice;
-    const now = new Date().toISOString();
 
     const reservationUpdate: Record<string, unknown> = {
       amount_paid: newAmountPaid,
@@ -93,8 +134,8 @@ export async function DELETE(request: NextRequest) {
     const transfer_id = searchParams.get("transfer_id");
     const reservation_id = searchParams.get("reservation_id");
 
-    if (!transfer_id || !reservation_id) {
-      return NextResponse.json({ error: "Missing params" }, { status: 400 });
+    if (!transfer_id) {
+      return NextResponse.json({ error: "Missing transfer_id" }, { status: 400 });
     }
 
     // 1. Get transfer to confirm amount
@@ -110,6 +151,11 @@ export async function DELETE(request: NextRequest) {
 
     // 2. Delete transfer
     await transferRef.delete();
+
+    // Sin reserva vinculada: solo eliminar la transferencia
+    if (!reservation_id || String(reservation_id).trim() === "") {
+      return NextResponse.json({ success: true, refunded: 0 });
+    }
 
     // 3. Update reservation
     const resRef = db.collection("reservations").doc(reservation_id);

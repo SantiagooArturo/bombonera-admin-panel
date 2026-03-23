@@ -16,7 +16,7 @@ import { formatDisplayPhone, userWhatsAppPhone, wspLink } from "@/features/opera
 
 // ─── Helpers ────────────────────────────────────────────────────────────────
 
-type SortKey = "reservation_count" | "balance" | "client_type";
+type SortKey = "reservation_count" | "client_type";
 type SortDir = "asc" | "desc";
 
 const CLIENT_TYPE_ORDER: ClientType[] = [
@@ -28,12 +28,6 @@ const CLIENT_TYPE_ORDER: ClientType[] = [
 function clientTypeSortValue(ct: ClientType): number {
   const idx = CLIENT_TYPE_ORDER.indexOf(ct);
   return idx >= 0 ? idx : CLIENT_TYPE_ORDER.length;
-}
-
-function formatSaldo(balance: number): { text: string; variant: "negative" | "zero" | "positive" } {
-  if (balance < 0) return { text: "Saldo negativo", variant: "negative" };
-  if (balance > 0) return { text: "Saldo positivo", variant: "positive" };
-  return { text: "0", variant: "zero" };
 }
 
 function needsAttention(user: User): boolean {
@@ -244,8 +238,6 @@ function UsuariosContent() {
       let cmp = 0;
       if (sortBy === "reservation_count") {
         cmp = a.reservation_count - b.reservation_count;
-      } else if (sortBy === "balance") {
-        cmp = a.balance - b.balance;
       } else {
         cmp = clientTypeSortValue(a.client_type) - clientTypeSortValue(b.client_type);
       }
@@ -429,7 +421,6 @@ function UsuariosContent() {
                   <tr className="bg-gray-50 border-b border-gray-200">
                     <th className="p-6 text-gray-600 font-bold text-lg">Cliente</th>
                     <SortHeader label="Reservas" sortKey="reservation_count" onSort={handleSort} />
-                    <SortHeader label="Saldo" sortKey="balance" onSort={handleSort} />
                     <SortHeader label="Tipo de cliente" sortKey="client_type" onSort={handleSort} />
                     <th className="p-6 text-gray-600 font-bold text-lg text-center">Bot</th>
                     <th className="p-6 text-gray-600 font-bold text-lg text-center whitespace-nowrap">
@@ -441,13 +432,12 @@ function UsuariosContent() {
                 <tbody>
                   {sortedUsers.length === 0 ? (
                     <tr>
-                      <td colSpan={7} className="p-12 text-center text-lg text-gray-400">
+                      <td colSpan={6} className="p-12 text-center text-lg text-gray-400">
                         {search ? "No se encontraron usuarios" : "No hay usuarios en la colección"}
                       </td>
                     </tr>
                   ) : (
                     sortedUsers.map((user) => {
-                      const saldo = formatSaldo(user.balance);
                       const attention = needsAttention(user);
                       const wa = userWhatsAppPhone(user);
                       const phoneDisplay = wa ? formatDisplayPhone(wa) : "—";
@@ -546,24 +536,6 @@ function UsuariosContent() {
                             </div>
                           </td>
                           <td className="p-6 text-base text-gray-700">{user.reservation_count}</td>
-                          <td className="p-6">
-                            <span
-                              className={`inline-flex px-4 py-2.5 rounded-xl text-base font-bold ${
-                                saldo.variant === "negative"
-                                  ? "bg-red-500 text-white"
-                                  : saldo.variant === "positive"
-                                  ? "bg-green-100 text-green-800"
-                                  : "bg-gray-100 text-gray-600"
-                              }`}
-                            >
-                              {saldo.text}
-                              {user.balance !== 0 && (
-                                <span className={saldo.variant === "negative" ? "ml-1 opacity-95" : "ml-1"}>
-                                  (S/ {Math.abs(user.balance).toFixed(2)})
-                                </span>
-                              )}
-                            </span>
-                          </td>
                           <td className="p-6">
                             <select
                               value={user.client_type}

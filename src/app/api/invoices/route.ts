@@ -82,11 +82,29 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ serie, next_correlativo: next });
     }
 
+    const userIdInParam = request.nextUrl.searchParams.get("user_id_in");
     const reservationId = request.nextUrl.searchParams.get("reservation_id");
     const transferIdsParam = request.nextUrl.searchParams.get("transfer_ids");
 
     let query: FirebaseFirestore.Query = db.collection("invoices");
-    if (reservationId) {
+    if (userIdInParam) {
+      const ids = [
+        ...new Set(
+          userIdInParam
+            .split(",")
+            .map((x) => x.trim())
+            .filter(Boolean)
+        ),
+      ].slice(0, 30);
+      if (ids.length === 0) {
+        return NextResponse.json([]);
+      }
+      if (ids.length === 1) {
+        query = query.where("user_id", "==", ids[0]);
+      } else {
+        query = query.where("user_id", "in", ids);
+      }
+    } else if (reservationId) {
       query = query.where("reservation_id", "==", reservationId);
     } else if (transferIdsParam) {
       const ids = transferIdsParam.split(",").filter(Boolean).slice(0, 30);
@@ -372,6 +390,7 @@ export async function POST(request: NextRequest) {
       phone_number: phone_number || "",
       file_url: fileUrl || "",
       amount: totalAmount,
+      descripcion,
       court_type: court_type || "",
       date: date || "",
       transfer_id: transfer_id || null,

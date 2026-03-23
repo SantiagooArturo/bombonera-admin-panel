@@ -476,32 +476,36 @@ export function usePaymentSidebar(options?: UsePaymentSidebarOptions) {
 
   const handleRevokeManualPayment = useCallback(async (transferId: string) => {
     const transfer = transfers.find((t) => t.id === transferId);
-    const reservationId = transfer?.reservation_id ?? selectedReservation?.id;
-    if (!reservationId) return;
-    if (!confirm("¿Desvincular este pago de la reserva?\n\nEsta acción eliminará el pago y ajustará el monto pagado. Confirma solo si fue vinculado por error.")) return;
+    if (!transfer) return;
+    const rid = transfer.reservation_id;
+    const reservationIdForApi = rid != null && rid !== "" ? rid : undefined;
+    const msg = reservationIdForApi
+      ? "¿Desvincular este pago de la reserva?\n\nEsta acción eliminará el pago y ajustará el monto pagado. Confirma solo si fue vinculado por error."
+      : "¿Eliminar este pago registrado al cliente?\n\nNo está vinculado a una reserva; solo se borrará el registro de transferencia.";
+    if (!confirm(msg)) return;
 
-    const result = await store.revokeManualPayment(transferId, reservationId);
+    const result = await store.revokeManualPayment(transferId, reservationIdForApi);
     if (result?.success) {
       toast("Pago desvinculado correctamente", "success");
       setTransfers((prev) => prev.filter((t) => t.id !== transferId));
-      if (result.refunded) {
-        const affectedRes = allClientReservations.find((r) => r.id === reservationId);
+      if (result.refunded && reservationIdForApi) {
+        const affectedRes = allClientReservations.find((r) => r.id === reservationIdForApi);
         const prevPaid = affectedRes?.amount_paid ?? 0;
         const newPaid = Math.max(0, prevPaid - result.refunded);
         const patch = { amount_paid: newPaid };
-        setSelectedReservation((prev) => (prev?.id === reservationId ? { ...prev, ...patch } : prev));
+        setSelectedReservation((prev) => (prev?.id === reservationIdForApi ? { ...prev, ...patch } : prev));
         setAllClientReservations((prev) =>
-          prev.map((r) => (r.id === reservationId ? { ...r, ...patch } : r))
+          prev.map((r) => (r.id === reservationIdForApi ? { ...r, ...patch } : r))
         );
         setAllReservationsThisWeek((prev) =>
-          prev.map((r) => (r.id === reservationId ? { ...r, ...patch } : r))
+          prev.map((r) => (r.id === reservationIdForApi ? { ...r, ...patch } : r))
         );
-        options?.onReservationUpdated?.(reservationId, patch);
+        options?.onReservationUpdated?.(reservationIdForApi, patch);
       }
     } else {
       toast("Error al revocar pago", "error");
     }
-  }, [store, toast, selectedReservation, transfers, allClientReservations, options]);
+  }, [store, toast, transfers, allClientReservations, options]);
 
   const handleUpdateAmountPaid = useCallback(async (amountPaid: number, reservationId?: string) => {
     const id = reservationId ?? selectedReservation?.id;
@@ -580,11 +584,32 @@ export function usePaymentSidebar(options?: UsePaymentSidebarOptions) {
     }
   }, [selectedReservation, options, toast]);
 
-  const handleRegisterPayment = useCallback(async (reservationId: string, amount: number, method: PaymentMethod, mediaUrl?: string) => {
-    const targetRes = allClientReservations.find((r) => r.id === reservationId) ?? selectedReservation;
-    if (!targetRes) return;
-    const phoneNumber = targetRes.phone_number || selectedReservation?.phone_number || "";
-    if (!phoneNumber) return;
+  const handleRegisterPayment = useCallback(async (reservationId: string | null, amount: number, method: PaymentMethod, mediaUrl?: string) => {
+    const targetRes =
+      reservationId != null
+        ? allClientReservations.find((r) => r.id === reservationId) ?? selectedReservation
+        : selectedReservation;
+    const phoneNumber =
+      targetRes?.phone_number ||
+      selectedReservation?.phone_number ||
+      "";
+    if (!phoneNumber) {
+      toast("Falta teléfono del cliente para registrar el pago", "error");
+      return;
+    }
+    const orphanChat =
+      reservationId == null
+        ? String(
+            selectedReservation?.chat_id ||
+              selectedReservation?.phone_number ||
+              phoneNumber ||
+              ""
+          ).replace(/\D/g, "")
+        : undefined;
+    if (reservationId == null && (!orphanChat || orphanChat.length < 9)) {
+      toast("Se necesita un chat/teléfono válido (mín. 9 dígitos) para cobro sin reserva", "error");
+      return;
+    }
     setPaymentLoading(true);
     try {
       const result = await store.processManualPayment(
@@ -593,24 +618,37 @@ export function usePaymentSidebar(options?: UsePaymentSidebarOptions) {
         phoneNumber,
         method,
         mediaUrl,
+        reservationId == null ? orphanChat : undefined,
       );
       if (result?.success) {
         toast(`Pago registrado: S/ ${amount.toFixed(2)}`, "success");
-        const patch: Partial<Reservation> = {
-          amount_paid: result.new_amount_paid,
-          status: targetRes.status === "pending" ? "confirmed" : targetRes.status,
-          confirmed: true,
-        };
-        setAllClientReservations((prev) =>
-          prev.map((r) => (r.id === reservationId ? { ...r, ...patch } : r))
-        );
-        setSelectedReservation((prev) =>
-          prev?.id === reservationId ? { ...prev, ...patch } : prev
-        );
-        options?.onReservationUpdated?.(reservationId, patch);
+        const baseRes = targetRes ?? selectedReservation;
+        if (reservationId != null && result.new_amount_paid != null && baseRes) {
+          const patch: Partial<Reservation> = {
+            amount_paid: result.new_amount_paid,
+            status: baseRes.status === "pending" ? "confirmed" : baseRes.status,
+            confirmed: true,
+          };
+          setAllClientReservations((prev) =>
+            prev.map((r) => (r.id === reservationId ? { ...r, ...patch } : r))
+          );
+          setSelectedReservation((prev) =>
+            prev?.id === reservationId ? { ...prev, ...patch } : prev
+          );
+          options?.onReservationUpdated?.(reservationId, patch);
+        }
 
-        const chatId = targetRes.chat_id || targetRes.phone_number || selectedReservation?.chat_id || "";
-        const newTransfers = await store.fetchTransfersByChatId(chatId);
+        const chatId =
+          String(
+            targetRes?.chat_id ||
+              targetRes?.phone_number ||
+              selectedReservation?.chat_id ||
+              selectedReservation?.phone_number ||
+              phoneNumber ||
+              orphanChat ||
+              ""
+          ).replace(/\D/g, "") || orphanChat;
+        const newTransfers = await store.fetchTransfersByChatId(chatId || orphanChat || "");
         setTransfers(newTransfers || []);
       } else {
         toast("Error al procesar el pago", "error");

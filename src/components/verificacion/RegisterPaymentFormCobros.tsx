@@ -9,6 +9,7 @@ export function RegisterPaymentFormCobros({
   totalRemaining,
   loading,
   reservationsLoading = false,
+  allowWithoutReservation = true,
   onSubmit,
   open: openControlled,
   onOpenChange,
@@ -22,7 +23,9 @@ export function RegisterPaymentFormCobros({
   loading: boolean;
   /** Mientras es true y aún no hay reservas en memoria, el botón se muestra deshabilitado (evita parpadeo). */
   reservationsLoading?: boolean;
-  onSubmit: (reservationId: string, amount: number, method: PaymentMethod, mediaUrl?: string) => void;
+  /** Si no hay reservas activas, igual se puede registrar el cobro vinculado solo al cliente (reservationId null). */
+  allowWithoutReservation?: boolean;
+  onSubmit: (reservationId: string | null, amount: number, method: PaymentMethod, mediaUrl?: string) => void;
   open?: boolean;
   onOpenChange?: (open: boolean) => void;
   hideButton?: boolean;
@@ -57,8 +60,17 @@ export function RegisterPaymentFormCobros({
   }, [open, totalRemaining]);
 
   const parsedAmount = parseFloat(amount);
-  const canPickReservation = reservationsForPayment.length > 0 && !reservationsLoading;
-  const isValid = !isNaN(parsedAmount) && parsedAmount > 0 && targetId && canPickReservation;
+  const canSubmit =
+    !reservationsLoading &&
+    (reservationsForPayment.length > 0 || allowWithoutReservation);
+  const hasTargetReservation = reservationsForPayment.length > 0 && !!targetId;
+  const orphanOk =
+    allowWithoutReservation && reservationsForPayment.length === 0 && !reservationsLoading;
+  const isValid =
+    !isNaN(parsedAmount) &&
+    parsedAmount > 0 &&
+    canSubmit &&
+    (hasTargetReservation || orphanOk);
   const busy = loading || uploading;
 
   function clearFile() {
@@ -75,7 +87,10 @@ export function RegisterPaymentFormCobros({
   }
 
   async function handleConfirm() {
-    if (!isValid || busy || !targetId) return;
+    if (!isValid || busy) return;
+    const reservationId: string | null =
+      reservationsForPayment.length > 0 ? targetId || null : null;
+    if (reservationsForPayment.length > 0 && !reservationId) return;
 
     let mediaUrl: string | undefined;
     if (method === "digital" && file) {
@@ -95,7 +110,7 @@ export function RegisterPaymentFormCobros({
       setUploading(false);
     }
 
-    onSubmit(targetId, parsedAmount, method, mediaUrl);
+    onSubmit(reservationId, parsedAmount, method, mediaUrl);
     setOpen(false);
     setAmount((totalRemaining > 0 ? totalRemaining : 1).toFixed(2));
     setMethod("efectivo");
@@ -104,7 +119,7 @@ export function RegisterPaymentFormCobros({
 
   if (!open) {
     if (hideButton) return null;
-    const blocked = !canPickReservation;
+    const blocked = !canSubmit;
     return (
       <div className="space-y-1">
         <button
@@ -129,21 +144,15 @@ export function RegisterPaymentFormCobros({
           )}
           {buttonLabel}
         </button>
-        {blocked && !reservationsLoading && (
-          <p className="text-xs text-amber-700 text-center bg-amber-50 border border-amber-100 rounded-lg px-2 py-1.5">
-            No hay reservas activas para vincular este cobro (canceladas o vencidas no aplican). Si solo necesitas un comprobante, usa{" "}
-            <span className="font-semibold">Emitir boleta manual</span>.
-          </p>
-        )}
         {buttonSubtext != null && <p className="text-xs text-gray-500 text-center">{buttonSubtext}</p>}
       </div>
     );
   }
 
-  if (!canPickReservation) {
+  if (!canSubmit) {
     return (
       <div className="rounded-2xl border-2 border-gray-200 bg-gray-50 p-5 text-center text-sm text-gray-600">
-        {reservationsLoading ? "Cargando reservas…" : "No hay reservas disponibles para registrar el cobro."}
+        Cargando reservas…
         <button
           type="button"
           onClick={() => { setOpen(false); clearFile(); }}
@@ -160,7 +169,11 @@ export function RegisterPaymentFormCobros({
       <div className="flex items-center justify-between">
         <div>
           <h4 className="font-bold text-gray-900">{buttonLabel}</h4>
-          <p className="text-xs text-gray-500 mt-0.5">Se aplica al saldo total del cliente</p>
+          <p className="text-xs text-gray-500 mt-0.5">
+            {reservationsForPayment.length === 0
+              ? "Queda registrado al cliente (sin reserva concreta)."
+              : "Se aplica al saldo total del cliente"}
+          </p>
         </div>
         <button onClick={() => { setOpen(false); clearFile(); }} className="text-gray-400 hover:text-gray-600 p-1">
           <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">

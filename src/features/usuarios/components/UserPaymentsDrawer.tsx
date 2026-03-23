@@ -9,6 +9,12 @@ import { normalizePeruPhone, userWhatsAppPhone } from "@/features/operaciones/ut
 import { EmitInvoiceModal } from "@/components/verificacion/EmitInvoiceModal";
 import { RegisterPaymentFormCobros } from "@/components/verificacion/RegisterPaymentFormCobros";
 import { UserDrawerClientInfo } from "./UserDrawerClientInfo";
+import { collectInvoiceUserKeys } from "@/features/usuarios/utils/collectInvoiceUserKeys";
+import { invoiceConceptSummary } from "@/features/usuarios/utils/invoiceConceptSummary";
+
+function invoicePdfHref(fileUrl: string) {
+  return `/api/proxy-file?url=${encodeURIComponent(fileUrl)}`;
+}
 
 function formatDate(d: string | null): string {
   if (!d) return "—";
@@ -47,6 +53,8 @@ export default function UserPaymentsDrawer({ user, onClose, onUserUpdated }: Use
   const [manualPrefill, setManualPrefill] = useState<{ amount: number; descripcion?: string } | null>(null);
   const [viewingImage, setViewingImage] = useState<string | null>(null);
   const [localUser, setLocalUser] = useState(user);
+  /** Pagos = dinero ingresado. Comprobantes = boletas/facturas SUNAT (una sola lista, sin duplicar en cada pago). */
+  const [drawerTab, setDrawerTab] = useState<"pagos" | "comprobantes">("pagos");
 
   useEffect(() => {
     setLocalUser(user);
@@ -79,12 +87,24 @@ export default function UserPaymentsDrawer({ user, onClose, onUserUpdated }: Use
       setTransfers(tfrs || []);
       setReservations(resvs || []);
       const tIds = (tfrs || []).map((t) => t.id).filter(Boolean);
-      const invs = tIds.length > 0 ? await store.fetchInvoicesByTransferIds(tIds) : [];
-      setInvoices(invs || []);
+      const userKeys = collectInvoiceUserKeys(localUser, String(queryChatId), waResolved, userDocId);
+      const [invFromTransfers, invFromUser] = await Promise.all([
+        tIds.length > 0 ? store.fetchInvoicesByTransferIdsAll(tIds) : Promise.resolve([] as Invoice[]),
+        store.fetchInvoicesByUserIds(userKeys),
+      ]);
+      const merged = new Map<string, Invoice>();
+      for (const inv of [...invFromTransfers, ...invFromUser]) {
+        merged.set(inv.id, inv);
+      }
+      const sorted = Array.from(merged.values()).sort(
+        (a, b) =>
+          new Date(b.created_at || 0).getTime() - new Date(a.created_at || 0).getTime()
+      );
+      setInvoices(sorted);
     } finally {
       setLoading(false);
     }
-  }, [store, localUser.id, queryChatId]);
+  }, [store, localUser, queryChatId, waResolved, userDocId]);
 
   const reservationsForPayment = reservations.filter(
     (r) => r.status !== "cancelled" && r.status !== "expired"
@@ -95,14 +115,39 @@ export default function UserPaymentsDrawer({ user, onClose, onUserUpdated }: Use
   );
 
   const handleRegisterPayment = useCallback(
-    async (reservationId: string, amount: number, method: "digital" | "efectivo", mediaUrl?: string) => {
-      const targetRes = reservations.find((r) => r.id === reservationId);
+    async (reservationId: string | null, amount: number, method: "digital" | "efectivo", mediaUrl?: string) => {
+      const targetRes = reservationId ? reservations.find((r) => r.id === reservationId) : undefined;
       const phone =
-        targetRes?.phone_number || targetRes?.chat_id || userWhatsAppPhone(localUser) || "";
-      if (!phone) return;
+        targetRes?.phone_number ||
+        targetRes?.chat_id ||
+        userWhatsAppPhone(localUser) ||
+        localUser.phone_number ||
+        localUser.chat_id ||
+        localUser.id ||
+        "";
+      if (!phone) {
+        toast("Falta teléfono o identificador del cliente", "error");
+        return;
+      }
+      let chatIdForOrphan: string | undefined;
+      if (reservationId == null) {
+        chatIdForOrphan =
+          String(queryChatId).replace(/\D/g, "") || String(localUser.id).replace(/\D/g, "");
+        if (chatIdForOrphan.length < 9) {
+          toast("Se necesita un teléfono válido (mín. 9 dígitos) para registrar sin reserva", "error");
+          return;
+        }
+      }
       setPaymentLoading(true);
       try {
-        const result = await store.processManualPayment(reservationId, amount, phone, method, mediaUrl);
+        const result = await store.processManualPayment(
+          reservationId,
+          amount,
+          phone,
+          method,
+          mediaUrl,
+          chatIdForOrphan
+        );
         if (result?.success) {
           toast(`Pago registrado: S/ ${amount.toFixed(2)}`, "success");
           loadData();
@@ -115,7 +160,7 @@ export default function UserPaymentsDrawer({ user, onClose, onUserUpdated }: Use
         setPaymentLoading(false);
       }
     },
-    [store, toast, reservations, localUser, loadData]
+    [store, toast, reservations, localUser, loadData, queryChatId]
   );
 
   useEffect(() => {
@@ -234,121 +279,287 @@ export default function UserPaymentsDrawer({ user, onClose, onUserUpdated }: Use
           <UserDrawerClientInfo user={localUser} onUserUpdated={mergeUser} />
 
           {/* Content */}
-          <div className="flex-1 overflow-y-auto p-6 space-y-4">
-            <div className="space-y-2">
-              <button
-                type="button"
-                onClick={() => { setManualPrefill(null); setShowManualModal(true); }}
-                className="w-full py-3 px-4 rounded-xl font-bold text-sm bg-green-600 text-white hover:bg-green-700 flex items-center justify-center gap-2"
+          <div className="flex min-h-0 flex-1 flex-col">
+            <div className="shrink-0 border-b border-gray-200 bg-white px-4 pt-2 sm:px-6">
+              <div
+                className="flex gap-1 rounded-lg bg-gray-100 p-1"
+                role="tablist"
+                aria-label="Secciones de pagos y comprobantes"
               >
-                <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
-                </svg>
-                Emitir boleta manual
-              </button>
-              <p className="text-xs text-gray-500">
-                Monto y concepto libres. Para pagos que no figuren abajo o cuando necesites emitir por cualquier motivo.
-              </p>
+                <button
+                  type="button"
+                  role="tab"
+                  aria-selected={drawerTab === "pagos"}
+                  onClick={() => setDrawerTab("pagos")}
+                  className={`flex-1 rounded-md py-2.5 text-sm font-bold transition-colors ${
+                    drawerTab === "pagos"
+                      ? "bg-white text-gray-900 shadow-sm"
+                      : "text-gray-600 hover:text-gray-900"
+                  }`}
+                >
+                  Pagos recibidos
+                </button>
+                <button
+                  type="button"
+                  role="tab"
+                  aria-selected={drawerTab === "comprobantes"}
+                  onClick={() => setDrawerTab("comprobantes")}
+                  className={`flex-1 rounded-md py-2.5 text-sm font-bold transition-colors ${
+                    drawerTab === "comprobantes"
+                      ? "bg-white text-gray-900 shadow-sm"
+                      : "text-gray-600 hover:text-gray-900"
+                  }`}
+                >
+                  Boletas y facturas
+                </button>
+              </div>
             </div>
 
-            <div className="space-y-3">
-              <h3 className="font-bold text-gray-800">Transferencias registradas</h3>
-              <RegisterPaymentFormCobros
-                reservationsForPayment={reservationsForPayment}
-                reservationsLoading={loading}
-                totalRemaining={totalRemaining}
-                loading={paymentLoading}
-                onSubmit={handleRegisterPayment}
-                buttonLabel="Registrar pago manual"
-              />
-              {loading ? (
-                <div className="py-12 text-center text-gray-400">Cargando...</div>
-              ) : transfers.length === 0 ? (
-                <div className="py-12 text-center text-gray-500 border-2 border-dashed border-gray-200 rounded-xl">
-                  No hay pagos registrados para este usuario.
-                </div>
-              ) : (
-                <div className="space-y-3">
-                {transfers.map((t) => {
-                  const inv = invoices.find((i) => i.transfer_id === t.id);
-                  const isManual = t.source === "manual" || t.source === "manual_adjustment";
-                  const verified = t.verified ?? isManual;
+            <div className="min-h-0 flex-1 overflow-y-auto p-4 sm:p-6">
+              {drawerTab === "pagos" ? (
+                <div className="space-y-4">
+                  <div className="rounded-xl border border-gray-200 bg-white p-4">
+                    <h3 className="text-lg font-bold text-gray-900">Pagos</h3>
+                    <p className="mt-1 text-sm text-gray-600">
+                      Solo dinero que ingresó (Yape, efectivo, etc.). Las boletas y facturas SUNAT están en la otra pestaña:
+                      así no se repite la misma información dos veces.
+                    </p>
+                    <div className="mt-4">
+                      <RegisterPaymentFormCobros
+                        reservationsForPayment={reservationsForPayment}
+                        reservationsLoading={loading}
+                        totalRemaining={totalRemaining}
+                        loading={paymentLoading}
+                        onSubmit={handleRegisterPayment}
+                        buttonLabel="Registrar pago"
+                      />
+                    </div>
+                    {loading ? (
+                      <div className="mt-6 py-10 text-center text-sm text-gray-400">Cargando pagos…</div>
+                    ) : transfers.length === 0 ? (
+                      <div className="mt-6 rounded-lg border border-dashed border-gray-200 bg-gray-50 py-10 text-center text-sm text-gray-600">
+                        No hay pagos registrados para este cliente.
+                      </div>
+                    ) : (
+                      <ul className="mt-4 space-y-3">
+                        {transfers.map((t) => {
+                          const inv = invoices.find((i) => i.transfer_id === t.id);
+                          const isManual = t.source === "manual" || t.source === "manual_adjustment";
+                          const verified = t.verified ?? isManual;
 
-                  return (
-                    <div
-                      key={t.id}
-                      className={`rounded-xl border-2 p-4 ${verified ? "border-green-300 bg-green-50/50" : "border-gray-200 bg-white"}`}
-                    >
-                      <div className="flex items-start justify-between gap-4">
-                        <div className="min-w-0">
-                          <p className="font-bold text-gray-900">S/ {(t.amount ?? 0).toFixed(2)}</p>
-                          <p className="text-sm text-gray-500">
-                            {formatDate(t.created_at)} {formatTime(t.created_at) ? `· ${formatTime(t.created_at)}` : ""}
-                          </p>
-                          <p className={`text-xs font-semibold mt-1 ${verified ? "text-green-600" : "text-amber-600"}`}>
-                            {verified ? "Validado" : "Pendiente validación"}
-                          </p>
-                          {inv && (
-                            <div className="mt-1 space-y-1">
-                              <a
-                                href={inv.file_url}
-                                target="_blank"
-                                rel="noopener noreferrer"
-                                className="text-xs text-blue-600 hover:underline block"
-                              >
-                                Ver {inv.tipo_comprobante === "factura" ? "factura" : "boleta"} emitida →
-                              </a>
-                              <button
-                                type="button"
-                                onClick={() => alert("Esta funcionalidad aún está en desarrollo")}
-                                className="text-xs text-gray-500 underline hover:text-gray-700"
-                              >
-                                {inv.tipo_comprobante === "factura" ? "Anular factura" : "Anular boleta"}
-                              </button>
-                            </div>
-                          )}
-                        </div>
-                        <div className="flex flex-col gap-2 shrink-0">
-                          {t.media_url && (
-                            <button
-                              type="button"
-                              onClick={() => setViewingImage(t.media_url!)}
-                              className="p-2 rounded-lg border border-gray-200 hover:bg-gray-50 text-gray-600"
-                              title="Ver imagen"
-                            >
-                              <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14" />
-                              </svg>
-                            </button>
-                          )}
-                          {!isManual && (
-                            <button
-                              type="button"
-                              onClick={() => handleVerify(t.id, !!verified)}
-                              className={`px-3 py-1.5 rounded-lg text-xs font-bold ${
-                                verified
-                                  ? "bg-gray-100 text-gray-600 hover:bg-red-50 hover:text-red-600"
-                                  : "bg-green-600 text-white hover:bg-green-700"
+                          return (
+                            <li
+                              key={t.id}
+                              className={`overflow-hidden rounded-xl border ${
+                                verified ? "border-green-300 bg-white" : "border-amber-200 bg-amber-50/30"
                               }`}
                             >
-                              {verified ? "Deshacer" : "Validar"}
-                            </button>
-                          )}
-                          {!inv && (
-                            <button
-                              type="button"
-                              onClick={() => setEmitTransferTarget(t)}
-                              disabled={emittingId === t.id}
-                              className="px-3 py-1.5 rounded-lg text-xs font-bold bg-green-600 text-white hover:bg-green-700 disabled:opacity-60"
-                            >
-                              {emittingId === t.id ? "..." : "Emitir boleta"}
-                            </button>
-                          )}
-                        </div>
+                              <div className="flex flex-wrap items-start justify-between gap-3 bg-white px-4 py-3">
+                                <div className="min-w-0">
+                                  <p className="text-sm font-semibold text-gray-500">Pago</p>
+                                  <p className="text-xl font-bold tabular-nums text-gray-900">
+                                    S/ {(t.amount ?? 0).toFixed(2)}
+                                  </p>
+                                  <p className="mt-0.5 text-sm text-gray-600">
+                                    {formatDate(t.created_at)}
+                                    {formatTime(t.created_at) ? ` · ${formatTime(t.created_at)}` : ""}
+                                    {isManual ? <span className="text-gray-500"> · Registro manual</span> : null}
+                                  </p>
+                                  <p
+                                    className={`mt-2 inline-flex rounded-full px-2.5 py-0.5 text-xs font-bold ${
+                                      verified ? "bg-green-100 text-green-800" : "bg-amber-100 text-amber-900"
+                                    }`}
+                                  >
+                                    {verified ? "Validado" : "Pendiente de validar"}
+                                  </p>
+                                </div>
+                                <div className="flex shrink-0 flex-wrap items-center gap-2">
+                                  {t.media_url ? (
+                                    <button
+                                      type="button"
+                                      onClick={() => setViewingImage(t.media_url!)}
+                                      className="rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm font-semibold text-gray-700 hover:bg-gray-50"
+                                      title="Ver foto o captura del pago (Yape, transferencia, etc.)"
+                                    >
+                                      Ver comprobante del pago
+                                    </button>
+                                  ) : null}
+                                  {!isManual ? (
+                                    <button
+                                      type="button"
+                                      onClick={() => handleVerify(t.id, !!verified)}
+                                      className={`rounded-lg px-3 py-2 text-sm font-bold ${
+                                        verified
+                                          ? "border border-gray-300 bg-white text-gray-700 hover:bg-red-50 hover:text-red-800"
+                                          : "bg-green-600 text-white hover:bg-green-700"
+                                      }`}
+                                    >
+                                      {verified ? "Quitar validación" : "Marcar como validado"}
+                                    </button>
+                                  ) : null}
+                                </div>
+                              </div>
+                              <div className="border-t border-gray-100 bg-gray-50 px-4 py-3">
+                                {inv ? (
+                                  <div className="flex flex-col gap-2 sm:flex-row sm:flex-wrap sm:items-center sm:justify-between">
+                                    <p className="text-sm text-gray-700">
+                                      <span className="font-semibold text-emerald-800">Ya tiene comprobante SUNAT</span>
+                                      <span className="text-gray-500"> — monto y número en la pestaña </span>
+                                      <span className="font-semibold text-gray-800">Boletas y facturas</span>.
+                                    </p>
+                                    <div className="flex flex-wrap gap-2">
+                                      <button
+                                        type="button"
+                                        onClick={() => setDrawerTab("comprobantes")}
+                                        className="rounded-lg border border-blue-200 bg-white px-3 py-2 text-sm font-bold text-blue-800 hover:bg-blue-50"
+                                      >
+                                        Ir a boletas y facturas
+                                      </button>
+                                    </div>
+                                  </div>
+                                ) : (
+                                  <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                                    <p className="text-sm text-gray-700">
+                                      <span className="font-semibold text-gray-900">Sin comprobante SUNAT</span> para este
+                                      pago todavía.
+                                    </p>
+                                    <button
+                                      type="button"
+                                      onClick={() => setEmitTransferTarget(t)}
+                                      disabled={emittingId === t.id}
+                                      className="shrink-0 rounded-lg bg-emerald-600 px-4 py-2.5 text-sm font-bold text-white hover:bg-emerald-700 disabled:opacity-60"
+                                    >
+                                      {emittingId === t.id ? "Emitiendo…" : "Emitir boleta o factura"}
+                                    </button>
+                                  </div>
+                                )}
+                              </div>
+                            </li>
+                          );
+                        })}
+                      </ul>
+                    )}
+                  </div>
+                </div>
+              ) : (
+                <div className="space-y-4">
+                  <div className="rounded-xl border border-gray-200 bg-white p-4">
+                    <h3 className="text-lg font-bold text-gray-900">Boletas y facturas SUNAT</h3>
+                    <p className="mt-1 text-sm text-gray-600">
+                      Aquí está todo lo emitido a nombre de este cliente: ligado a un pago o manual. Una sola lista.
+                    </p>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setManualPrefill(null);
+                        setShowManualModal(true);
+                      }}
+                      className="mt-4 flex w-full items-center justify-center gap-2 rounded-xl bg-green-600 py-3 px-4 text-sm font-bold text-white hover:bg-green-700"
+                    >
+                      <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
+                      </svg>
+                      Emitir boleta o factura manual
+                    </button>
+                    <p className="mt-2 text-xs text-gray-500">
+                      Monto y concepto libres cuando no corresponde a un pago de la otra pestaña.
+                    </p>
+                    {loading ? (
+                      <div className="mt-8 py-10 text-center text-sm text-gray-400">Cargando comprobantes…</div>
+                    ) : invoices.length === 0 ? (
+                      <div className="mt-8 rounded-lg border border-dashed border-gray-200 bg-gray-50 py-10 text-center text-sm text-gray-600">
+                        Aún no hay boletas ni facturas registradas.
                       </div>
-                    </div>
-                  );
-                })}
+                    ) : (
+                      <ul className="mt-6 max-h-[min(32rem,52vh)] space-y-3 overflow-y-auto overflow-x-hidden pr-0.5">
+                        {invoices.map((inv) => {
+                          const linked =
+                            inv.transfer_id != null &&
+                            inv.transfer_id !== "" &&
+                            transfers.some((tr) => tr.id === inv.transfer_id);
+                          const isManualDoc = inv.reservation_id === "manual";
+                          const isFactura = inv.tipo_comprobante === "factura";
+
+                          return (
+                            <li
+                              key={inv.id}
+                              className="overflow-hidden rounded-xl border border-gray-200 bg-white shadow-sm"
+                            >
+                              <div className="flex flex-col gap-3 px-4 py-3 sm:flex-row sm:items-center sm:justify-between sm:gap-4">
+                                <div className="flex min-w-0 flex-1 items-start gap-3">
+                                  <span
+                                    className={`mt-0.5 shrink-0 rounded-md px-2 py-0.5 text-xs font-black text-white ${
+                                      isFactura ? "bg-violet-600" : "bg-indigo-600"
+                                    }`}
+                                  >
+                                    {isFactura ? "FAC" : "BOL"}
+                                  </span>
+                                  <div className="min-w-0 flex-1">
+                                    <p className="text-sm font-semibold text-gray-500">Comprobante SUNAT</p>
+                                    <p className="text-xl font-bold tabular-nums text-gray-900">
+                                      S/ {(inv.amount ?? 0).toFixed(2)}
+                                      {inv.serie_correlativo ? (
+                                        <span className="ml-2 font-mono text-base font-semibold text-indigo-900">
+                                          {inv.serie_correlativo}
+                                        </span>
+                                      ) : null}
+                                    </p>
+                                    <p className="mt-1 text-sm leading-snug text-gray-800 break-words">
+                                      {invoiceConceptSummary(inv)}
+                                    </p>
+                                    <p className="mt-1 text-sm text-gray-600">
+                                      {formatDate(inv.created_at)}
+                                      {formatTime(inv.created_at) ? ` · ${formatTime(inv.created_at)}` : ""}
+                                      {linked ? (
+                                        <span className="ml-1.5 font-medium text-emerald-800">· Ligado a un pago</span>
+                                      ) : (
+                                        <span className="ml-1.5 font-medium text-amber-800">· Sin pago vinculado</span>
+                                      )}
+                                      {isManualDoc ? <span className="ml-1.5 text-gray-500">· Manual</span> : null}
+                                    </p>
+                                  </div>
+                                </div>
+                                <div className="flex shrink-0 flex-col gap-2 sm:min-w-[11rem]">
+                                  {inv.file_url ? (
+                                    <a
+                                      href={invoicePdfHref(inv.file_url)}
+                                      target="_blank"
+                                      rel="noopener noreferrer"
+                                      title="Se abre en una pestaña nueva para imprimir o guardar"
+                                      className="inline-flex items-center justify-center gap-2 rounded-lg bg-blue-600 px-4 py-2.5 text-sm font-bold text-white shadow-sm hover:bg-blue-700"
+                                    >
+                                      <svg
+                                        className="h-4 w-4 shrink-0"
+                                        fill="none"
+                                        viewBox="0 0 24 24"
+                                        stroke="currentColor"
+                                        aria-hidden
+                                      >
+                                        <path
+                                          strokeLinecap="round"
+                                          strokeLinejoin="round"
+                                          strokeWidth={2}
+                                          d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14"
+                                        />
+                                      </svg>
+                                      {isFactura ? "Ver factura" : "Ver boleta"}
+                                    </a>
+                                  ) : null}
+                                  <button
+                                    type="button"
+                                    onClick={() => alert("Esta funcionalidad aún está en desarrollo")}
+                                    className="rounded-lg border-2 border-red-300 bg-white px-4 py-2 text-sm font-bold text-red-800 hover:bg-red-50"
+                                  >
+                                    {isFactura ? "Anular factura" : "Anular boleta"}
+                                  </button>
+                                </div>
+                              </div>
+                            </li>
+                          );
+                        })}
+                      </ul>
+                    )}
+                  </div>
                 </div>
               )}
             </div>
