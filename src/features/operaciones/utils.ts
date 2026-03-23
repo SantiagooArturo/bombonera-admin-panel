@@ -90,6 +90,35 @@ export function formatDisplayPhone(phone: string): string {
   return digits;
 }
 
+/** URL de WhatsApp para abrir chat (siempre con prefijo 51 para Perú). */
+export function wspLink(phone: string): string {
+  const digits = phone.replace(/\D/g, "");
+  const forWa = digits.startsWith("51") ? digits : `51${digits}`;
+  return `https://wa.me/${forWa}?text=.`;
+}
+
+/**
+ * Número Perú normalizado (51 + 9 dígitos) solo si es válido.
+ * Prioriza `phone_number` guardado; evita usar id/chat_id de WAHA que no sean un móvil peruano.
+ */
+export function userWhatsAppPhone(u: {
+  phone_number?: string;
+  chat_id?: string;
+  id?: string;
+}): string | null {
+  if (u.phone_number) {
+    const n = normalizePeruPhone(u.phone_number);
+    if (isValidPeruPhone(n)) return n;
+  }
+  for (const raw of [u.chat_id, u.id]) {
+    if (raw == null || raw === "") continue;
+    const digitsOnly = String(raw).replace(/@.*$/, "").replace(/\D/g, "");
+    const n = normalizePeruPhone(digitsOnly);
+    if (isValidPeruPhone(n)) return n;
+  }
+  return null;
+}
+
 export function getUserName(u: User): string {
   return (
     u.custom_name ||

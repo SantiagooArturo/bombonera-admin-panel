@@ -1,4 +1,5 @@
 import type { Reservation, BlockedSlot, BlockRule, AutomatedNumber, User, Invoice, ClientType } from "./types";
+import { normalizePeruPhone, isValidPeruPhone } from "@/features/operaciones/utils";
 
 // API-backed store that syncs with Firebase via Next.js API routes
 type Listener = () => void;
@@ -357,6 +358,27 @@ class Store {
     }
   }
 
+  async updateUserPhoneNumber(userId: string, phone: string): Promise<boolean> {
+    try {
+      const normalized = normalizePeruPhone(phone.replace(/\D/g, ""));
+      if (!isValidPeruPhone(normalized)) return false;
+      const res = await fetch("/api/users", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ id: userId, phone_number: normalized }),
+      });
+      if (!res.ok) return false;
+      this.users = this.users.map((u) =>
+        u.id === userId ? { ...u, phone_number: normalized } : u
+      );
+      this.notify();
+      return true;
+    } catch (error) {
+      console.error("Error updating user phone:", error);
+      return false;
+    }
+  }
+
   async updateUserDoc(
     userId: string,
     doc: { last_dni?: string; last_ruc?: string }
@@ -594,10 +616,13 @@ class Store {
       doc_num: string;
       cliente_denominacion?: string;
       descripcion?: string;
+      amount?: number;
     }
   ) {
     try {
-      const amountToBill = transfer?.amount || reservation.total_price;
+      const amountToBill = typeof params.amount === "number" && params.amount > 0
+        ? params.amount
+        : (transfer?.amount || reservation.total_price);
 
       const body: Record<string, unknown> = {
         reservation_id: reservation.id,
@@ -648,6 +673,51 @@ class Store {
       return result;
     } catch (error) {
       console.error("Error emitting invoice:", error);
+      throw error;
+    }
+  }
+
+  async emitInvoiceManual(
+    user: { id: string; phone_number?: string; custom_name?: string; contact_name?: string; last_representative_name?: string },
+    params: {
+      tipo_comprobante: "boleta" | "factura";
+      doc_num: string;
+      amount: number;
+      descripcion?: string;
+      cliente_denominacion?: string;
+    }
+  ) {
+    try {
+      const body: Record<string, unknown> = {
+        manual: true,
+        reservation_id: "manual",
+        user_id: user.id,
+        phone_number: user.phone_number || user.id,
+        amount: params.amount,
+        court_type: "",
+        field: null,
+        date: "",
+        time_slots: [],
+        representative_name: params.cliente_denominacion || user.custom_name || user.contact_name || user.last_representative_name || "CLIENTE GENERAL",
+        transfer_id: null,
+        tipo_comprobante: params.tipo_comprobante,
+        doc_num: params.doc_num,
+      };
+      if (params.cliente_denominacion?.trim()) body.cliente_denominacion = params.cliente_denominacion.trim();
+      if (params.descripcion?.trim()) body.descripcion = params.descripcion.trim();
+
+      const res = await fetch("/api/invoices", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+      });
+      const result = await res.json();
+      if (!res.ok) {
+        throw new Error(result?.error || "Error al emitir boleta");
+      }
+      return result;
+    } catch (error) {
+      console.error("Error emitting manual invoice:", error);
       throw error;
     }
   }

@@ -186,6 +186,8 @@ export interface Invoice {
   transfer_id?: string;
   status: string;
   created_at: string;
+  /** Si no viene en docs antiguos, se asume boleta. */
+  tipo_comprobante?: "boleta" | "factura";
 }
 
 // Transferencias: colección transfers. Registro de todos los pagos procesados.

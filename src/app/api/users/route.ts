@@ -33,6 +33,7 @@ export async function GET() {
         custom_name: typeof data.custom_name === "string" ? data.custom_name : undefined,
         last_representative_name: typeof data.last_representative_name === "string" ? data.last_representative_name : undefined,
         last_dni: typeof data.last_dni === "string" ? data.last_dni : undefined,
+        last_ruc: typeof data.last_ruc === "string" ? data.last_ruc : undefined,
         reservation_count: typeof reservationCount === "number" ? reservationCount : 0,
         balance: typeof balance === "number" ? balance : 0,
         client_type: (clientType === "casual" || clientType === "recurrente" || clientType === "sospechoso_fraude"
@@ -144,7 +145,7 @@ export async function PATCH(request: NextRequest) {
   try {
     const db = getDb();
     const body = await request.json();
-    const { id, is_automated, client_type, custom_name, last_dni, last_ruc } = body;
+    const { id, is_automated, client_type, custom_name, last_dni, last_ruc, phone_number } = body;
 
     if (!id) {
       return NextResponse.json(
@@ -185,6 +186,18 @@ export async function PATCH(request: NextRequest) {
     if (last_ruc !== undefined) {
       const clean = typeof last_ruc === "string" ? last_ruc.replace(/\D/g, "").slice(0, 11) : "";
       updateData.last_ruc = clean.length === 11 ? clean : null;
+    }
+
+    if (phone_number !== undefined) {
+      const raw = typeof phone_number === "string" ? phone_number : "";
+      const normalized = normalizePeruPhone(raw.replace(/\D/g, ""));
+      if (!isValidPeruPhone(normalized)) {
+        return NextResponse.json(
+          { error: "Teléfono inválido. Debe ser un móvil peruano (9 dígitos o 51 + 9 dígitos)." },
+          { status: 400 }
+        );
+      }
+      updateData.phone_number = normalized;
     }
 
     if (Object.keys(updateData).length === 0) {

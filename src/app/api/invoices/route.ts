@@ -148,11 +148,19 @@ export async function POST(request: NextRequest) {
       doc_num,
       cliente_denominacion: clienteOverride,
       descripcion: descripcionOverride,
+      manual: manualEmission,
     } = body;
 
-    if (!reservation_id || !user_id) {
+    const isManual = manualEmission === true;
+    if (!isManual && (!reservation_id || !user_id)) {
       return NextResponse.json(
         { error: "Faltan reservation_id o user_id" },
+        { status: 400 }
+      );
+    }
+    if (isManual && (!user_id || !phone_number)) {
+      return NextResponse.json(
+        { error: "En emisión manual faltan user_id o phone_number" },
         { status: 400 }
       );
     }
@@ -168,10 +176,11 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: "DNI inválido para boleta" }, { status: 400 });
     }
 
-    if (transfer_id) {
+    if (transfer_id && !isManual) {
       const transferDoc = await db.collection("transfers").doc(transfer_id).get();
       const transferAmount = transferDoc.exists ? (transferDoc.data()?.amount ?? 0) : 0;
-      if (transferAmount <= 0) {
+      const amountOverride = typeof amount === "number" && amount > 0;
+      if (!amountOverride && transferAmount <= 0) {
         return NextResponse.json(
           { error: "No se puede emitir boleta para un ajuste con monto cero o negativo" },
           { status: 400 }
@@ -179,19 +188,27 @@ export async function POST(request: NextRequest) {
       }
     }
 
+    if (isManual && (typeof amount !== "number" || amount <= 0)) {
+      return NextResponse.json(
+        { error: "En emisión manual el monto debe ser mayor a 0" },
+        { status: 400 }
+      );
+    }
+
     const serieSunat =
       tipoComprobante === "factura" ? APISUNAT_SERIE_FACTURA : APISUNAT_SERIE_BOLETA;
 
     // 1. Calcular valor unitario sin IGV (apisunat calcula IGV internamente)
     //    El monto recibido INCLUYE IGV → valor_unitario = monto / 1.18
-    //    6 decimales de precisión para que apisunat redondee correctamente
-    const totalAmount = amount || 0;
+    const totalAmount = typeof amount === "number" && amount > 0 ? amount : (amount || 0);
     const valorUnitario = (totalAmount / 1.18).toFixed(6);
 
     // 2. Descripción del servicio (aparece en la boleta impresa)
     const descripcion =
       typeof descripcionOverride === "string" && descripcionOverride.trim().length > 0
         ? descripcionOverride.trim()
+        : isManual
+        ? "Servicios diversos"
         : (() => {
             const courtLabel = getCourtLabelForReservation(field, court_type);
             let d = `Alquiler cancha ${courtLabel}`;
@@ -350,7 +367,7 @@ export async function POST(request: NextRequest) {
 
     // 8. Guardar metadata en Firestore
     const invoiceData = {
-      reservation_id,
+      reservation_id: isManual ? "manual" : reservation_id,
       user_id,
       phone_number: phone_number || "",
       file_url: fileUrl || "",

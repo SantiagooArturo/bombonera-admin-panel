@@ -7,7 +7,9 @@ import { Transfer, Invoice, Reservation, PaymentMethod, ClientType, CLIENT_TYPE_
 import { renderPdfToDataUrl } from "@/lib/pdf-preview";
 import type { CourtFieldConfig } from "@/lib/court-config";
 import { getCourtSizeLabel } from "@/lib/court-config";
-import { calculateReservationPrice, courtConfigsToMap } from "@/features/operaciones/utils";
+import { calculateReservationPrice, courtConfigsToMap, formatDisplayPhone, wspLink } from "@/features/operaciones/utils";
+import { EmitInvoiceModal } from "./EmitInvoiceModal";
+import { RegisterPaymentFormCobros } from "./RegisterPaymentFormCobros";
 
 // ─── WhatsApp icon (reutilizado) ─────────────────────────────────────────────
 
@@ -176,14 +178,6 @@ function formatReservationTime(reservation: Reservation) {
   const start = reservation.time_slots[0];
   const lastHour = parseInt(reservation.time_slots[reservation.time_slots.length - 1].split(":")[0]) + 1;
   return `${formatHour12(start)} – ${formatHour12(`${lastHour}:00`)}`;
-}
-
-function formatPhoneDisplay(phone: string) {
-  return phone.startsWith("51") ? phone.slice(2) : phone;
-}
-
-function wspLink(phone: string) {
-  return `https://wa.me/${phone.startsWith("51") ? phone : `51${phone}`}?text=.`;
 }
 
 // ─── Vista simplificada (1 reserva) ───────────────────────────────────────────
@@ -485,7 +479,7 @@ function ReservationDetailContent({
                   <path d={WSP_ICON_PATH} />
                 </svg>
                 <span className="text-gray-500 text-base font-mono group-hover:text-green-700 group-hover:underline">
-                  {formatPhoneDisplay(reservation.phone_number)}
+                  {formatDisplayPhone(reservation.phone_number)}
                 </span>
               </a>
             )}
@@ -724,7 +718,7 @@ function ReservationDetailContent({
       <div className="flex-1 overflow-y-auto p-6 space-y-5 bg-gray-50">
         {!hidePaymentsSection && !isCancelled && (
           <RegisterPaymentFormCobros
-            reservationsWithDebt={[reservation]}
+            reservationsForPayment={[reservation]}
             totalRemaining={remaining}
             loading={paymentLoading}
             onSubmit={onRegisterPayment}
@@ -767,241 +761,13 @@ function ReservationDetailContent({
   );
 }
 
-// ─── Register Payment Form (Cobros: con selector de reserva) ───────────────────
+// ─── PENCIL_ICON (usado en varios lugares) ────────────────────────────────────
 
 const PENCIL_ICON = (
   <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" />
   </svg>
 );
-
-function RegisterPaymentFormCobros({
-  reservationsWithDebt,
-  totalRemaining,
-  loading,
-  onSubmit,
-  open: openControlled,
-  onOpenChange,
-  hideButton = false,
-  buttonLabel = "Anotar pago recibido",
-  buttonSubtext = "Cuando el cliente te paga y quieres dejar registro",
-}: {
-  reservationsWithDebt: Reservation[];
-  totalRemaining: number;
-  loading: boolean;
-  onSubmit: (reservationId: string, amount: number, method: PaymentMethod, mediaUrl?: string) => void;
-  open?: boolean;
-  onOpenChange?: (open: boolean) => void;
-  hideButton?: boolean;
-  /** Etiqueta del botón cuando está cerrado. Por defecto "Anotar pago recibido". */
-  buttonLabel?: string;
-  /** Texto debajo del botón cuando está cerrado. Si es null, no se muestra. */
-  buttonSubtext?: string | null;
-}) {
-  /** Reserva con más deuda: se aplica el pago al saldo total del cliente (sin pedir elegir reserva). */
-  const defaultTarget = useMemo(
-    () => reservationsWithDebt.reduce((best, r) => {
-      const debt = Math.max(0, (r.total_price ?? 0) - (r.amount_paid ?? 0));
-      const bestDebt = Math.max(0, (best.total_price ?? 0) - (best.amount_paid ?? 0));
-      return debt >= bestDebt ? r : best;
-    }, reservationsWithDebt[0]),
-    [reservationsWithDebt]
-  );
-  const [openInternal, setOpenInternal] = useState(false);
-  const open = openControlled ?? openInternal;
-  const setOpen = onOpenChange ? (v: boolean) => onOpenChange(v) : setOpenInternal;
-  const targetId = defaultTarget?.id ?? "";
-  const [amount, setAmount] = useState((totalRemaining > 0 ? totalRemaining : 1).toFixed(2));
-
-  useEffect(() => {
-    if (open) setAmount((totalRemaining > 0 ? totalRemaining : 1).toFixed(2));
-  }, [open, totalRemaining]);
-  const [method, setMethod] = useState<PaymentMethod>("efectivo");
-  const [file, setFile] = useState<File | null>(null);
-  const [preview, setPreview] = useState<string | null>(null);
-  const [uploading, setUploading] = useState(false);
-  const fileInputRef = useRef<HTMLInputElement>(null);
-
-  const parsedAmount = parseFloat(amount);
-  const isValid = !isNaN(parsedAmount) && parsedAmount > 0 && targetId;
-  const busy = loading || uploading;
-
-  function clearFile() {
-    setFile(null);
-    setPreview(null);
-    if (fileInputRef.current) fileInputRef.current.value = "";
-  }
-
-  function handleFileChange(e: React.ChangeEvent<HTMLInputElement>) {
-    const selected = e.target.files?.[0];
-    if (!selected) return;
-    setFile(selected);
-    setPreview(URL.createObjectURL(selected));
-  }
-
-  async function handleConfirm() {
-    if (!isValid || busy || !targetId) return;
-
-    let mediaUrl: string | undefined;
-    if (method === "digital" && file) {
-      setUploading(true);
-      try {
-        const blob = await compressImageForUpload(file);
-        const form = new FormData();
-        form.append("file", blob, "image.jpg");
-        const res = await fetch("/api/upload", { method: "POST", body: form });
-        if (!res.ok) throw new Error("Upload failed");
-        const data = await res.json();
-        mediaUrl = data.url;
-      } catch {
-        setUploading(false);
-        return;
-      }
-      setUploading(false);
-    }
-
-    onSubmit(targetId, parsedAmount, method, mediaUrl);
-    setOpen(false);
-    setAmount((totalRemaining > 0 ? totalRemaining : 1).toFixed(2));
-    setMethod("efectivo");
-    clearFile();
-  }
-
-  if (reservationsWithDebt.length === 0) return null;
-
-  if (!open) {
-    if (hideButton) return null;
-    return (
-      <div className="space-y-1">
-        <button
-          type="button"
-          onClick={() => {
-            setOpen(true);
-            setAmount((totalRemaining > 0 ? totalRemaining : 1).toFixed(2));
-          }}
-          className="w-full py-3 px-4 rounded-xl font-bold text-sm bg-blue-600 text-white hover:bg-blue-700 transition-colors flex items-center justify-center gap-2 shadow-sm"
-        >
-          <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
-          </svg>
-          {buttonLabel}
-        </button>
-        {buttonSubtext != null && (
-          <p className="text-xs text-gray-500 text-center">{buttonSubtext}</p>
-        )}
-      </div>
-    );
-  }
-
-  return (
-    <div className="rounded-2xl border-2 border-blue-200 bg-white p-5 space-y-4">
-      <div className="flex items-center justify-between">
-        <div>
-          <h4 className="font-bold text-gray-900">{buttonLabel}</h4>
-          <p className="text-xs text-gray-500 mt-0.5">Se aplica al saldo total del cliente</p>
-        </div>
-        <button onClick={() => { setOpen(false); clearFile(); }} className="text-gray-400 hover:text-gray-600 p-1">
-          <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-          </svg>
-        </button>
-      </div>
-
-      <div>
-        <label className="block text-sm font-medium text-gray-600 mb-2">Método de pago</label>
-        <div className="flex gap-3">
-          <button
-            type="button"
-            onClick={() => { setMethod("efectivo"); clearFile(); }}
-            className={`flex-1 py-3 rounded-xl font-semibold text-sm border-2 transition-all ${method === "efectivo"
-              ? "border-green-500 bg-green-50 text-green-700"
-              : "border-gray-200 text-gray-500 hover:border-gray-300"
-              }`}
-          >
-            Efectivo
-          </button>
-          <button
-            type="button"
-            onClick={() => setMethod("digital")}
-            className={`flex-1 py-3 rounded-xl font-semibold text-sm border-2 transition-all ${method === "digital"
-              ? "border-blue-500 bg-blue-50 text-blue-700"
-              : "border-gray-200 text-gray-500 hover:border-gray-300"
-              }`}
-          >
-            Digital
-          </button>
-        </div>
-      </div>
-
-      {method === "digital" && (
-        <div>
-          <label className="block text-sm font-medium text-gray-600 mb-2">
-            Comprobante <span className="text-gray-400">(opcional)</span>
-          </label>
-          {preview ? (
-            <div className="relative rounded-xl overflow-hidden border border-gray-200">
-              {/* eslint-disable-next-line @next/next/no-img-element */}
-              <img src={preview} alt="Preview" className="w-full max-h-48 object-contain bg-gray-50" />
-              <button
-                type="button"
-                onClick={clearFile}
-                className="absolute top-2 right-2 bg-white/90 rounded-full p-1.5 shadow hover:bg-red-50 transition-colors"
-              >
-                <svg className="w-4 h-4 text-red-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-                </svg>
-              </button>
-            </div>
-          ) : (
-            <button
-              type="button"
-              onClick={() => fileInputRef.current?.click()}
-              className="w-full py-4 border-2 border-dashed border-gray-300 rounded-xl text-gray-400 hover:border-blue-400 hover:text-blue-500 transition-colors flex items-center justify-center gap-2"
-            >
-              <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
-              </svg>
-              Adjuntar foto
-            </button>
-          )}
-          <input ref={fileInputRef} type="file" accept="image/jpeg,image/png,image/webp" onChange={handleFileChange} className="hidden" />
-        </div>
-      )}
-
-      <div>
-        <label className="block text-sm font-medium text-gray-600 mb-2">Monto (S/)</label>
-        <input
-          type="number"
-          step="0.01"
-          min="0.01"
-          value={amount}
-          onChange={(e) => setAmount(e.target.value)}
-          className="w-full px-4 py-3 text-lg font-bold rounded-xl border-2 border-gray-200 focus:border-blue-500 focus:outline-none bg-gray-50"
-        />
-        <p className="text-xs text-gray-400 mt-1">
-          Saldo total del cliente: S/ {totalRemaining.toFixed(2)}
-        </p>
-      </div>
-
-      <div className="flex gap-3">
-        <button
-          onClick={() => { setOpen(false); clearFile(); }}
-          disabled={busy}
-          className="flex-1 py-3 px-4 font-semibold rounded-xl border-2 border-gray-300 text-gray-700 hover:bg-gray-100 transition-colors disabled:opacity-50 text-sm"
-        >
-          Cancelar
-        </button>
-        <button
-          onClick={handleConfirm}
-          disabled={!isValid || busy}
-          className="flex-1 py-3 px-4 font-semibold rounded-xl bg-blue-600 text-white hover:bg-blue-700 transition-colors disabled:opacity-50 text-sm"
-        >
-          {uploading ? "Subiendo..." : loading ? "Procesando..." : "Registrar"}
-        </button>
-      </div>
-    </div>
-  );
-}
 
 // ─── Payment Accordion (compacto → expande TransferCard completo) ─────────────
 
@@ -1152,171 +918,6 @@ function buildInvoiceDescription(reservation: Reservation | undefined, courtConf
   return desc;
 }
 
-const EmitInvoiceModal = memo(function EmitInvoiceModal({
-  transfer,
-  clientDni,
-  clientRuc,
-  docType,
-  setDocType,
-  docNumber,
-  setDocNumber,
-  clienteEdit,
-  setClienteEdit,
-  descripcionEdit,
-  setDescripcionEdit,
-  serieNum,
-  setSerieNum,
-  fetchingSerie,
-  setFetchingSerie,
-  emittingInvoiceId,
-  attachingInvoiceId,
-  onClose,
-  onEmitInvoice,
-}: {
-  transfer: Transfer;
-  clientDni?: string | null;
-  clientRuc?: string | null;
-  docType: "boleta" | "factura";
-  setDocType: (v: "boleta" | "factura") => void;
-  docNumber: string;
-  setDocNumber: (v: string) => void;
-  clienteEdit: string;
-  setClienteEdit: (v: string) => void;
-  descripcionEdit: string;
-  setDescripcionEdit: (v: string) => void;
-  serieNum: { serie: string; next_correlativo: number } | null;
-  setSerieNum: (v: { serie: string; next_correlativo: number } | null) => void;
-  fetchingSerie: boolean;
-  setFetchingSerie: (v: boolean) => void;
-  emittingInvoiceId: string | null;
-  attachingInvoiceId: string | null;
-  onClose: () => void;
-  onEmitInvoice: (t: Transfer, p: { tipo_comprobante: "boleta" | "factura"; doc_num: string; cliente_denominacion?: string; descripcion?: string }) => void;
-}) {
-  const docValid = docType === "factura" ? docNumber.length === 11 : docNumber.length === 8;
-
-  useEffect(() => {
-    let cancelled = false;
-    setFetchingSerie(true);
-    fetch(`/api/invoices?next_correlativo=1&tipo=${docType}`)
-      .then((r) => r.json())
-      .then((data) => {
-        if (!cancelled && data?.serie != null && data?.next_correlativo != null) {
-          setSerieNum({ serie: String(data.serie), next_correlativo: Number(data.next_correlativo) });
-        }
-      })
-      .catch(() => { if (!cancelled) setSerieNum(null); })
-      .finally(() => { if (!cancelled) setFetchingSerie(false); });
-    return () => { cancelled = true; };
-  }, [docType, setFetchingSerie, setSerieNum]);
-
-
-  return (
-    <div className="fixed inset-0 z-[9999] flex items-center justify-center p-4 bg-black/55" role="dialog" aria-modal="true">
-      <div className="w-full max-w-2xl max-h-[90vh] overflow-y-auto rounded-2xl bg-white shadow-2xl p-6 space-y-5">
-        <div className="flex items-center justify-between">
-          <h4 className="text-xl font-bold text-gray-900">Vista previa — Emitir comprobante</h4>
-          <button onClick={onClose} className="p-1.5 rounded-lg text-gray-400 hover:bg-gray-100 hover:text-gray-700">
-            <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-            </svg>
-          </button>
-        </div>
-
-        <div className="flex border-b-2 border-gray-200">
-          <button
-            onClick={() => { setDocType("boleta"); setDocNumber(clientDni || ""); }}
-            className={`px-4 py-2 font-semibold border-b-2 -mb-0.5 transition-colors ${docType === "boleta" ? "border-blue-500 text-blue-600" : "border-transparent text-gray-500 hover:text-gray-700"}`}
-          >
-            Boleta (DNI)
-          </button>
-          <button
-            onClick={() => { setDocType("factura"); setDocNumber(clientRuc || ""); }}
-            className={`px-4 py-2 font-semibold border-b-2 -mb-0.5 transition-colors ${docType === "factura" ? "border-blue-500 text-blue-600" : "border-transparent text-gray-500 hover:text-gray-700"}`}
-          >
-            Factura (RUC)
-          </button>
-        </div>
-
-        <div className="rounded-xl border-2 border-amber-200 bg-amber-50/50 p-5 space-y-4">
-          <p className="text-xs font-bold text-amber-800 uppercase tracking-wide">Datos que usará SUNAT</p>
-          <div className="space-y-3 text-sm">
-            <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center gap-1">
-              <span className="text-gray-600 shrink-0">Serie / Número</span>
-              <span className="font-mono font-bold text-gray-900 text-base">
-                {fetchingSerie ? "Cargando..." : serieNum ? `${serieNum.serie}-${String(serieNum.next_correlativo).padStart(5, "0")}` : (docValid ? "—" : "Ingresa DNI/RUC válido")}
-              </span>
-            </div>
-            <div className="flex justify-between items-center gap-4">
-              <span className="text-gray-600 shrink-0">Tipo:</span>
-              <span className="font-semibold">{docType === "boleta" ? "Boleta" : "Factura"}</span>
-            </div>
-            <div>
-              <label className="block text-gray-600 text-xs font-medium mb-1">Doc. cliente</label>
-              <input
-                type="text"
-                value={docNumber}
-                onChange={(e) => {
-                  const onlyDigits = e.target.value.replace(/\D/g, "");
-                  setDocNumber(docType === "factura" ? onlyDigits.slice(0, 11) : onlyDigits.slice(0, 8));
-                }}
-                placeholder={docType === "factura" ? "RUC 11 dígitos" : "DNI 8 dígitos"}
-                className="w-full rounded-lg border-2 border-gray-200 bg-white px-3 py-2 font-mono focus:border-blue-500 focus:outline-none"
-              />
-            </div>
-            <div>
-              <label className="block text-gray-600 text-xs font-medium mb-1">Cliente</label>
-              <input
-                type="text"
-                value={clienteEdit}
-                onChange={(e) => setClienteEdit(e.target.value)}
-                placeholder="CLIENTE GENERAL si vacío"
-                className="w-full rounded-lg border-2 border-gray-200 bg-white px-3 py-2 font-medium focus:border-blue-500 focus:outline-none"
-              />
-            </div>
-            <div>
-              <label className="block text-gray-600 text-xs font-medium mb-1">Descripción</label>
-              <input
-                type="text"
-                value={descripcionEdit}
-                onChange={(e) => setDescripcionEdit(e.target.value)}
-                placeholder="Ej: Alquiler cancha 6 vs 6 - 06/02/2025 10am-12pm"
-                className="w-full rounded-lg border-2 border-gray-200 bg-white px-3 py-2 font-medium focus:border-blue-500 focus:outline-none"
-              />
-            </div>
-            <div className="flex justify-between items-center gap-4 pt-3 border-t border-amber-300">
-              <span className="text-gray-600">Monto total (IGV incl.):</span>
-              <span className="text-xl font-bold text-gray-900">S/ {(transfer.amount ?? 0).toFixed(2)}</span>
-            </div>
-          </div>
-        </div>
-
-        <div className="flex gap-3">
-          <button onClick={onClose} className="flex-1 py-3 px-4 rounded-xl border-2 border-gray-300 text-gray-700 font-semibold hover:bg-gray-100">
-            Cancelar
-          </button>
-          <button
-            onClick={() => {
-              if (!docValid) return;
-              onEmitInvoice(transfer, {
-                tipo_comprobante: docType,
-                doc_num: docNumber,
-                cliente_denominacion: clienteEdit.trim() || undefined,
-                descripcion: descripcionEdit.trim() || undefined,
-              });
-              onClose();
-            }}
-            disabled={attachingInvoiceId === transfer.id || emittingInvoiceId === transfer.id || !docValid}
-            className="flex-1 py-3 px-4 rounded-xl bg-green-600 text-white font-semibold hover:bg-green-700 disabled:opacity-60"
-          >
-            {emittingInvoiceId === transfer.id ? "Emitiendo..." : "Confirmar y emitir"}
-          </button>
-        </div>
-      </div>
-    </div>
-  );
-});
-
 const TransferCard = memo(function TransferCard({
   transfer, invoice, reservation, courtConfigs, emittingInvoiceId, attachingInvoiceId, onVerify, onEmitInvoice, onAttachInvoice, onDetachInvoice, onRevoke, onViewImage, onHover, chatId, clientDni, clientRuc,
 }: {
@@ -1348,19 +949,12 @@ const TransferCard = memo(function TransferCard({
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [dragOver, setDragOver] = useState(false);
   const [showEmitModal, setShowEmitModal] = useState(false);
-  const [docType, setDocType] = useState<"boleta" | "factura">("boleta");
-  const [docNumber, setDocNumber] = useState("");
-  const [clienteEdit, setClienteEdit] = useState("");
-  const [descripcionEdit, setDescripcionEdit] = useState("");
-  const [serieNum, setSerieNum] = useState<{ serie: string; next_correlativo: number } | null>(null);
-  const [fetchingSerie, setFetchingSerie] = useState(false);
   const [wspStatus, setWspStatus] = useState<"idle" | "sending" | "sent" | "error">("idle");
   const [wspError, setWspError] = useState<string | null>(null);
   const [detachingInvoice, setDetachingInvoice] = useState(false);
   const isManualLike = transfer.source === "manual" || transfer.source === "manual_adjustment";
   const isValidated = transfer.verified || isManualLike;
-  const hasPositiveAmount = (transfer.amount ?? 0) > 0;
-  const canAttach = isValidated && !invoice && hasPositiveAmount;
+  const canAttach = isValidated && !invoice;
 
   const handleDrop = useCallback((e: React.DragEvent) => {
     e.preventDefault();
@@ -1541,6 +1135,13 @@ const TransferCard = memo(function TransferCard({
               {wspError && (
                 <p className="text-xs text-red-600 font-medium">{wspError}</p>
               )}
+              <button
+                type="button"
+                onClick={() => alert("Esta funcionalidad aún está en desarrollo")}
+                className="w-full py-2 px-3 rounded-lg text-sm font-semibold border border-gray-200 text-gray-600 hover:bg-gray-50"
+              >
+                {invoice.tipo_comprobante === "factura" ? "Anular factura" : "Anular boleta"}
+              </button>
             </div>
           ) : (
             <div className="space-y-3">
@@ -1563,7 +1164,6 @@ const TransferCard = memo(function TransferCard({
               <button
                 onClick={() => fileInputRef.current?.click()}
                 disabled={attachingInvoiceId === transfer.id || emittingInvoiceId === transfer.id || !canAttach}
-                title={!hasPositiveAmount ? "No se puede adjuntar boleta a ajustes negativos o cero" : undefined}
                 className="w-full py-2.5 px-4 rounded-xl font-bold text-sm bg-gray-900 text-white hover:bg-gray-800 flex items-center justify-center gap-2 transition-colors disabled:opacity-60 disabled:cursor-not-allowed shadow-sm"
               >
                 {attachingInvoiceId === transfer.id ? (
@@ -1574,16 +1174,8 @@ const TransferCard = memo(function TransferCard({
               </button>
 
               <button
-                onClick={() => {
-                  setDocType("boleta");
-                  setDocNumber(clientDni || "");
-                  setSerieNum(null);
-                  setClienteEdit(reservation?.representative_name?.trim() ?? "");
-                  setDescripcionEdit(buildInvoiceDescription(reservation, courtConfigs));
-                  setShowEmitModal(true);
-                }}
-                disabled={attachingInvoiceId === transfer.id || emittingInvoiceId === transfer.id || !hasPositiveAmount}
-                title={!hasPositiveAmount ? "No se puede emitir boleta para ajustes negativos o cero" : undefined}
+                onClick={() => setShowEmitModal(true)}
+                disabled={attachingInvoiceId === transfer.id || emittingInvoiceId === transfer.id}
                 className="w-full py-2.5 px-4 rounded-xl font-bold text-sm bg-green-600 text-white hover:bg-green-700 flex items-center justify-center gap-2 border border-green-700 disabled:opacity-60 disabled:cursor-not-allowed"
               >
                 {emittingInvoiceId === transfer.id ? (
@@ -1602,22 +1194,12 @@ const TransferCard = memo(function TransferCard({
           transfer={transfer}
           clientDni={clientDni}
           clientRuc={clientRuc}
-          docType={docType}
-          setDocType={setDocType}
-          docNumber={docNumber}
-          setDocNumber={setDocNumber}
-          clienteEdit={clienteEdit}
-          setClienteEdit={setClienteEdit}
-          descripcionEdit={descripcionEdit}
-          setDescripcionEdit={setDescripcionEdit}
-          serieNum={serieNum}
-          setSerieNum={setSerieNum}
-          fetchingSerie={fetchingSerie}
-          setFetchingSerie={setFetchingSerie}
-          emittingInvoiceId={emittingInvoiceId}
-          attachingInvoiceId={attachingInvoiceId}
-          onClose={() => { setShowEmitModal(false); setSerieNum(null); }}
+          initialDescripcion={buildInvoiceDescription(reservation, courtConfigs)}
+          initialCliente={reservation?.representative_name?.trim() ?? ""}
+          onClose={() => setShowEmitModal(false)}
           onEmitInvoice={onEmitInvoice}
+          emitting={emittingInvoiceId === transfer.id}
+          attaching={attachingInvoiceId === transfer.id}
         />,
         document.body
       )}
@@ -1825,6 +1407,13 @@ const CobrosTabContent = memo(function CobrosTabContent({
     () => allClientReservations.filter((r) => (r.total_price ?? 0) - (r.amount_paid ?? 0) > 0),
     [allClientReservations]
   );
+  const reservationsForPayment = useMemo(
+    () =>
+      allClientReservations.filter(
+        (r) => r.status !== "cancelled" && r.status !== "expired"
+      ),
+    [allClientReservations]
+  );
 
   const pendingByPeriod = useMemo(() => {
     const addDays = (dateStr: string, days: number) => {
@@ -1954,7 +1543,7 @@ const CobrosTabContent = memo(function CobrosTabContent({
           <h4 className="text-xs font-bold text-gray-500 uppercase tracking-wide">Últimos pagos</h4>
           <div className="flex flex-col gap-4">
             <RegisterPaymentFormCobros
-              reservationsWithDebt={reservationsWithDebt}
+              reservationsForPayment={reservationsForPayment}
               totalRemaining={totalRemaining}
               loading={paymentLoading}
               onSubmit={onRegisterPayment}

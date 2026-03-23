@@ -276,6 +276,7 @@ export function usePaymentSidebar(options?: UsePaymentSidebarOptions) {
       doc_num: string;
       cliente_denominacion?: string;
       descripcion?: string;
+      amount?: number;
     }
   ) => {
     if (!selectedReservation) {
@@ -287,7 +288,7 @@ export function usePaymentSidebar(options?: UsePaymentSidebarOptions) {
       const result = await store.emitInvoice(
         selectedReservation,
         { id: transfer.id, amount: transfer.amount || 0 },
-        params
+        { ...params, amount: typeof params.amount === "number" ? params.amount : undefined }
       );
       if (result) {
         toast("Comprobante emitido correctamente", "success");
