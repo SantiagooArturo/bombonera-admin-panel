@@ -2,7 +2,6 @@
 
 import { useState, useRef, useEffect, useCallback, useMemo, memo } from "react";
 import ReactDOM from "react-dom";
-import { compressImageForUpload } from "@/lib/compress-image";
 import { Transfer, Invoice, Reservation, PaymentMethod, ClientType, CLIENT_TYPE_LABELS, STATUS_LABELS, getPendingExpiryTimeFormatted, type ReservationStatus } from "@/lib/types";
 import { renderPdfToDataUrl } from "@/lib/pdf-preview";
 import type { CourtFieldConfig } from "@/lib/court-config";

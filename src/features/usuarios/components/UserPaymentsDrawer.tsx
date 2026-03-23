@@ -86,9 +86,6 @@ export default function UserPaymentsDrawer({ user, onClose, onUserUpdated }: Use
     }
   }, [store, localUser.id, queryChatId]);
 
-  const reservationsWithDebt = reservations.filter(
-    (r) => (r.total_price ?? 0) - (r.amount_paid ?? 0) > 0 && r.status !== "cancelled" && r.status !== "expired"
-  );
   const reservationsForPayment = reservations.filter(
     (r) => r.status !== "cancelled" && r.status !== "expired"
   );
