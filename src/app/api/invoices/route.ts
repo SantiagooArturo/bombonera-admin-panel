@@ -88,14 +88,14 @@ export async function GET(request: NextRequest) {
 
     let query: FirebaseFirestore.Query = db.collection("invoices");
     if (userIdInParam) {
-      const ids = [
-        ...new Set(
+      const ids = Array.from(
+        new Set(
           userIdInParam
             .split(",")
             .map((x) => x.trim())
             .filter(Boolean)
-        ),
-      ].slice(0, 30);
+        )
+      ).slice(0, 30);
       if (ids.length === 0) {
         return NextResponse.json([]);
       }

@@ -31,5 +31,5 @@ export function collectInvoiceUserKeys(
     add(normalizePeruPhone(phoneDigits.slice(-9)));
   }
 
-  return [...s].filter(Boolean).slice(0, 30);
+  return Array.from(s).filter(Boolean).slice(0, 30);
 }

@@ -526,7 +526,7 @@ class Store {
 
   /** Todas las boletas vinculadas a transferencias del cliente (varios batches de 30). */
   async fetchInvoicesByTransferIdsAll(transferIds: string[]) {
-    const unique = [...new Set(transferIds.filter(Boolean))];
+    const unique = Array.from(new Set(transferIds.filter(Boolean)));
     const chunks: string[][] = [];
     for (let i = 0; i < unique.length; i += 30) {
       chunks.push(unique.slice(i, i + 30));
@@ -549,7 +549,9 @@ class Store {
 
   /** Boletas/facturas donde `user_id` coincide con el cliente (incluye manuales sin transfer). */
   async fetchInvoicesByUserIds(userIds: string[]) {
-    const unique = [...new Set(userIds.map((x) => String(x).trim()).filter(Boolean))].slice(0, 30);
+    const unique = Array.from(
+      new Set(userIds.map((x) => String(x).trim()).filter(Boolean))
+    ).slice(0, 30);
     if (unique.length === 0) return [];
     try {
       const res = await fetch(
