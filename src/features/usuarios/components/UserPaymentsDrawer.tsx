@@ -1,11 +1,12 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useMemo } from "react";
 import ReactDOM from "react-dom";
 import { useStore } from "@/lib/hooks";
 import { useToastContext } from "@/components/ClientLayout";
 import type { User, Transfer, Invoice, Reservation } from "@/lib/types";
 import { normalizePeruPhone, userWhatsAppPhone } from "@/features/operaciones/utils";
+import { WHATSAPP_ICON_PATH } from "@/features/operaciones/whatsappIconPath";
 import { EmitInvoiceModal } from "@/components/verificacion/EmitInvoiceModal";
 import { RegisterPaymentFormCobros } from "@/components/verificacion/RegisterPaymentFormCobros";
 import { UserDrawerClientInfo } from "./UserDrawerClientInfo";
@@ -55,6 +56,11 @@ export default function UserPaymentsDrawer({ user, onClose, onUserUpdated }: Use
   const [localUser, setLocalUser] = useState(user);
   /** Pagos = dinero ingresado. Comprobantes = boletas/facturas SUNAT (una sola lista, sin duplicar en cada pago). */
   const [drawerTab, setDrawerTab] = useState<"pagos" | "comprobantes">("pagos");
+  /** Estado envío WSP por comprobante (mismo flujo que PaymentSidebar /api/invoices/send). */
+  const [invoiceWspStatus, setInvoiceWspStatus] = useState<
+    Record<string, "idle" | "sending" | "sent" | "error">
+  >({});
+  const [invoiceWspError, setInvoiceWspError] = useState<Record<string, string>>({});
 
   useEffect(() => {
     setLocalUser(user);
@@ -76,6 +82,58 @@ export default function UserPaymentsDrawer({ user, onClose, onUserUpdated }: Use
 
   const displayName =
     localUser.custom_name || localUser.contact_name || localUser.last_representative_name || "Cliente";
+
+  /** Mismo criterio que el drawer de reserva: chat_id / teléfono para el bot de WSP. */
+  const chatIdForWspSend = useMemo(
+    () =>
+      String(
+        waResolved ||
+          String(localUser.chat_id ?? "").trim() ||
+          String(localUser.phone_number ?? "").trim() ||
+          localUser.id ||
+          ""
+      ).trim(),
+    [waResolved, localUser.chat_id, localUser.phone_number, localUser.id]
+  );
+
+  const sendInvoiceViaWhatsapp = useCallback(async (invoiceId: string, fileUrl: string) => {
+    if (!chatIdForWspSend) {
+      setInvoiceWspError((e) => ({ ...e, [invoiceId]: "Falta número de WhatsApp del cliente." }));
+      setInvoiceWspStatus((s) => ({ ...s, [invoiceId]: "error" }));
+      return;
+    }
+    let didStartSend = false;
+    setInvoiceWspStatus((s) => {
+      const cur = s[invoiceId] ?? "idle";
+      if (cur === "sending" || cur === "sent") return s;
+      didStartSend = true;
+      return { ...s, [invoiceId]: "sending" };
+    });
+    if (!didStartSend) return;
+    setInvoiceWspError((e) => {
+      const next = { ...e };
+      delete next[invoiceId];
+      return next;
+    });
+    try {
+      const res = await fetch("/api/invoices/send", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ chat_id: chatIdForWspSend, file_url: fileUrl }),
+      });
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        throw new Error(typeof data?.error === "string" ? data.error : "No se pudo enviar la boleta.");
+      }
+      setInvoiceWspStatus((s) => ({ ...s, [invoiceId]: "sent" }));
+    } catch (err) {
+      setInvoiceWspStatus((s) => ({ ...s, [invoiceId]: "error" }));
+      setInvoiceWspError((e) => ({
+        ...e,
+        [invoiceId]: err instanceof Error ? err.message : "No se pudo enviar la boleta.",
+      }));
+    }
+  }, [chatIdForWspSend]);
 
   const loadData = useCallback(async () => {
     setLoading(true);
@@ -261,7 +319,7 @@ export default function UserPaymentsDrawer({ user, onClose, onUserUpdated }: Use
   return (
     <>
       {ReactDOM.createPortal(
-        <div className="fixed inset-y-0 right-0 z-50 w-full max-w-2xl bg-white shadow-2xl flex flex-col">
+        <div className="fixed inset-y-0 right-0 z-50 w-full max-w-4xl bg-white shadow-2xl flex flex-col">
           {/* Header */}
           <div className="shrink-0 px-6 py-4 border-b border-gray-200 flex items-center justify-between bg-gray-50">
             <h2 className="text-xl font-bold text-gray-900 min-w-0">Pagos de &ldquo;{displayName}&rdquo;</h2>
@@ -479,6 +537,8 @@ export default function UserPaymentsDrawer({ user, onClose, onUserUpdated }: Use
                             transfers.some((tr) => tr.id === inv.transfer_id);
                           const isManualDoc = inv.reservation_id === "manual";
                           const isFactura = inv.tipo_comprobante === "factura";
+                          const wspStatus = invoiceWspStatus[inv.id] ?? "idle";
+                          const wspErr = invoiceWspError[inv.id];
 
                           return (
                             <li
@@ -488,14 +548,16 @@ export default function UserPaymentsDrawer({ user, onClose, onUserUpdated }: Use
                               <div className="flex flex-col gap-3 px-4 py-3 sm:flex-row sm:items-center sm:justify-between sm:gap-4">
                                 <div className="flex min-w-0 flex-1 items-start gap-3">
                                   <span
-                                    className={`mt-0.5 shrink-0 rounded-md px-2 py-0.5 text-xs font-black text-white ${
-                                      isFactura ? "bg-violet-600" : "bg-indigo-600"
+                                    className={`mt-0.5 shrink-0 rounded-lg border px-2.5 py-1 text-xs font-semibold ${
+                                      isFactura
+                                        ? "border-violet-200 bg-violet-50 text-violet-900"
+                                        : "border-slate-200 bg-slate-100 text-slate-800"
                                     }`}
                                   >
-                                    {isFactura ? "FAC" : "BOL"}
+                                    {isFactura ? "Factura" : "Boleta"}
                                   </span>
                                   <div className="min-w-0 flex-1">
-                                    <p className="text-sm font-semibold text-gray-500">Comprobante SUNAT</p>
+                                    <p className="text-sm text-gray-500">Comprobante electrónico SUNAT</p>
                                     <p className="text-xl font-bold tabular-nums text-gray-900">
                                       S/ {(inv.amount ?? 0).toFixed(2)}
                                       {inv.serie_correlativo ? (
@@ -519,36 +581,136 @@ export default function UserPaymentsDrawer({ user, onClose, onUserUpdated }: Use
                                     </p>
                                   </div>
                                 </div>
-                                <div className="flex shrink-0 flex-col gap-2 sm:min-w-[11rem]">
+                                <div className="flex min-w-0 shrink-0 flex-col gap-2 sm:w-[min(100%,20rem)]">
                                   {inv.file_url ? (
-                                    <a
-                                      href={invoicePdfHref(inv.file_url)}
-                                      target="_blank"
-                                      rel="noopener noreferrer"
-                                      title="Se abre en una pestaña nueva para imprimir o guardar"
-                                      className="inline-flex items-center justify-center gap-2 rounded-lg bg-blue-600 px-4 py-2.5 text-sm font-bold text-white shadow-sm hover:bg-blue-700"
-                                    >
-                                      <svg
-                                        className="h-4 w-4 shrink-0"
-                                        fill="none"
-                                        viewBox="0 0 24 24"
-                                        stroke="currentColor"
-                                        aria-hidden
-                                      >
-                                        <path
-                                          strokeLinecap="round"
-                                          strokeLinejoin="round"
-                                          strokeWidth={2}
-                                          d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14"
-                                        />
-                                      </svg>
-                                      {isFactura ? "Ver factura" : "Ver boleta"}
-                                    </a>
+                                    <>
+                                      <div className="flex gap-2">
+                                        <a
+                                          href={invoicePdfHref(inv.file_url)}
+                                          target="_blank"
+                                          rel="noopener noreferrer"
+                                          title="Se abre en una pestaña nueva para imprimir o guardar"
+                                          className="flex flex-1 items-center justify-center gap-2 rounded-xl border-2 border-blue-100 bg-blue-50 py-2.5 px-3 text-sm font-bold text-blue-700 transition-colors hover:bg-blue-100"
+                                        >
+                                          <svg
+                                            className="h-4 w-4 shrink-0"
+                                            fill="none"
+                                            viewBox="0 0 24 24"
+                                            stroke="currentColor"
+                                            aria-hidden
+                                          >
+                                            <path
+                                              strokeLinecap="round"
+                                              strokeLinejoin="round"
+                                              strokeWidth={2}
+                                              d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"
+                                            />
+                                          </svg>
+                                          {isFactura ? "Ver factura" : "Ver boleta"}
+                                        </a>
+                                        <button
+                                          type="button"
+                                          title={
+                                            !chatIdForWspSend
+                                              ? "Falta número de WhatsApp del cliente (edítalo arriba)"
+                                              : undefined
+                                          }
+                                          disabled={
+                                            !chatIdForWspSend || wspStatus === "sending" || wspStatus === "sent"
+                                          }
+                                          onClick={() => void sendInvoiceViaWhatsapp(inv.id, inv.file_url!)}
+                                          className={`flex flex-1 items-center justify-center gap-2 rounded-xl border-2 py-2.5 px-3 text-sm font-bold transition-all ${
+                                            wspStatus === "sent"
+                                              ? "border-green-200 bg-green-50 text-green-700"
+                                              : wspStatus === "error"
+                                                ? "border-red-200 bg-red-50 text-red-700"
+                                                : "border-green-600 bg-green-600 text-white hover:border-green-700 hover:bg-green-700"
+                                          } disabled:opacity-80`}
+                                        >
+                                          {wspStatus === "sending" ? (
+                                            <>
+                                              <svg
+                                                className="h-4 w-4 animate-spin"
+                                                fill="none"
+                                                viewBox="0 0 24 24"
+                                                aria-hidden
+                                              >
+                                                <circle
+                                                  className="opacity-25"
+                                                  cx="12"
+                                                  cy="12"
+                                                  r="10"
+                                                  stroke="currentColor"
+                                                  strokeWidth="4"
+                                                />
+                                                <path
+                                                  className="opacity-75"
+                                                  fill="currentColor"
+                                                  d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"
+                                                />
+                                              </svg>
+                                              Enviando
+                                            </>
+                                          ) : wspStatus === "sent" ? (
+                                            <>
+                                              <svg
+                                                className="h-4 w-4"
+                                                fill="none"
+                                                viewBox="0 0 24 24"
+                                                stroke="currentColor"
+                                                aria-hidden
+                                              >
+                                                <path
+                                                  strokeLinecap="round"
+                                                  strokeLinejoin="round"
+                                                  strokeWidth={2}
+                                                  d="M5 13l4 4L19 7"
+                                                />
+                                              </svg>
+                                              Enviado
+                                            </>
+                                          ) : wspStatus === "error" ? (
+                                            <>
+                                              <svg
+                                                className="h-4 w-4"
+                                                fill="none"
+                                                viewBox="0 0 24 24"
+                                                stroke="currentColor"
+                                                aria-hidden
+                                              >
+                                                <path
+                                                  strokeLinecap="round"
+                                                  strokeLinejoin="round"
+                                                  strokeWidth={2}
+                                                  d="M12 4v4m0 8v4m8-8h-4M8 12H4"
+                                                />
+                                              </svg>
+                                              Reintentar envío
+                                            </>
+                                          ) : (
+                                            <>
+                                              <svg
+                                                className="h-4 w-4 shrink-0"
+                                                fill="currentColor"
+                                                viewBox="0 0 24 24"
+                                                aria-hidden
+                                              >
+                                                <path d={WHATSAPP_ICON_PATH} />
+                                              </svg>
+                                              Enviar
+                                            </>
+                                          )}
+                                        </button>
+                                      </div>
+                                      {wspErr ? (
+                                        <p className="text-xs font-medium text-red-600">{wspErr}</p>
+                                      ) : null}
+                                    </>
                                   ) : null}
                                   <button
                                     type="button"
                                     onClick={() => alert("Esta funcionalidad aún está en desarrollo")}
-                                    className="rounded-lg border-2 border-red-300 bg-white px-4 py-2 text-sm font-bold text-red-800 hover:bg-red-50"
+                                    className="w-full rounded-xl border-2 border-red-300 bg-red-50 py-2.5 px-4 text-sm font-bold text-red-800 transition-colors hover:bg-red-100"
                                   >
                                     {isFactura ? "Anular factura" : "Anular boleta"}
                                   </button>
