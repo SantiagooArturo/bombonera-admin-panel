@@ -13,7 +13,6 @@ import {
 } from "../utils/invoiceTableColumns";
 import { fetchAllInvoices } from "../services/fetchInvoices";
 import { voidSunatInvoice } from "../services/voidSunatInvoice";
-import { mergeInvoiceVoided } from "../utils/mergeInvoiceVoided";
 import { EmitMiscInvoiceModal } from "./EmitMiscInvoiceModal";
 
 function invoicePdfHref(fileUrl: string) {
