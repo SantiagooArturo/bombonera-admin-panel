@@ -20,44 +20,11 @@ import {
   invoicePlantillaPdfHref,
 } from "../utils/invoicePdfLinks";
 import { invoiceComprobantePdfDownloadFilename } from "../utils/comprobantePdfFilename";
+import { invoiceMatchesSearch } from "../utils/invoiceMatchesSearch";
+import { BoletasMobileList } from "./BoletasMobileList";
+import { IconOpenInNewTab, SerieCorrelativoCell } from "./boletasSharedUi";
 
 type ComprobanteTab = "todos" | "boletas" | "facturas";
-
-function IconOpenInNewTab({ className }: { className?: string }) {
-  return (
-    <svg
-      className={className}
-      viewBox="0 0 24 24"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth={2}
-      strokeLinecap="round"
-      strokeLinejoin="round"
-      aria-hidden
-    >
-      <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6" />
-      <polyline points="15 3 21 3 21 9" />
-      <line x1="10" y1="14" x2="21" y2="3" />
-    </svg>
-  );
-}
-
-/** Permite salto de línea justo después del guion (ej. B001-123456). */
-function SerieCorrelativoCell({ value }: { value: string | null | undefined }) {
-  const s = String(value ?? "").trim();
-  if (!s) return <>—</>;
-  const i = s.indexOf("-");
-  if (i < 0) {
-    return <span className="break-all leading-tight">{s}</span>;
-  }
-  return (
-    <span className="leading-tight">
-      <span className="whitespace-nowrap">{s.slice(0, i + 1)}</span>
-      <wbr />
-      <span className="break-all">{s.slice(i + 1)}</span>
-    </span>
-  );
-}
 
 export function BoletasPage() {
   const toast = useToastContext();
@@ -69,6 +36,7 @@ export function BoletasPage() {
   const [wspError, setWspError] = useState<Record<string, string>>({});
   const [voidingInvoiceId, setVoidingInvoiceId] = useState<string | null>(null);
   const [miscModalOpen, setMiscModalOpen] = useState(false);
+  const [searchQuery, setSearchQuery] = useState("");
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -88,17 +56,22 @@ export function BoletasPage() {
     void load();
   }, [load]);
 
+  const searchedInvoices = useMemo(
+    () => invoices.filter((inv) => invoiceMatchesSearch(inv, searchQuery)),
+    [invoices, searchQuery]
+  );
+
   const rows = useMemo(() => {
-    if (tab === "todos") return invoices;
-    if (tab === "facturas") return invoices.filter((i) => i.tipo_comprobante === "factura");
-    return invoices.filter((i) => i.tipo_comprobante !== "factura");
-  }, [invoices, tab]);
+    if (tab === "todos") return searchedInvoices;
+    if (tab === "facturas") return searchedInvoices.filter((i) => i.tipo_comprobante === "factura");
+    return searchedInvoices.filter((i) => i.tipo_comprobante !== "factura");
+  }, [searchedInvoices, tab]);
 
   const counts = useMemo(() => {
-    const facturas = invoices.filter((i) => i.tipo_comprobante === "factura").length;
-    const boletas = invoices.length - facturas;
-    return { todos: invoices.length, boletas, facturas };
-  }, [invoices]);
+    const facturas = searchedInvoices.filter((i) => i.tipo_comprobante === "factura").length;
+    const boletas = searchedInvoices.length - facturas;
+    return { todos: searchedInvoices.length, boletas, facturas };
+  }, [searchedInvoices]);
 
   const sendWsp = useCallback(async (inv: Invoice) => {
     const fileUrlForBot =
@@ -220,6 +193,21 @@ export function BoletasPage() {
         />
       ) : null}
 
+      <div className="mb-6">
+        <label htmlFor="boletas-search" className="sr-only">
+          Buscar comprobantes
+        </label>
+        <input
+          id="boletas-search"
+          type="search"
+          value={searchQuery}
+          onChange={(e) => setSearchQuery(e.target.value)}
+          placeholder="Buscar por código, receptor, DNI, cancha, WhatsApp o importe…"
+          autoComplete="off"
+          className="w-full rounded-xl border border-gray-200 bg-white px-4 py-3 text-sm text-gray-900 shadow-sm placeholder:text-gray-400 focus:border-field-dark focus:outline-none focus:ring-2 focus:ring-field-dark/25"
+        />
+      </div>
+
       <div className="mb-6 rounded-xl border border-gray-200 bg-gray-100 p-1 shadow-sm">
         <div className="flex gap-1" role="tablist" aria-label="Tipo de comprobante">
           {tabBtn("todos", "Todos", counts.todos)}
@@ -232,7 +220,20 @@ export function BoletasPage() {
         <div className="mb-4 rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-800">{error}</div>
       ) : null}
 
-      <div className="overflow-hidden rounded-xl border border-gray-200 bg-white shadow-sm">
+      <div className="lg:hidden">
+        <BoletasMobileList
+          rows={rows}
+          searchActive={Boolean(searchQuery.trim())}
+          loading={loading}
+          wspStatus={wspStatus}
+          wspError={wspError}
+          voidingInvoiceId={voidingInvoiceId}
+          onSendWsp={(inv) => void sendWsp(inv)}
+          onVoid={(inv) => void handleVoidRow(inv)}
+        />
+      </div>
+
+      <div className="hidden overflow-hidden rounded-xl border border-gray-200 bg-white shadow-sm lg:block">
         <div className="overflow-x-auto">
           <table className="w-full min-w-[min(100%,64rem)] table-fixed border-collapse text-sm lg:min-w-0">
             <colgroup>
@@ -281,7 +282,9 @@ export function BoletasPage() {
               {!loading && rows.length === 0 ? (
                 <tr>
                   <td colSpan={9} className="px-4 py-12 text-center text-sm text-gray-500">
-                    No hay comprobantes en esta vista.
+                    {searchQuery.trim()
+                      ? "Ningún comprobante coincide con tu búsqueda en esta pestaña."
+                      : "No hay comprobantes en esta vista."}
                   </td>
                 </tr>
               ) : null}
