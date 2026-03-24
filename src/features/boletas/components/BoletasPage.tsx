@@ -5,6 +5,7 @@ import type { Invoice } from "@/lib/types";
 import { useToastContext } from "@/components/ClientLayout";
 import { WHATSAPP_ICON_PATH } from "@/features/operaciones/whatsappIconPath";
 import { formatInvoiceEmissionDate } from "../utils/formatInvoiceEmissionDate";
+import { formatSolesAmountDisplay } from "../utils/formatSolesAmountDisplay";
 import { wspLink } from "@/features/operaciones/utils";
 import {
   invoiceDescripcionOnly,
@@ -21,6 +22,42 @@ import {
 import { invoiceComprobantePdfDownloadFilename } from "../utils/comprobantePdfFilename";
 
 type ComprobanteTab = "todos" | "boletas" | "facturas";
+
+function IconOpenInNewTab({ className }: { className?: string }) {
+  return (
+    <svg
+      className={className}
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth={2}
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden
+    >
+      <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6" />
+      <polyline points="15 3 21 3 21 9" />
+      <line x1="10" y1="14" x2="21" y2="3" />
+    </svg>
+  );
+}
+
+/** Permite salto de línea justo después del guion (ej. B001-123456). */
+function SerieCorrelativoCell({ value }: { value: string | null | undefined }) {
+  const s = String(value ?? "").trim();
+  if (!s) return <>—</>;
+  const i = s.indexOf("-");
+  if (i < 0) {
+    return <span className="break-all leading-tight">{s}</span>;
+  }
+  return (
+    <span className="leading-tight">
+      <span className="whitespace-nowrap">{s.slice(0, i + 1)}</span>
+      <wbr />
+      <span className="break-all">{s.slice(i + 1)}</span>
+    </span>
+  );
+}
 
 export function BoletasPage() {
   const toast = useToastContext();
@@ -150,7 +187,7 @@ export function BoletasPage() {
       role="tab"
       aria-selected={tab === id}
       onClick={() => setTab(id)}
-      className={`flex-1 rounded-md py-2.5 text-sm font-bold transition-colors ${
+      className={`flex-1 rounded-md px-2 py-3 text-sm font-bold transition-colors sm:px-3 ${
         tab === id ? "bg-white text-gray-900 shadow-sm" : "text-gray-600 hover:text-gray-900"
       }`}
     >
@@ -160,7 +197,7 @@ export function BoletasPage() {
   );
 
   return (
-    <div className="mx-auto w-full max-w-[min(100%,100rem)] px-5 py-8 sm:px-8 lg:px-12 xl:px-14">
+    <div className="mx-auto w-full max-w-[min(100%,120rem)] px-3 py-8 sm:px-4 md:px-5 lg:px-6 xl:px-8 2xl:px-10">
       <div className="mb-6 flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
         <div>
           <h1 className="text-xl font-bold text-gray-900 md:text-2xl">Comprobantes</h1>
@@ -169,7 +206,7 @@ export function BoletasPage() {
         <button
           type="button"
           onClick={() => setMiscModalOpen(true)}
-          className="shrink-0 rounded-xl bg-field-dark px-4 py-2.5 text-sm font-bold text-white shadow-sm hover:opacity-95"
+          className="shrink-0 rounded-xl bg-field-dark px-5 py-3 text-sm font-bold text-white shadow-sm hover:opacity-95"
         >
           Emitir boleta / factura
         </button>
@@ -197,39 +234,60 @@ export function BoletasPage() {
 
       <div className="overflow-hidden rounded-xl border border-gray-200 bg-white shadow-sm">
         <div className="overflow-x-auto">
-          <table className="w-full min-w-[1380px] border-collapse text-sm">
+          <table className="w-full min-w-[min(100%,64rem)] table-fixed border-collapse text-sm lg:min-w-0">
+            <colgroup>
+              <col className="w-[9%]" />
+              <col className="w-[11%]" />
+              <col />
+              <col style={{ width: "5.75rem" }} />
+              <col style={{ width: "5.25rem" }} />
+              <col className="w-[10%]" />
+              <col style={{ width: "6.75rem" }} />
+              <col className="w-[10%]" />
+              <col className="w-[6%]" />
+            </colgroup>
             <thead>
               <tr className="border-b border-gray-200 bg-gray-50 text-left">
-                <th className="whitespace-nowrap px-6 py-4 text-base font-bold text-gray-800">Nro. CPE</th>
-                <th className="min-w-[11rem] px-6 py-4 text-base font-bold text-gray-800">Receptor</th>
-                <th className="min-w-[18rem] px-6 py-4 text-base font-bold text-gray-800 lg:min-w-[22rem]">
+                <th className="px-2 py-5 text-left text-xs font-bold uppercase tracking-wide text-gray-600 lg:px-3 xl:px-3.5">
+                  Nro. CPE
+                </th>
+                <th className="px-2 py-5 text-left text-xs font-bold uppercase tracking-wide text-gray-600 lg:px-3 xl:px-3.5">
+                  Receptor
+                </th>
+                <th className="max-w-[28rem] px-2 py-5 text-left text-xs font-bold uppercase tracking-wide text-gray-600 lg:px-3 xl:px-3.5">
                   Descripción
                 </th>
-                <th className="whitespace-nowrap px-6 py-4 text-base font-bold text-gray-800">WhatsApp</th>
-                <th className="whitespace-nowrap px-6 py-4 text-right text-base font-bold text-gray-800">
-                  Importe total
+                <th className="w-[5.75rem] max-w-[5.75rem] px-1.5 py-5 text-left text-xs font-bold uppercase tracking-wide text-gray-600 xl:px-2">
+                  WhatsApp
                 </th>
-                <th className="whitespace-nowrap px-6 py-4 text-center text-base font-bold text-gray-800">
-                  Fecha de emisión
+                <th className="w-[5.25rem] max-w-[5.25rem] px-1.5 py-5 text-right text-xs font-bold uppercase tracking-wide text-gray-600 xl:px-2">
+                  Importe
                 </th>
-                <th className="min-w-[9.5rem] whitespace-nowrap px-6 py-4 text-center text-base font-bold text-gray-800">
+                <th className="px-2 py-5 text-center text-xs font-bold uppercase tracking-wide text-gray-600 lg:px-3 xl:px-3.5">
+                  Emisión
+                </th>
+                <th className="w-[6.75rem] max-w-[6.75rem] px-1.5 py-5 text-center text-xs font-bold uppercase tracking-wide text-gray-600 lg:px-2">
                   Comprobante
                 </th>
-                <th className="px-6 py-4 text-center text-base font-bold text-gray-800">Acciones</th>
-                <th className="whitespace-nowrap px-6 py-4 text-center text-base font-bold text-gray-800">Anular</th>
+                <th className="px-2 py-5 text-center text-xs font-bold uppercase tracking-wide text-gray-600 lg:px-3 xl:px-3.5">
+                  Enviar
+                </th>
+                <th className="align-middle px-2 py-5 text-center text-xs font-bold uppercase tracking-wide text-gray-600 lg:px-3 xl:px-3.5">
+                  Anular
+                </th>
               </tr>
             </thead>
             <tbody>
               {!loading && rows.length === 0 ? (
                 <tr>
-                  <td colSpan={9} className="px-6 py-12 text-center text-gray-500">
+                  <td colSpan={9} className="px-4 py-12 text-center text-sm text-gray-500">
                     No hay comprobantes en esta vista.
                   </td>
                 </tr>
               ) : null}
               {loading ? (
                 <tr>
-                  <td colSpan={9} className="px-6 py-12 text-center text-gray-400">
+                  <td colSpan={9} className="px-4 py-12 text-center text-sm text-gray-400">
                     Cargando…
                   </td>
                 </tr>
@@ -245,30 +303,44 @@ export function BoletasPage() {
                     (invSt === "" && Boolean(String(inv.serie_correlativo || "").trim()));
                   const canVoidRow = emittedLike && Boolean(String(inv.serie_correlativo || "").trim());
                   const isVoidedRow = invSt === "voided";
+                  const recText = invoiceReceptorOnly(inv) || "—";
+                  const descText = invoiceDescripcionOnly(inv) || "—";
                   return (
                     <tr key={inv.id} className={idx % 2 === 0 ? "bg-white" : "bg-gray-50/60"}>
-                      <td className="border-t border-gray-100 px-6 py-4 font-mono text-base text-gray-900">
-                        {inv.serie_correlativo || "—"}
-                        {isFactura ? (
-                          <span className="ml-2 rounded bg-violet-100 px-1.5 py-0.5 text-xs font-semibold text-violet-800">
-                            Factura
-                          </span>
-                        ) : null}
+                      <td className="border-t border-gray-100 px-2 py-5 align-top font-mono text-xs text-gray-900 lg:px-3 xl:px-3.5 xl:text-sm">
+                        <div className="flex flex-col gap-0.5">
+                          <SerieCorrelativoCell value={inv.serie_correlativo} />
+                          {isFactura ? (
+                            <span className="w-fit rounded bg-violet-100 px-2 py-1 text-[10px] font-semibold leading-none text-violet-800 xl:text-xs">
+                              Factura
+                            </span>
+                          ) : null}
+                        </div>
                       </td>
-                      <td className="border-t border-gray-100 px-6 py-4 text-base text-gray-900">
-                        {invoiceReceptorOnly(inv) || "—"}
+                      <td className="min-w-0 max-w-[14rem] border-t border-gray-100 px-2 py-4 align-top lg:px-3 xl:px-3.5">
+                        <p
+                          className="line-clamp-2 break-words text-xs text-gray-900 xl:text-sm"
+                          title={recText !== "—" ? recText : undefined}
+                        >
+                          {recText}
+                        </p>
                       </td>
-                      <td className="max-w-xl break-words border-t border-gray-100 px-6 py-4 text-base leading-relaxed text-gray-700">
-                        {invoiceDescripcionOnly(inv) || "—"}
+                      <td className="min-w-0 max-w-[28rem] border-t border-gray-100 px-2 py-5 align-top lg:px-3 xl:px-3.5">
+                        <p
+                          className="line-clamp-2 break-words text-xs leading-snug text-gray-700 xl:text-sm"
+                          title={descText !== "—" ? descText : undefined}
+                        >
+                          {descText}
+                        </p>
                       </td>
-                      <td className="border-t border-gray-100 px-6 py-4 font-mono text-base tabular-nums text-gray-800">
+                      <td className="w-[5.75rem] max-w-[5.75rem] border-t border-gray-100 px-1.5 py-5 align-middle font-mono text-xs tabular-nums text-gray-800 xl:px-2 xl:text-sm">
                         {inv.phone_number?.trim() ? (
                           <a
                             href={wspLink(inv.phone_number)}
                             target="_blank"
                             rel="noopener noreferrer"
-                            className="text-green-700 underline decoration-green-600/50 underline-offset-2 hover:text-green-900"
-                            title="WhatsApp"
+                            className="block truncate text-green-700 underline decoration-green-600/50 underline-offset-2 hover:text-green-900"
+                            title={invoiceTelefonoDisplay(inv)}
                           >
                             {invoiceTelefonoDisplay(inv)}
                           </a>
@@ -276,24 +348,27 @@ export function BoletasPage() {
                           "—"
                         )}
                       </td>
-                      <td className="border-t border-gray-100 px-6 py-4 text-right text-base font-semibold tabular-nums text-gray-900">
-                        S/ {(inv.amount ?? 0).toFixed(2)}
+                      <td className="w-[5.25rem] max-w-[5.25rem] border-t border-gray-100 px-1.5 py-5 text-right align-middle text-xs font-semibold tabular-nums text-gray-900 xl:px-2 xl:text-sm">
+                        <span className="block whitespace-nowrap">
+                          S/ {formatSolesAmountDisplay(inv.amount ?? 0)}
+                        </span>
                       </td>
-                      <td className="border-t border-gray-100 px-6 py-4 text-center text-base text-gray-700">
+                      <td className="border-t border-gray-100 px-2 py-5 text-center align-middle text-xs text-gray-700 lg:px-3 xl:px-3.5 xl:text-sm">
                         {formatInvoiceEmissionDate(inv.created_at)}
                       </td>
-                      <td className="border-t border-gray-100 px-6 py-4 align-middle">
-                        <div className="flex flex-row flex-wrap items-center justify-center gap-x-2 gap-y-1.5">
+                      <td className="w-[6.75rem] max-w-[6.75rem] border-t border-gray-100 px-1.5 py-5 align-middle lg:px-2">
+                        <div className="flex flex-wrap items-center justify-center gap-1">
                           {plantillaHref ? (
                             <a
                               href={plantillaHref}
-                              download={invoiceComprobantePdfDownloadFilename(inv)}
                               target="_blank"
                               rel="noopener noreferrer"
-                              title={isFactura ? "Abrir factura" : "Abrir boleta"}
-                              className="inline-flex shrink-0 items-center justify-center whitespace-nowrap rounded-lg border border-blue-200 bg-blue-50 px-2.5 py-1.5 text-xs font-bold text-blue-800 hover:bg-blue-100"
+                              title="Ver comprobante (se abre en una pestaña nueva)"
+                              aria-label="Ver comprobante en una pestaña nueva"
+                              className="inline-flex shrink-0 items-center justify-center gap-1.5 whitespace-nowrap rounded-lg border border-blue-200 bg-blue-50 px-3 py-2 text-xs font-bold text-blue-800 hover:bg-blue-100"
                             >
-                              {isFactura ? "Ver factura" : "Ver boleta"}
+                              <IconOpenInNewTab className="h-3.5 w-3.5 shrink-0 opacity-90" />
+                              Ver
                             </a>
                           ) : (
                             <span className="shrink-0 text-xs text-gray-400">—</span>
@@ -316,15 +391,15 @@ export function BoletasPage() {
                           */}
                         </div>
                       </td>
-                      <td className="border-t border-gray-100 px-6 py-4">
-                        <div className="flex flex-wrap items-center justify-center gap-2">
+                      <td className="border-t border-gray-100 px-2 py-5 align-middle lg:px-3 xl:px-3.5">
+                        <div className="flex flex-wrap items-center justify-center gap-1">
                           {invoicePersonalizedPdfAbsoluteUrlForSend(inv) || inv.file_url?.trim() ? (
                             <button
                               type="button"
                               title={!inv.phone_number?.trim() ? "Falta teléfono" : "Enviar por WhatsApp"}
                               disabled={!inv.phone_number?.trim() || st === "sending" || st === "sent"}
                               onClick={() => void sendWsp(inv)}
-                              className={`inline-flex items-center gap-1 rounded-lg border-2 px-2.5 py-1.5 text-xs font-bold transition-colors ${
+                              className={`inline-flex items-center gap-1.5 rounded-lg border px-3 py-2 text-xs font-bold transition-colors ${
                                 st === "sent"
                                   ? "border-green-200 bg-green-50 text-green-800"
                                   : st === "error"
@@ -338,14 +413,14 @@ export function BoletasPage() {
                                 "OK"
                               ) : st === "error" ? (
                                 <>
-                                  <svg className="h-3.5 w-3.5" fill="currentColor" viewBox="0 0 24 24" aria-hidden>
+                                  <svg className="h-4 w-4 shrink-0" fill="currentColor" viewBox="0 0 24 24" aria-hidden>
                                     <path d={WHATSAPP_ICON_PATH} />
                                   </svg>
                                   Reintentar
                                 </>
                               ) : (
                                 <>
-                                  <svg className="h-3.5 w-3.5" fill="currentColor" viewBox="0 0 24 24" aria-hidden>
+                                  <svg className="h-4 w-4 shrink-0" fill="currentColor" viewBox="0 0 24 24" aria-hidden>
                                     <path d={WHATSAPP_ICON_PATH} />
                                   </svg>
                                   Enviar
@@ -354,30 +429,28 @@ export function BoletasPage() {
                             </button>
                           ) : null}
                         </div>
-                        {wErr ? <p className="mt-1 text-center text-xs text-red-600">{wErr}</p> : null}
+                        {wErr ? <p className="mt-0.5 text-center text-[10px] leading-tight text-red-600 xl:text-xs">{wErr}</p> : null}
                       </td>
-                      <td className="border-t border-gray-100 px-6 py-4 text-center align-top">
-                        {isVoidedRow ? (
-                          <span className="inline-flex rounded-md bg-gray-200 px-2.5 py-1.5 text-xs font-semibold text-gray-800">
-                            Anulado
-                          </span>
-                        ) : canVoidRow ? (
-                          <button
-                            type="button"
-                            disabled={voidingInvoiceId === inv.id}
-                            onClick={() => void handleVoidRow(inv)}
-                            title={isFactura ? "Anular factura" : "Anular boleta"}
-                            className="w-full min-w-[7.5rem] rounded-lg border-2 border-red-200 bg-red-50 px-3 py-2 text-xs font-bold text-red-800 hover:bg-red-100 disabled:opacity-60 sm:w-auto"
-                          >
-                            {voidingInvoiceId === inv.id
-                              ? "Anulando…"
-                              : isFactura
-                                ? "Anular factura"
-                                : "Anular boleta"}
-                          </button>
-                        ) : (
-                          <span className="text-xs text-gray-400">—</span>
-                        )}
+                      <td className="border-t border-gray-100 px-2 py-5 align-middle lg:px-3 xl:px-3.5">
+                        <div className="flex items-center justify-center text-center">
+                          {isVoidedRow ? (
+                            <span className="inline-flex rounded-lg bg-gray-200 px-3 py-2 text-xs font-semibold text-gray-800">
+                              Anulado
+                            </span>
+                          ) : canVoidRow ? (
+                            <button
+                              type="button"
+                              disabled={voidingInvoiceId === inv.id}
+                              onClick={() => void handleVoidRow(inv)}
+                              title="Anular comprobante"
+                              className="max-w-full rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-xs font-bold leading-tight text-red-800 hover:bg-red-100 disabled:opacity-60"
+                            >
+                              {voidingInvoiceId === inv.id ? "…" : "Anular"}
+                            </button>
+                          ) : (
+                            <span className="text-xs text-gray-400">—</span>
+                          )}
+                        </div>
                       </td>
                     </tr>
                   );
