@@ -144,8 +144,12 @@ export function FormalComprobantePdfDocument({ data }: { data: FormalComprobante
   const son = montoEnLetrasSoles(data.importeTotal);
   const fechaStr = fmtPeDate(data.fechaEmisionYmd);
 
+  const documentMetadataTitle =
+    data.pdfDocumentTitle?.trim() ||
+    `${data.tipo === "factura" ? "Factura" : "Boleta"} ${data.serieCorrelativo}`.trim();
+
   return (
-    <Document>
+    <Document title={documentMetadataTitle}>
       <Page size="A4" style={styles.page}>
         <View style={styles.outerFrame}>
           <View style={styles.headerRow}>

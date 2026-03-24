@@ -18,6 +18,7 @@ import {
   invoicePersonalizedPdfAbsoluteUrlForSend,
   invoicePlantillaPdfHref,
 } from "@/features/boletas/utils/invoicePdfLinks";
+import { invoiceComprobantePdfDownloadFilename } from "@/features/boletas/utils/comprobantePdfFilename";
 
 function formatDate(d: string | null): string {
   if (!d) return "—";
@@ -99,7 +100,8 @@ export default function UserPaymentsDrawer({ user, onClose, onUserUpdated }: Use
     [waResolved, localUser.chat_id, localUser.phone_number, localUser.id]
   );
 
-  const sendInvoiceViaWhatsapp = useCallback(async (invoiceId: string, fileUrl: string) => {
+  const sendInvoiceViaWhatsapp = useCallback(async (inv: Invoice, fileUrl: string) => {
+    const invoiceId = inv.id;
     if (!chatIdForWspSend) {
       setInvoiceWspError((e) => ({ ...e, [invoiceId]: "Falta número de WhatsApp del cliente." }));
       setInvoiceWspStatus((s) => ({ ...s, [invoiceId]: "error" }));
@@ -122,7 +124,11 @@ export default function UserPaymentsDrawer({ user, onClose, onUserUpdated }: Use
       const res = await fetch("/api/invoices/send", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ chat_id: chatIdForWspSend, file_url: fileUrl }),
+        body: JSON.stringify({
+          chat_id: chatIdForWspSend,
+          file_url: fileUrl,
+          filename: invoiceComprobantePdfDownloadFilename(inv),
+        }),
       });
       if (!res.ok) {
         const data = await res.json().catch(() => ({}));
@@ -618,6 +624,7 @@ export default function UserPaymentsDrawer({ user, onClose, onUserUpdated }: Use
                                         {plantillaHref ? (
                                           <a
                                             href={plantillaHref}
+                                            download={invoiceComprobantePdfDownloadFilename(inv)}
                                             target="_blank"
                                             rel="noopener noreferrer"
                                             title={isFactura ? "Abrir factura" : "Abrir boleta"}
@@ -665,7 +672,7 @@ export default function UserPaymentsDrawer({ user, onClose, onUserUpdated }: Use
                                         disabled={
                                           !chatIdForWspSend || wspStatus === "sending" || wspStatus === "sent"
                                         }
-                                        onClick={() => void sendInvoiceViaWhatsapp(inv.id, wspFileUrl)}
+                                        onClick={() => void sendInvoiceViaWhatsapp(inv, wspFileUrl)}
                                         className={`flex w-full items-center justify-center gap-2 rounded-xl border-2 py-2.5 px-3 text-sm font-bold transition-all ${
                                           wspStatus === "sent"
                                             ? "border-green-200 bg-green-50 text-green-700"
@@ -770,8 +777,8 @@ export default function UserPaymentsDrawer({ user, onClose, onUserUpdated }: Use
                                       {voidingInvoiceId === inv.id
                                         ? "Anulando…"
                                         : isFactura
-                                          ? "Anular factura"
-                                          : "Anular boleta"}
+                                          ? "Anular"
+                                          : "Anular"}
                                     </button>
                                   ) : invEmittedLike && !inv.serie_correlativo ? (
                                     <p className="text-xs text-amber-800">No se puede anular: falta número en el registro.</p>

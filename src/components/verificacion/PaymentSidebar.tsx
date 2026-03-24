@@ -14,6 +14,7 @@ import {
   invoicePersonalizedPdfAbsoluteUrlForSend,
   invoicePlantillaPdfHref,
 } from "@/features/boletas/utils/invoicePdfLinks";
+import { invoiceComprobantePdfDownloadFilename } from "@/features/boletas/utils/comprobantePdfFilename";
 
 // ─── Props ───────────────────────────────────────────────────────────────────
 
@@ -1034,7 +1035,7 @@ const TransferCard = memo(function TransferCard({
               <div className="flex gap-2">
                 <a
                   href={invoicePlantillaPdfHref(invoice) ?? `/api/proxy-file?url=${encodeURIComponent(invoice.file_url)}`}
-                  download={`boleta_${invoice.id}.pdf`}
+                  download={invoiceComprobantePdfDownloadFilename(invoice)}
                   className="flex-1 py-2.5 px-3 rounded-xl font-bold text-sm bg-blue-50 border-2 border-blue-100 text-blue-700 hover:bg-blue-100 flex items-center justify-center gap-2 transition-colors"
                 >
                   <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" /></svg>
@@ -1051,7 +1052,11 @@ const TransferCard = memo(function TransferCard({
                       const res = await fetch("/api/invoices/send", {
                         method: "POST",
                         headers: { "Content-Type": "application/json" },
-                        body: JSON.stringify({ chat_id: chatId, file_url: fileUrlForBot }),
+                        body: JSON.stringify({
+                          chat_id: chatId,
+                          file_url: fileUrlForBot,
+                          filename: invoiceComprobantePdfDownloadFilename(invoice),
+                        }),
                       });
                       if (!res.ok) {
                         const data = await res.json().catch(() => ({}));

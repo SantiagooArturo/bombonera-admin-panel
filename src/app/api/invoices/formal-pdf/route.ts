@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { getDb } from "@/lib/firebase-admin";
 import { canRenderFormalPlantillaFromDoc } from "@/features/boletas/pdf/formalPlantillaEligibility";
 import { renderFormalPlantillaPdfFromInvoiceDoc } from "@/features/boletas/pdf/formalPlantillaFromInvoiceDoc";
+import { buildComprobantePdfFilenameFromFirestoreDoc } from "@/features/boletas/utils/comprobantePdfFilename";
 
 /**
  * Genera el PDF “plantilla” del panel en tiempo real desde Firestore.
@@ -28,15 +29,18 @@ export async function GET(request: NextRequest) {
       );
     }
 
-    const buf = await renderFormalPlantillaPdfFromInvoiceDoc(data);
+    const docId = id.trim();
+    const buf = await renderFormalPlantillaPdfFromInvoiceDoc(data, docId);
     if (!buf) {
       return NextResponse.json({ error: "No se pudo generar el PDF" }, { status: 500 });
     }
 
+    const downloadName = buildComprobantePdfFilenameFromFirestoreDoc(docId, data);
+
     return new NextResponse(new Uint8Array(buf), {
       headers: {
         "Content-Type": "application/pdf",
-        "Content-Disposition": `inline; filename="plantilla-${id.trim()}.pdf"`,
+        "Content-Disposition": `inline; filename="${downloadName}"`,
         "Cache-Control": "private, max-age=120",
       },
     });

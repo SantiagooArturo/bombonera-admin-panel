@@ -1,4 +1,5 @@
 import { normalizeCondicionVentaInput } from "@/features/boletas/constants/condicionVenta";
+import { buildComprobantePdfFilenameFromFirestoreDoc } from "@/features/boletas/utils/comprobantePdfFilename";
 import { fechaYmdToDdMmYyyy, formatEmision12hPe } from "@/features/boletas/utils/fechaEmisionMostrada12h";
 import { buildSunatCpeQrPayload } from "@/features/boletas/utils/sunatQrPayload";
 import { buildFormalComprobanteInput } from "./buildFormalComprobanteInput";
@@ -44,7 +45,8 @@ function emissionYmdHmsFromDoc(doc: Record<string, unknown>): { ymd: string; hms
 }
 
 export async function renderFormalPlantillaPdfFromInvoiceDoc(
-  doc: Record<string, unknown>
+  doc: Record<string, unknown>,
+  invoiceId: string
 ): Promise<Buffer | null> {
   const parsed = parseSerieCorrelativoFromDoc(doc);
   if (!parsed) return null;
@@ -116,5 +118,8 @@ export async function renderFormalPlantillaPdfFromInvoiceDoc(
     totalConIgv: amount,
   });
 
-  return renderFormalComprobanteBuffer(formalInput);
+  const suggestedFile = buildComprobantePdfFilenameFromFirestoreDoc(invoiceId.trim(), doc);
+  const pdfDocumentTitle = suggestedFile.replace(/\.pdf$/i, "");
+
+  return renderFormalComprobanteBuffer({ ...formalInput, pdfDocumentTitle });
 }

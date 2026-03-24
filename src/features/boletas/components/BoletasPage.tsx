@@ -18,6 +18,7 @@ import {
   invoicePersonalizedPdfAbsoluteUrlForSend,
   invoicePlantillaPdfHref,
 } from "../utils/invoicePdfLinks";
+import { invoiceComprobantePdfDownloadFilename } from "../utils/comprobantePdfFilename";
 
 type ComprobanteTab = "todos" | "boletas" | "facturas";
 
@@ -89,7 +90,11 @@ export function BoletasPage() {
       const res = await fetch("/api/invoices/send", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ chat_id: chatId, file_url: fileUrlForBot }),
+        body: JSON.stringify({
+          chat_id: chatId,
+          file_url: fileUrlForBot,
+          filename: invoiceComprobantePdfDownloadFilename(inv),
+        }),
       });
       if (!res.ok) {
         const data = await res.json().catch(() => ({}));
@@ -282,6 +287,7 @@ export function BoletasPage() {
                           {plantillaHref ? (
                             <a
                               href={plantillaHref}
+                              download={invoiceComprobantePdfDownloadFilename(inv)}
                               target="_blank"
                               rel="noopener noreferrer"
                               title={isFactura ? "Abrir factura" : "Abrir boleta"}

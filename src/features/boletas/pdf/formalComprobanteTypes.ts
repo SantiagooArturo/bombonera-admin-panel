@@ -1,4 +1,6 @@
 export type FormalComprobantePdfInput = {
+  /** Metadato del PDF (evita título genérico tipo “Template” en visores). */
+  pdfDocumentTitle?: string;
   tipo: "boleta" | "factura";
   emisor: {
     razonSocial: string;

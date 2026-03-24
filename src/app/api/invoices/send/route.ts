@@ -9,9 +9,19 @@ let rawUrl = process.env.CHATBOT_API_URL || "";
 if (rawUrl && !rawUrl.startsWith("http")) rawUrl = `https://${rawUrl}`;
 const CHATBOT_API_URL = rawUrl;
 
+const SEND_FILENAME_INVALID = /[<>:"/\\|?*\u0000-\u001f]/;
+
+function sanitizeSendPdfFilename(raw: unknown): string {
+  if (typeof raw !== "string") return "comprobante.pdf";
+  const t = raw.trim().slice(0, 120);
+  if (!/\.pdf$/i.test(t)) return "comprobante.pdf";
+  if (SEND_FILENAME_INVALID.test(t) || t.length < 5) return "comprobante.pdf";
+  return t.toLowerCase();
+}
+
 export async function POST(request: NextRequest) {
   try {
-    const { chat_id, file_url } = await request.json();
+    const { chat_id, file_url, filename: filenameOpt } = await request.json();
 
     if (!chat_id || !file_url) {
       return NextResponse.json({ error: "Faltan chat_id o file_url" }, { status: 400 });
@@ -33,7 +43,7 @@ export async function POST(request: NextRequest) {
         chat_id: target.chatId,
         file_url,
         caption: "Aquí tienes tu boleta de pago 🧾",
-        filename: "boleta.pdf",
+        filename: sanitizeSendPdfFilename(filenameOpt),
       }),
     });
 
