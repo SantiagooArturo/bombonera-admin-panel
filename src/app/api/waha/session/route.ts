@@ -1,5 +1,11 @@
 import { NextResponse } from "next/server";
-import { WAHA_API_KEY, WAHA_SESSION, WAHA_URL } from "@/lib/waha-server-config";
+import {
+  WAHA_API_KEY,
+  WAHA_ENV_MISSING,
+  WAHA_SESSION,
+  WAHA_URL,
+  isWahaConfigured,
+} from "@/lib/waha-server-config";
 
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
@@ -7,8 +13,15 @@ export const revalidate = 0;
 /** Proxy: estado de la sesión WAHA (polling desde el panel). */
 export async function GET() {
   try {
+    if (!isWahaConfigured()) {
+      return NextResponse.json(
+        { error: WAHA_ENV_MISSING },
+        { status: 503, headers: { "Cache-Control": "no-store, max-age=0" } }
+      );
+    }
+
     const headers: Record<string, string> = { Accept: "application/json" };
-    if (WAHA_API_KEY) headers["X-Api-Key"] = WAHA_API_KEY;
+    headers["X-Api-Key"] = WAHA_API_KEY;
 
     const res = await fetch(`${WAHA_URL}/api/sessions/${encodeURIComponent(WAHA_SESSION)}`, {
       headers,

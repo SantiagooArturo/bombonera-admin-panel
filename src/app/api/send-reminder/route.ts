@@ -1,20 +1,22 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getCourtLabelForReservation } from "@/lib/court-config-server";
-import { WAHA_API_KEY, WAHA_URL } from "@/lib/waha-server-config";
+import { WAHA_API_KEY, WAHA_SESSION, WAHA_URL, isWahaConfigured } from "@/lib/waha-server-config";
 
 async function sendWhatsAppMessage(chatId: string, text: string) {
+  if (!isWahaConfigured()) {
+    throw new Error("WAHA no configurado (WAHA_URL / WAHA_API_KEY).");
+  }
+
   const headers: Record<string, string> = {
     "Content-Type": "application/json",
+    "X-Api-Key": WAHA_API_KEY,
   };
-  if (WAHA_API_KEY) {
-    headers["X-Api-Key"] = WAHA_API_KEY;
-  }
 
   const res = await fetch(`${WAHA_URL}/api/sendText`, {
     method: "POST",
     headers,
     body: JSON.stringify({
-      session: "session_01kgx7mr4058d2hc98m62jx2cy",
+      session: WAHA_SESSION,
       chatId,
       text,
     }),

@@ -1,5 +1,10 @@
 import { getDb } from "@/lib/firebase-admin";
-import { WAHA_API_KEY, WAHA_SESSION, WAHA_URL } from "@/lib/waha-server-config";
+import {
+  WAHA_API_KEY,
+  WAHA_SESSION,
+  WAHA_URL,
+  isWahaConfigured,
+} from "@/lib/waha-server-config";
 
 let rawChatUrl = process.env.CHATBOT_API_URL || "";
 if (rawChatUrl && !rawChatUrl.startsWith("http")) rawChatUrl = `https://${rawChatUrl}`;
@@ -105,12 +110,16 @@ export async function sendWhatsAppMessage(chatId: string, text: string) {
   }
 
   // Fallback: llamar a WAHA directamente (sin guardar en historial)
+  if (!isWahaConfigured()) {
+    throw new Error(
+      "WAHA no configurado: defina WAHA_URL y WAHA_API_KEY en el entorno para el fallback de envío."
+    );
+  }
+
   const headers: Record<string, string> = {
     "Content-Type": "application/json",
+    "X-Api-Key": WAHA_API_KEY,
   };
-  if (WAHA_API_KEY) {
-    headers["X-Api-Key"] = WAHA_API_KEY;
-  }
 
   const res = await fetch(`${WAHA_URL}/api/sendText`, {
     method: "POST",

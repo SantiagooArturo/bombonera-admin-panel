@@ -153,7 +153,7 @@ export function BoletasPage() {
   );
 
   return (
-    <div className="mx-auto max-w-6xl px-4 py-8 md:px-8">
+    <div className="mx-auto w-full max-w-[min(100%,100rem)] px-5 py-8 sm:px-8 lg:px-12 xl:px-14">
       <div className="mb-6 flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
         <div>
           <h1 className="text-xl font-bold text-gray-900 md:text-2xl">Comprobantes electrónicos</h1>
@@ -189,30 +189,36 @@ export function BoletasPage() {
 
       <div className="overflow-hidden rounded-xl border border-gray-200 bg-white shadow-sm">
         <div className="overflow-x-auto">
-          <table className="w-full min-w-[1060px] border-collapse text-sm">
+          <table className="w-full min-w-[1240px] border-collapse text-sm">
             <thead>
               <tr className="border-b border-gray-200 bg-gray-50 text-left">
-                <th className="px-4 py-3 font-bold text-gray-800">Nro. CPE</th>
-                <th className="px-4 py-3 font-bold text-gray-800">Receptor</th>
-                <th className="px-4 py-3 font-bold text-gray-800">Descripción</th>
-                <th className="px-4 py-3 font-bold text-gray-800">WhatsApp</th>
-                <th className="px-4 py-3 text-right font-bold text-gray-800">Importe total</th>
-                <th className="px-4 py-3 text-center font-bold text-gray-800">Fecha de emisión</th>
-                <th className="px-4 py-3 text-center font-bold text-gray-800">Acciones</th>
-                <th className="px-4 py-3 text-center font-bold text-gray-800">Anular</th>
+                <th className="whitespace-nowrap px-5 py-3.5 text-base font-bold text-gray-800">Nro. CPE</th>
+                <th className="min-w-[11rem] px-5 py-3.5 text-base font-bold text-gray-800">Receptor</th>
+                <th className="min-w-[18rem] px-5 py-3.5 text-base font-bold text-gray-800 lg:min-w-[22rem]">
+                  Descripción
+                </th>
+                <th className="whitespace-nowrap px-5 py-3.5 text-base font-bold text-gray-800">WhatsApp</th>
+                <th className="whitespace-nowrap px-5 py-3.5 text-right text-base font-bold text-gray-800">
+                  Importe total
+                </th>
+                <th className="whitespace-nowrap px-5 py-3.5 text-center text-base font-bold text-gray-800">
+                  Fecha de emisión
+                </th>
+                <th className="px-5 py-3.5 text-center text-base font-bold text-gray-800">Acciones</th>
+                <th className="whitespace-nowrap px-5 py-3.5 text-center text-base font-bold text-gray-800">Anular</th>
               </tr>
             </thead>
             <tbody>
               {!loading && rows.length === 0 ? (
                 <tr>
-                  <td colSpan={8} className="px-4 py-12 text-center text-gray-500">
+                  <td colSpan={8} className="px-6 py-12 text-center text-gray-500">
                     No hay comprobantes en esta vista.
                   </td>
                 </tr>
               ) : null}
               {loading ? (
                 <tr>
-                  <td colSpan={8} className="px-4 py-12 text-center text-gray-400">
+                  <td colSpan={8} className="px-6 py-12 text-center text-gray-400">
                     Cargando…
                   </td>
                 </tr>
@@ -229,7 +235,7 @@ export function BoletasPage() {
                   const isVoidedRow = invSt === "voided";
                   return (
                     <tr key={inv.id} className={idx % 2 === 0 ? "bg-white" : "bg-gray-50/60"}>
-                      <td className="border-t border-gray-100 px-4 py-3 font-mono text-gray-900">
+                      <td className="border-t border-gray-100 px-5 py-3.5 font-mono text-base text-gray-900">
                         {inv.serie_correlativo || "—"}
                         {isFactura ? (
                           <span className="ml-2 rounded bg-violet-100 px-1.5 py-0.5 text-xs font-semibold text-violet-800">
@@ -238,7 +244,7 @@ export function BoletasPage() {
                         ) : null}
                       </td>
                       <td
-                        className="border-t border-gray-100 px-4 py-3 text-gray-900"
+                        className="border-t border-gray-100 px-5 py-3.5 text-base text-gray-900"
                         title={
                           !invoiceReceptorOnly(inv)
                             ? "Sin nombre de cliente en base de datos (emisión antigua o incompleta)."
@@ -247,10 +253,10 @@ export function BoletasPage() {
                       >
                         {invoiceReceptorOnly(inv) || "—"}
                       </td>
-                      <td className="max-w-[220px] break-words border-t border-gray-100 px-4 py-3 text-gray-700">
+                      <td className="max-w-xl break-words border-t border-gray-100 px-5 py-3.5 text-base leading-relaxed text-gray-700">
                         {invoiceDescripcionOnly(inv) || "—"}
                       </td>
-                      <td className="border-t border-gray-100 px-4 py-3 font-mono tabular-nums text-gray-800">
+                      <td className="border-t border-gray-100 px-5 py-3.5 font-mono text-base tabular-nums text-gray-800">
                         {inv.phone_number?.trim() ? (
                           <a
                             href={wspLink(inv.phone_number)}
@@ -265,13 +271,13 @@ export function BoletasPage() {
                           "—"
                         )}
                       </td>
-                      <td className="border-t border-gray-100 px-4 py-3 text-right font-semibold tabular-nums text-gray-900">
+                      <td className="border-t border-gray-100 px-5 py-3.5 text-right text-base font-semibold tabular-nums text-gray-900">
                         S/ {(inv.amount ?? 0).toFixed(2)}
                       </td>
-                      <td className="border-t border-gray-100 px-4 py-3 text-center text-gray-700">
+                      <td className="border-t border-gray-100 px-5 py-3.5 text-center text-base text-gray-700">
                         {formatInvoiceEmissionDate(inv.created_at)}
                       </td>
-                      <td className="border-t border-gray-100 px-4 py-3">
+                      <td className="border-t border-gray-100 px-5 py-3.5">
                         <div className="flex flex-wrap items-center justify-center gap-2">
                           {inv.file_url ? (
                             <a
@@ -327,7 +333,7 @@ export function BoletasPage() {
                         </div>
                         {wErr ? <p className="mt-1 text-center text-xs text-red-600">{wErr}</p> : null}
                       </td>
-                      <td className="border-t border-gray-100 px-3 py-3 text-center align-top">
+                      <td className="border-t border-gray-100 px-5 py-3.5 text-center align-top">
                         {isVoidedRow ? (
                           <span className="inline-flex rounded-md bg-gray-200 px-2.5 py-1.5 text-xs font-semibold text-gray-800">
                             Anulado

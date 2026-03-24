@@ -1,5 +1,11 @@
 import { NextRequest, NextResponse } from "next/server";
-import { WAHA_API_KEY, WAHA_SESSION, WAHA_URL } from "@/lib/waha-server-config";
+import {
+  WAHA_API_KEY,
+  WAHA_ENV_MISSING,
+  WAHA_SESSION,
+  WAHA_URL,
+  isWahaConfigured,
+} from "@/lib/waha-server-config";
 
 export async function POST(request: NextRequest) {
   try {
@@ -12,12 +18,14 @@ export async function POST(request: NextRequest) {
       );
     }
 
+    if (!isWahaConfigured()) {
+      return NextResponse.json({ error: WAHA_ENV_MISSING }, { status: 503 });
+    }
+
     const headers: Record<string, string> = {
       "Content-Type": "application/json",
+      "X-Api-Key": WAHA_API_KEY,
     };
-    if (WAHA_API_KEY) {
-      headers["X-Api-Key"] = WAHA_API_KEY;
-    }
 
     const res = await fetch(`${WAHA_URL}/api/sendText`, {
       method: "POST",
