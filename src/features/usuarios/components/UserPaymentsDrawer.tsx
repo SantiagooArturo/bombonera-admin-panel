@@ -14,10 +14,10 @@ import { collectInvoiceUserKeys } from "@/features/usuarios/utils/collectInvoice
 import { invoiceConceptSummary } from "@/features/usuarios/utils/invoiceConceptSummary";
 import { voidSunatInvoice } from "@/features/boletas/services/voidSunatInvoice";
 import { mergeInvoiceVoided } from "@/features/boletas/utils/mergeInvoiceVoided";
-
-function invoicePdfHref(fileUrl: string) {
-  return `/api/proxy-file?url=${encodeURIComponent(fileUrl)}`;
-}
+import {
+  invoicePersonalizedPdfAbsoluteUrlForSend,
+  invoicePlantillaPdfHref,
+} from "@/features/boletas/utils/invoicePdfLinks";
 
 function formatDate(d: string | null): string {
   if (!d) return "—";
@@ -235,18 +235,16 @@ export default function UserPaymentsDrawer({ user, onClose, onUserUpdated }: Use
         st === "emitted" || (st === "" && Boolean(String(inv.serie_correlativo || "").trim()));
       if (st === "voided") return;
       if (st === "attached" || !emittedLike) {
-        toast("Solo se anulan comprobantes emitidos por SUNAT desde el panel.", "error");
+        toast("Solo se pueden anular comprobantes emitidos desde el panel.", "error");
         return;
       }
       if (!String(inv.serie_correlativo || "").trim()) {
-        toast("Falta serie/correlativo SUNAT en este comprobante.", "error");
+        toast("Falta número de comprobante.", "error");
         return;
       }
       const label = inv.tipo_comprobante === "factura" ? "factura" : "boleta";
       if (
-        !confirm(
-          `¿Anular esta ${label} (${inv.serie_correlativo}) en SUNAT?\n\nNo se puede deshacer desde el panel.`
-        )
+        !confirm(`¿Anular esta ${label} (${inv.serie_correlativo})?\n\nNo se puede deshacer desde el panel.`)
       ) {
         return;
       }
@@ -258,9 +256,7 @@ export default function UserPaymentsDrawer({ user, onClose, onUserUpdated }: Use
           return;
         }
         toast(
-          result.sunat_estado === "PENDIENTE"
-            ? "Anulación enviada a SUNAT (pendiente)"
-            : "Comprobante anulado ante SUNAT",
+          result.sunat_estado === "PENDIENTE" ? "Anulación enviada (en proceso)" : "Comprobante anulado",
           "success"
         );
         setInvoices((prev) =>
@@ -416,10 +412,6 @@ export default function UserPaymentsDrawer({ user, onClose, onUserUpdated }: Use
                 <div className="space-y-4">
                   <div className="rounded-xl border border-gray-200 bg-white p-4">
                     <h3 className="text-lg font-bold text-gray-900">Pagos</h3>
-                    <p className="mt-1 text-sm text-gray-600">
-                      Solo dinero que ingresó (Yape, efectivo, etc.). Las boletas y facturas SUNAT están en la otra pestaña:
-                      así no se repite la misma información dos veces.
-                    </p>
                     <div className="mt-4">
                       <RegisterPaymentFormCobros
                         reservationsForPayment={reservationsForPayment}
@@ -475,9 +467,9 @@ export default function UserPaymentsDrawer({ user, onClose, onUserUpdated }: Use
                                       type="button"
                                       onClick={() => setViewingImage(t.media_url!)}
                                       className="rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm font-semibold text-gray-700 hover:bg-gray-50"
-                                      title="Ver foto o captura del pago (Yape, transferencia, etc.)"
+                                      title="Ver captura del pago"
                                     >
-                                      Ver comprobante del pago
+                                      Ver captura
                                     </button>
                                   ) : null}
                                   {!isManual ? (
@@ -487,7 +479,7 @@ export default function UserPaymentsDrawer({ user, onClose, onUserUpdated }: Use
                                       className={`rounded-lg px-3 py-2 text-sm font-bold ${
                                         verified
                                           ? "border border-gray-300 bg-white text-gray-700 hover:bg-red-50 hover:text-red-800"
-                                          : "bg-green-600 text-white hover:bg-green-700"
+                                          : "bg-field-dark text-white hover:opacity-95"
                                       }`}
                                     >
                                       {verified ? "Quitar validación" : "Marcar como validado"}
@@ -499,9 +491,9 @@ export default function UserPaymentsDrawer({ user, onClose, onUserUpdated }: Use
                                 {inv ? (
                                   <div className="flex flex-col gap-2 sm:flex-row sm:flex-wrap sm:items-center sm:justify-between">
                                     <p className="text-sm text-gray-700">
-                                      <span className="font-semibold text-emerald-800">Ya tiene comprobante SUNAT</span>
-                                      <span className="text-gray-500"> — monto y número en la pestaña </span>
-                                      <span className="font-semibold text-gray-800">Boletas y facturas</span>.
+                                      <span className="font-semibold text-emerald-800">Ya tiene comprobante</span>
+                                      <span className="text-gray-500"> — ver pestaña </span>
+                                      <span className="font-semibold text-gray-800">Boletas y facturas</span>
                                     </p>
                                     <div className="flex flex-wrap gap-2">
                                       <button
@@ -516,14 +508,13 @@ export default function UserPaymentsDrawer({ user, onClose, onUserUpdated }: Use
                                 ) : (
                                   <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
                                     <p className="text-sm text-gray-700">
-                                      <span className="font-semibold text-gray-900">Sin comprobante SUNAT</span> para este
-                                      pago todavía.
+                                      <span className="font-semibold text-gray-900">Sin comprobante</span> para este pago.
                                     </p>
                                     <button
                                       type="button"
                                       onClick={() => setEmitTransferTarget(t)}
                                       disabled={emittingId === t.id}
-                                      className="shrink-0 rounded-lg bg-emerald-600 px-4 py-2.5 text-sm font-bold text-white hover:bg-emerald-700 disabled:opacity-60"
+                                      className="shrink-0 rounded-lg border border-field-dark bg-field-dark px-4 py-2.5 text-sm font-bold text-white hover:opacity-95 disabled:opacity-60"
                                     >
                                       {emittingId === t.id ? "Emitiendo…" : "Emitir boleta o factura"}
                                     </button>
@@ -540,26 +531,20 @@ export default function UserPaymentsDrawer({ user, onClose, onUserUpdated }: Use
               ) : (
                 <div className="space-y-4">
                   <div className="rounded-xl border border-gray-200 bg-white p-4">
-                    <h3 className="text-lg font-bold text-gray-900">Boletas y facturas SUNAT</h3>
-                    <p className="mt-1 text-sm text-gray-600">
-                      Aquí está todo lo emitido a nombre de este cliente: ligado a un pago o manual. Una sola lista.
-                    </p>
+                    <h3 className="text-lg font-bold text-gray-900">Boletas y facturas</h3>
                     <button
                       type="button"
                       onClick={() => {
                         setManualPrefill(null);
                         setShowManualModal(true);
                       }}
-                      className="mt-4 flex w-full items-center justify-center gap-2 rounded-xl bg-green-600 py-3 px-4 text-sm font-bold text-white hover:bg-green-700"
+                      className="mt-4 flex w-full min-h-[48px] items-center justify-center gap-2 rounded-xl border border-field-dark bg-field-dark px-4 text-base font-bold text-white hover:opacity-95"
                     >
                       <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
                       </svg>
                       Emitir boleta o factura manual
                     </button>
-                    <p className="mt-2 text-xs text-gray-500">
-                      Monto y concepto libres cuando no corresponde a un pago de la otra pestaña.
-                    </p>
                     {loading ? (
                       <div className="mt-8 py-10 text-center text-sm text-gray-400">Cargando comprobantes…</div>
                     ) : invoices.length === 0 ? (
@@ -584,6 +569,7 @@ export default function UserPaymentsDrawer({ user, onClose, onUserUpdated }: Use
                           const invVoided = invSt === "voided";
                           const canVoidDrawer =
                             invEmittedLike && Boolean(String(inv.serie_correlativo || "").trim());
+                          const plantillaHref = invoicePlantillaPdfHref(inv);
 
                           return (
                             <li
@@ -602,7 +588,6 @@ export default function UserPaymentsDrawer({ user, onClose, onUserUpdated }: Use
                                     {isFactura ? "Factura" : "Boleta"}
                                   </span>
                                   <div className="min-w-0 flex-1">
-                                    <p className="text-sm text-gray-500">Comprobante electrónico SUNAT</p>
                                     <p className="text-xl font-bold tabular-nums text-gray-900">
                                       S/ {(inv.amount ?? 0).toFixed(2)}
                                       {inv.serie_correlativo ? (
@@ -627,51 +612,68 @@ export default function UserPaymentsDrawer({ user, onClose, onUserUpdated }: Use
                                   </div>
                                 </div>
                                 <div className="flex min-w-0 shrink-0 flex-col gap-2 sm:w-[min(100%,20rem)]">
-                                  {inv.file_url ? (
+                                  {plantillaHref || inv.file_url?.trim() ? (
                                     <>
-                                      <div className="flex gap-2">
-                                        <a
-                                          href={invoicePdfHref(inv.file_url)}
-                                          target="_blank"
-                                          rel="noopener noreferrer"
-                                          title="Se abre en una pestaña nueva para imprimir o guardar"
-                                          className="flex flex-1 items-center justify-center gap-2 rounded-xl border-2 border-blue-100 bg-blue-50 py-2.5 px-3 text-sm font-bold text-blue-700 transition-colors hover:bg-blue-100"
-                                        >
-                                          <svg
-                                            className="h-4 w-4 shrink-0"
-                                            fill="none"
-                                            viewBox="0 0 24 24"
-                                            stroke="currentColor"
-                                            aria-hidden
+                                      <div className="flex flex-col gap-2 sm:flex-row">
+                                        {plantillaHref ? (
+                                          <a
+                                            href={plantillaHref}
+                                            target="_blank"
+                                            rel="noopener noreferrer"
+                                            title={isFactura ? "Abrir factura" : "Abrir boleta"}
+                                            className="flex flex-1 items-center justify-center gap-2 rounded-xl border-2 border-blue-100 bg-blue-50 py-2.5 px-3 text-sm font-bold text-blue-700 transition-colors hover:bg-blue-100"
                                           >
-                                            <path
-                                              strokeLinecap="round"
-                                              strokeLinejoin="round"
-                                              strokeWidth={2}
-                                              d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"
-                                            />
-                                          </svg>
-                                          {isFactura ? "Ver factura" : "Ver boleta"}
-                                        </a>
-                                        <button
-                                          type="button"
-                                          title={
-                                            !chatIdForWspSend
-                                              ? "Falta número de WhatsApp del cliente (edítalo arriba)"
-                                              : undefined
-                                          }
-                                          disabled={
-                                            !chatIdForWspSend || wspStatus === "sending" || wspStatus === "sent"
-                                          }
-                                          onClick={() => void sendInvoiceViaWhatsapp(inv.id, inv.file_url!)}
-                                          className={`flex flex-1 items-center justify-center gap-2 rounded-xl border-2 py-2.5 px-3 text-sm font-bold transition-all ${
-                                            wspStatus === "sent"
-                                              ? "border-green-200 bg-green-50 text-green-700"
-                                              : wspStatus === "error"
-                                                ? "border-red-200 bg-red-50 text-red-700"
-                                                : "border-green-600 bg-green-600 text-white hover:border-green-700 hover:bg-green-700"
-                                          } disabled:opacity-80`}
-                                        >
+                                            <svg
+                                              className="h-4 w-4 shrink-0"
+                                              fill="none"
+                                              viewBox="0 0 24 24"
+                                              stroke="currentColor"
+                                              aria-hidden
+                                            >
+                                              <path
+                                                strokeLinecap="round"
+                                                strokeLinejoin="round"
+                                                strokeWidth={2}
+                                                d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"
+                                              />
+                                            </svg>
+                                            {isFactura ? "Ver factura" : "Ver boleta"}
+                                          </a>
+                                        ) : null}
+                                        {/*
+                                          PDF oficial apisunat (revivir):
+                                          import { invoiceSunatPdfHref } from "@/features/boletas/utils/invoicePdfLinks";
+                                          const sunatPdfHref = invoiceSunatPdfHref(inv);
+                                          …
+                                          {sunatPdfHref ? (
+                                            <a href={sunatPdfHref} target="_blank" rel="noopener noreferrer" className="flex flex-1 … border-slate-200 bg-slate-50 …">
+                                              PDF SUNAT (apisunat)
+                                            </a>
+                                          ) : null}
+                                        */}
+                                      </div>
+                                      {(() => {
+                                        const wspFileUrl =
+                                          invoicePersonalizedPdfAbsoluteUrlForSend(inv) ??
+                                          inv.file_url?.trim() ??
+                                          "";
+                                        return wspFileUrl ? (
+                                        <>
+                                      <button
+                                        type="button"
+                                        title={!chatIdForWspSend ? "Falta WhatsApp del cliente" : "Enviar por WhatsApp"}
+                                        disabled={
+                                          !chatIdForWspSend || wspStatus === "sending" || wspStatus === "sent"
+                                        }
+                                        onClick={() => void sendInvoiceViaWhatsapp(inv.id, wspFileUrl)}
+                                        className={`flex w-full items-center justify-center gap-2 rounded-xl border-2 py-2.5 px-3 text-sm font-bold transition-all ${
+                                          wspStatus === "sent"
+                                            ? "border-green-200 bg-green-50 text-green-700"
+                                            : wspStatus === "error"
+                                              ? "border-red-200 bg-red-50 text-red-700"
+                                              : "border-green-600 bg-green-600 text-white hover:border-green-700 hover:bg-green-700"
+                                        } disabled:opacity-80`}
+                                      >
                                           {wspStatus === "sending" ? (
                                             <>
                                               <svg
@@ -730,7 +732,7 @@ export default function UserPaymentsDrawer({ user, onClose, onUserUpdated }: Use
                                                   d="M12 4v4m0 8v4m8-8h-4M8 12H4"
                                                 />
                                               </svg>
-                                              Reintentar envío
+                                              Reintentar
                                             </>
                                           ) : (
                                             <>
@@ -745,16 +747,18 @@ export default function UserPaymentsDrawer({ user, onClose, onUserUpdated }: Use
                                               Enviar
                                             </>
                                           )}
-                                        </button>
-                                      </div>
+                                      </button>
                                       {wspErr ? (
                                         <p className="text-xs font-medium text-red-600">{wspErr}</p>
                                       ) : null}
+                                      </>
+                                        ) : null;
+                                      })()}
                                     </>
                                   ) : null}
                                   {invVoided ? (
                                     <p className="rounded-xl border-2 border-gray-200 bg-gray-100 py-2.5 px-3 text-center text-sm font-bold text-gray-600">
-                                      Anulado ante SUNAT
+                                      Anulado
                                     </p>
                                   ) : canVoidDrawer ? (
                                     <button
@@ -770,9 +774,7 @@ export default function UserPaymentsDrawer({ user, onClose, onUserUpdated }: Use
                                           : "Anular boleta"}
                                     </button>
                                   ) : invEmittedLike && !inv.serie_correlativo ? (
-                                    <p className="text-xs text-amber-800">
-                                      No se puede anular: falta serie/correlativo en el registro.
-                                    </p>
+                                    <p className="text-xs text-amber-800">No se puede anular: falta número en el registro.</p>
                                   ) : null}
                                 </div>
                               </div>

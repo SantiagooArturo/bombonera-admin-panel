@@ -1,0 +1,423 @@
+"use client";
+
+import { memo, useEffect, useState } from "react";
+import type { EmitComprobanteParams, Transfer } from "@/lib/types";
+import { CONDICION_VENTA_OPTIONS } from "../constants/condicionVenta";
+import { BOLETA_SIN_DOCUMENTO_CLIENTE_MAX_SOLES } from "../constants/sunat";
+import { emitMiscInvoice } from "../services/emitMiscInvoice";
+import { getLimaNowTimeHm, getLimaTodayYmd } from "../utils/limaEmissionDatetime";
+
+function cleanClienteInitial(value: string): string {
+  return value
+    .replace(/\d+/g, "")
+    .replace(/\bVoley\b/gi, "")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+export type EmitComprobanteModalTransferProps = {
+  mode?: "transfer";
+  transfer: Transfer;
+  clientDni?: string | null;
+  clientRuc?: string | null;
+  initialDescripcion?: string;
+  initialCliente?: string;
+  onClose: () => void;
+  onEmitInvoice: (t: Transfer, p: EmitComprobanteParams) => void;
+  emitting?: boolean;
+  attaching?: boolean;
+};
+
+export type EmitComprobanteModalMiscProps = {
+  mode: "misc";
+  onClose: () => void;
+  onSuccess: () => void;
+};
+
+export type EmitComprobanteModalProps = EmitComprobanteModalTransferProps | EmitComprobanteModalMiscProps;
+
+function isMiscProps(p: EmitComprobanteModalProps): p is EmitComprobanteModalMiscProps {
+  return p.mode === "misc";
+}
+
+export const EmitComprobanteModal = memo(function EmitComprobanteModal(props: EmitComprobanteModalProps) {
+  const misc = isMiscProps(props);
+  const clientDni = !misc ? props.clientDni : undefined;
+  const clientRuc = !misc ? props.clientRuc : undefined;
+
+  const [docType, setDocType] = useState<"boleta" | "factura">("boleta");
+  /** Modo transferencia: un solo campo sincronizado con perfil al cambiar tipo. */
+  const [docNumberTransfer, setDocNumberTransfer] = useState("");
+  /** Modo misc: conserva DNI y RUC al alternar pestañas. */
+  const [dniMisc, setDniMisc] = useState("");
+  const [rucMisc, setRucMisc] = useState("");
+
+  const [clienteEdit, setClienteEdit] = useState(() =>
+    misc ? "VENTAS DEL DIA" : cleanClienteInitial(props.initialCliente ?? "")
+  );
+  const [descripcionEdit, setDescripcionEdit] = useState(() =>
+    misc ? "VENTAS DEL DIA" : props.initialDescripcion ?? ""
+  );
+  const [serieNum, setSerieNum] = useState<{ serie: string; next_correlativo: number } | null>(null);
+  const [fetchingSerie, setFetchingSerie] = useState(false);
+  const [amountEdit, setAmountEdit] = useState(() =>
+    misc ? "" : String(props.transfer.amount ?? 0)
+  );
+  const [fechaEmision, setFechaEmision] = useState(getLimaTodayYmd);
+  const [horaEmision, setHoraEmision] = useState(getLimaNowTimeHm);
+  const [condicionVenta, setCondicionVenta] = useState<string>("Transferencia");
+  const [miscEmitting, setMiscEmitting] = useState(false);
+  const [miscError, setMiscError] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (misc) return;
+    setDocNumberTransfer(docType === "boleta" ? (clientDni || "") : (clientRuc || ""));
+  }, [misc, docType, clientDni, clientRuc]);
+
+  const transferInitialCliente = !isMiscProps(props) ? props.initialCliente : undefined;
+  const transferInitialDescripcion = !isMiscProps(props) ? props.initialDescripcion : undefined;
+  const transferId = !isMiscProps(props) ? props.transfer.id : undefined;
+  const transferAmount = !isMiscProps(props) ? props.transfer.amount : undefined;
+
+  useEffect(() => {
+    if (misc) return;
+    setClienteEdit(cleanClienteInitial(transferInitialCliente ?? ""));
+    setDescripcionEdit(transferInitialDescripcion ?? "");
+  }, [misc, transferInitialCliente, transferInitialDescripcion]);
+
+  useEffect(() => {
+    if (misc) return;
+    setAmountEdit(String(transferAmount ?? 0));
+  }, [misc, transferId, transferAmount]);
+
+  const digitsDoc = misc
+    ? (docType === "factura" ? rucMisc : dniMisc).replace(/\D/g, "")
+    : docNumberTransfer.replace(/\D/g, "");
+
+  const parsedAmount = parseFloat(amountEdit.replace(",", "."));
+  const amountValid = !Number.isNaN(parsedAmount) && parsedAmount > 0;
+
+  const docValidFactura = digitsDoc.length === 11;
+  const boletaSinDocOk =
+    docType === "boleta" &&
+    digitsDoc.length === 0 &&
+    amountValid &&
+    parsedAmount <= BOLETA_SIN_DOCUMENTO_CLIENTE_MAX_SOLES;
+  const boletaConDniOk = docType === "boleta" && digitsDoc.length === 8;
+  const docValidBoleta = boletaSinDocOk || boletaConDniOk;
+  const docValid = docType === "factura" ? docValidFactura : docValidBoleta;
+  const boletaDocIncomplete =
+    docType === "boleta" && digitsDoc.length > 0 && digitsDoc.length < 8;
+
+  useEffect(() => {
+    let cancelled = false;
+    setFetchingSerie(true);
+    fetch(`/api/invoices?next_correlativo=1&tipo=${docType}`)
+      .then((r) => r.json())
+      .then((data) => {
+        if (!cancelled && data?.serie != null && data?.next_correlativo != null) {
+          setSerieNum({ serie: String(data.serie), next_correlativo: Number(data.next_correlativo) });
+        }
+      })
+      .catch(() => {
+        if (!cancelled) setSerieNum(null);
+      })
+      .finally(() => {
+        if (!cancelled) setFetchingSerie(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [docType]);
+
+  const receptorOk = misc ? clienteEdit.trim().length >= 3 : true;
+  const descripcionOk = misc ? descripcionEdit.trim().length >= 1 : true;
+  const fechaHoraOk = Boolean(fechaEmision.trim()) && Boolean(horaEmision.trim());
+
+  const emitting = misc ? miscEmitting : !!props.emitting;
+  const attaching = misc ? false : !!props.attaching;
+
+  const canSubmit =
+    receptorOk &&
+    descripcionOk &&
+    amountValid &&
+    fechaHoraOk &&
+    !boletaDocIncomplete &&
+    docValid &&
+    !emitting;
+
+  async function handleMiscSubmit() {
+    if (!misc || !canSubmit) return;
+    setMiscError(null);
+    setMiscEmitting(true);
+    try {
+      const result = await emitMiscInvoice({
+        tipo_comprobante: docType,
+        cliente_denominacion: clienteEdit.trim(),
+        descripcion: descripcionEdit.trim(),
+        amount: parsedAmount,
+        doc_num:
+          docType === "factura" ? digitsDoc : digitsDoc.length === 8 ? digitsDoc : undefined,
+        fecha_de_emision: fechaEmision.trim(),
+        hora_de_emision: horaEmision.trim(),
+        condicion_venta: condicionVenta,
+      });
+      if (!result.success) {
+        setMiscError(result.error ?? "Error al emitir");
+        return;
+      }
+      props.onSuccess();
+      props.onClose();
+    } finally {
+      setMiscEmitting(false);
+    }
+  }
+
+  function handleTransferSubmit() {
+    if (misc || !canSubmit) return;
+    props.onEmitInvoice(props.transfer, {
+      tipo_comprobante: docType,
+      doc_num: digitsDoc,
+      cliente_denominacion: clienteEdit.trim() || undefined,
+      descripcion: descripcionEdit.trim() || undefined,
+      amount: parsedAmount,
+      fecha_de_emision: fechaEmision.trim() || undefined,
+      hora_de_emision: horaEmision.trim() || undefined,
+      condicion_venta: condicionVenta,
+    });
+    props.onClose();
+  }
+
+  const onPrimaryClick = misc ? () => void handleMiscSubmit() : handleTransferSubmit;
+
+  const serieLabel =
+    fetchingSerie ? "…" : serieNum ? `${serieNum.serie}-${String(serieNum.next_correlativo).padStart(5, "0")}` : "—";
+
+  const controlH = "h-10";
+  const inputClass = `w-full ${controlH} rounded-lg border border-gray-300 bg-white px-3 text-sm text-gray-900 shadow-sm focus:border-field-dark focus:outline-none focus:ring-1 focus:ring-field-dark/30`;
+  const labelClass = "mb-1 block text-xs font-semibold uppercase tracking-wide text-gray-500";
+
+  function onDocInputChange(raw: string) {
+    const onlyDigits = raw.replace(/\D/g, "");
+    if (misc) {
+      if (docType === "factura") setRucMisc(onlyDigits.slice(0, 11));
+      else setDniMisc(onlyDigits.slice(0, 8));
+    } else {
+      setDocNumberTransfer(docType === "factura" ? onlyDigits.slice(0, 11) : onlyDigits.slice(0, 8));
+    }
+  }
+
+  const docInputValue = misc
+    ? docType === "factura"
+      ? rucMisc
+      : dniMisc
+    : docNumberTransfer;
+
+  return (
+    <div
+      className="fixed inset-0 z-[10060] flex items-start justify-center overflow-y-auto bg-black/55 px-4 py-6 sm:px-6 sm:py-10"
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="emit-comprobante-title"
+    >
+      <div className="mb-10 w-full max-w-md rounded-2xl border border-gray-200 bg-white p-5 shadow-2xl">
+        <div className="flex items-center justify-between gap-3 border-b border-gray-100 pb-3">
+          <h2 id="emit-comprobante-title" className="text-base font-bold text-gray-900">
+            Emitir comprobante
+          </h2>
+          <button
+            type="button"
+            onClick={props.onClose}
+            className="shrink-0 rounded-lg p-1.5 text-gray-400 hover:bg-gray-100 hover:text-gray-700"
+            aria-label="Cerrar"
+          >
+            <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+            </svg>
+          </button>
+        </div>
+
+        <div className="mt-4 space-y-4">
+          <div className="flex rounded-lg border border-gray-200 bg-gray-50 p-0.5">
+            <button
+              type="button"
+              onClick={() => setDocType("boleta")}
+              className={`flex h-10 flex-1 items-center justify-center rounded-md text-sm font-semibold transition-colors ${
+                docType === "boleta" ? "bg-white text-gray-900 shadow-sm" : "text-gray-500 hover:text-gray-800"
+              }`}
+            >
+              Boleta
+            </button>
+            <button
+              type="button"
+              onClick={() => setDocType("factura")}
+              className={`flex h-10 flex-1 items-center justify-center rounded-md text-sm font-semibold transition-colors ${
+                docType === "factura" ? "bg-white text-gray-900 shadow-sm" : "text-gray-500 hover:text-gray-800"
+              }`}
+            >
+              Factura
+            </button>
+          </div>
+
+          <div className="flex items-center justify-between gap-2 rounded-lg bg-gray-50 px-3 py-2">
+            <span className="text-xs font-semibold uppercase tracking-wide text-gray-500">Próximo número</span>
+            <span className="font-mono text-sm font-semibold text-gray-900">{serieLabel}</span>
+          </div>
+
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+            <div>
+              <label htmlFor="emit-fecha" className={labelClass}>
+                Fecha
+              </label>
+              <input
+                id="emit-fecha"
+                type="date"
+                value={fechaEmision}
+                onChange={(e) => setFechaEmision(e.target.value)}
+                className={inputClass}
+              />
+            </div>
+            <div>
+              <label htmlFor="emit-hora" className={labelClass}>
+                Hora
+              </label>
+              <input
+                id="emit-hora"
+                type="time"
+                value={horaEmision}
+                onChange={(e) => setHoraEmision(e.target.value)}
+                className={inputClass}
+              />
+            </div>
+          </div>
+
+          <div>
+            <label htmlFor="emit-cond-venta" className={labelClass}>
+              Condición de venta
+            </label>
+            <select
+              id="emit-cond-venta"
+              value={condicionVenta}
+              onChange={(e) => setCondicionVenta(e.target.value)}
+              className={inputClass}
+            >
+              {CONDICION_VENTA_OPTIONS.map((opt) => (
+                <option key={opt} value={opt}>
+                  {opt}
+                </option>
+              ))}
+            </select>
+          </div>
+
+          <div>
+            <label htmlFor="emit-cliente" className={labelClass}>
+              Cliente o razón social
+            </label>
+            <input
+              id="emit-cliente"
+              type="text"
+              value={clienteEdit}
+              onChange={(e) => setClienteEdit(e.target.value)}
+              placeholder={misc ? "Ej: VENTAS DEL DIA" : "Opcional"}
+              className={inputClass}
+              autoComplete="off"
+            />
+          </div>
+
+          <div>
+            <label htmlFor="emit-doc" className={labelClass}>
+              {docType === "factura" ? "RUC" : "DNI"}
+            </label>
+            <input
+              id="emit-doc"
+              type="text"
+              inputMode="numeric"
+              value={docInputValue}
+              onChange={(e) => onDocInputChange(e.target.value)}
+              placeholder={docType === "factura" ? "11 dígitos" : "Opcional"}
+              className={`${inputClass} font-mono`}
+            />
+            {docType === "boleta" ? (
+              <p className="mt-1 text-xs text-gray-500">
+                Vacío solo si el total ≤ S/ {BOLETA_SIN_DOCUMENTO_CLIENTE_MAX_SOLES}.
+              </p>
+            ) : null}
+            {boletaDocIncomplete ? <p className="mt-1 text-xs text-red-600">8 dígitos o vacío.</p> : null}
+          </div>
+
+          <div>
+            <label htmlFor="emit-concepto" className={labelClass}>
+              Concepto
+            </label>
+            <input
+              id="emit-concepto"
+              type="text"
+              value={descripcionEdit}
+              onChange={(e) => setDescripcionEdit(e.target.value)}
+              placeholder={misc ? "Ej: Venta del día" : "Ej: Alquiler cancha"}
+              className={inputClass}
+              autoComplete="off"
+            />
+          </div>
+
+          <div>
+            <label htmlFor="emit-total" className={labelClass}>
+              Total (incl. IGV)
+            </label>
+            <input
+              id="emit-total"
+              type="text"
+              inputMode="decimal"
+              value={amountEdit}
+              onChange={(e) => setAmountEdit(e.target.value.replace(/[^\d.,]/g, ""))}
+              placeholder="0.00"
+              className={`${inputClass} font-mono`}
+            />
+            {!amountValid && amountEdit !== "" ? (
+              <p className="mt-1 text-xs text-red-600">Monto inválido.</p>
+            ) : null}
+            {docType === "boleta" &&
+            amountValid &&
+            parsedAmount > BOLETA_SIN_DOCUMENTO_CLIENTE_MAX_SOLES &&
+            digitsDoc.length === 0 ? (
+              <p className="mt-1 text-xs text-amber-800">Indique DNI o cambie a Factura.</p>
+            ) : null}
+          </div>
+        </div>
+
+        {misc && miscError ? (
+          <div className="mt-4 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-800">
+            {miscError}
+          </div>
+        ) : null}
+
+        <div className="mt-5 flex gap-3 border-t border-gray-100 pt-4">
+          <button
+            type="button"
+            onClick={props.onClose}
+            className={`flex ${controlH} flex-1 items-center justify-center rounded-lg border border-gray-300 text-sm font-semibold text-gray-700 hover:bg-gray-50`}
+          >
+            Cancelar
+          </button>
+          <button
+            type="button"
+            onClick={onPrimaryClick}
+            disabled={
+              attaching ||
+              emitting ||
+              !docValid ||
+              !amountValid ||
+              boletaDocIncomplete ||
+              !fechaHoraOk ||
+              !receptorOk ||
+              !descripcionOk
+            }
+            className={`flex ${controlH} flex-1 items-center justify-center rounded-lg border border-field-dark bg-field-dark text-sm font-semibold text-white hover:opacity-95 disabled:opacity-50`}
+          >
+            {emitting ? "Emitiendo…" : "Emitir comprobante"}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+});

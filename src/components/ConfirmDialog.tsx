@@ -24,7 +24,7 @@ export default function ConfirmDialog({
   if (!open) return null;
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
+    <div className="fixed inset-0 z-[10055] flex items-center justify-center bg-black/50 p-4">
       <div className="bg-white rounded-2xl shadow-2xl max-w-md w-full p-8">
         <h3 className="text-heading font-bold text-gray-900 mb-3">{title}</h3>
         <p className="text-body text-gray-600 mb-8">{message}</p>
@@ -40,7 +40,7 @@ export default function ConfirmDialog({
             className={`flex-1 px-6 py-4 text-body font-semibold rounded-xl text-white transition-colors ${
               variant === "danger"
                 ? "bg-red-600 hover:bg-red-700"
-                : "bg-bombonera-600 hover:bg-bombonera-700"
+                : "bg-field-dark hover:opacity-95"
             }`}
           >
             {confirmLabel}

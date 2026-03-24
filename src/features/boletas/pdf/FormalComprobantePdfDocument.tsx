@@ -1,4 +1,4 @@
-import { Document, Page, Text, View, StyleSheet } from "@react-pdf/renderer";
+import { Document, Page, Text, View, StyleSheet, Image } from "@react-pdf/renderer";
 import type { FormalComprobantePdfInput } from "./formalComprobanteTypes";
 import { montoEnLetrasSoles } from "./montoEnLetrasSoles";
 
@@ -134,10 +134,15 @@ function docTitle(tipo: "boleta" | "factura"): string {
   return tipo === "factura" ? "FACTURA ELECTRÓNICA" : "BOLETA DE VENTA ELECTRÓNICA";
 }
 
+/** Imagen QR en PDF (@react-pdf Image no equivale a img con alt en el DOM). */
+function CpeQrRaster({ dataUrl }: { dataUrl: string }) {
+  // eslint-disable-next-line jsx-a11y/alt-text
+  return <Image src={dataUrl} style={{ width: 72, height: 72, marginLeft: 8 }} />;
+}
+
 export function FormalComprobantePdfDocument({ data }: { data: FormalComprobantePdfInput }) {
   const son = montoEnLetrasSoles(data.importeTotal);
   const fechaStr = fmtPeDate(data.fechaEmisionYmd);
-  const hora = data.horaEmision || "";
 
   return (
     <Document>
@@ -149,15 +154,26 @@ export function FormalComprobantePdfDocument({ data }: { data: FormalComprobante
               {data.emisor.nombreComercial ? (
                 <Text style={styles.emisorLine}>{data.emisor.nombreComercial}</Text>
               ) : null}
-              <Text style={styles.emisorLine}>{data.emisor.direccion}</Text>
+              {data.emisor.direccion
+                .split(/\r?\n/)
+                .map((line) => line.trim())
+                .filter(Boolean)
+                .map((line, i) => (
+                  <Text key={`dir-${i}`} style={styles.emisorLine}>
+                    {line}
+                  </Text>
+                ))}
               {data.emisor.ubigeoLine ? (
                 <Text style={styles.emisorLine}>{data.emisor.ubigeoLine}</Text>
               ) : null}
             </View>
-            <View style={styles.cpeBox}>
-              <Text style={styles.cpeTitle}>{docTitle(data.tipo)}</Text>
-              <Text style={styles.cpeRuc}>RUC: {data.emisor.ruc}</Text>
-              <Text style={styles.cpeNum}>{data.serieCorrelativo}</Text>
+            <View style={{ flexDirection: "row", alignItems: "flex-start" }}>
+              <View style={styles.cpeBox}>
+                <Text style={styles.cpeTitle}>{docTitle(data.tipo)}</Text>
+                <Text style={styles.cpeRuc}>RUC: {data.emisor.ruc}</Text>
+                <Text style={styles.cpeNum}>{data.serieCorrelativo}</Text>
+              </View>
+              {data.qrImageDataUrl ? <CpeQrRaster dataUrl={data.qrImageDataUrl} /> : null}
             </View>
           </View>
 
@@ -169,10 +185,11 @@ export function FormalComprobantePdfDocument({ data }: { data: FormalComprobante
           </View>
           <View style={styles.metaRow}>
             <Text style={styles.metaLabel}>Fecha de Emisión :</Text>
-            <Text style={styles.metaValue}>
-              {fechaStr}
-              {hora ? `  ${hora}` : ""}
-            </Text>
+            <Text style={styles.metaValue}>{data.fechaEmisionMostrada}</Text>
+          </View>
+          <View style={styles.metaRow}>
+            <Text style={styles.metaLabel}>Cond. Venta :</Text>
+            <Text style={styles.metaValue}>{data.condicionVenta}</Text>
           </View>
           <View style={styles.metaRow}>
             <Text style={styles.metaLabel}>Señor(es) :</Text>

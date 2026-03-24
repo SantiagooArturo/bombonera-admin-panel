@@ -9,7 +9,11 @@ export type FormalComprobantePdfInput = {
   };
   serieCorrelativo: string;
   fechaEmisionYmd: string;
-  horaEmision?: string;
+  /** Texto ya formateado para el PDF (12 h, es-PE). */
+  fechaEmisionMostrada: string;
+  condicionVenta: string;
+  /** PNG data URL para QR CPE (mismo contenido que valida SUNAT). */
+  qrImageDataUrl?: string | null;
   receptorNombre: string;
   receptorDocLabel?: string;
   moneda: string;

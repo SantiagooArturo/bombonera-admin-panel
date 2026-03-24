@@ -179,6 +179,21 @@ export interface Invoice {
   user_id: string;
   phone_number: string;
   file_url: string;
+  /** PDF ticket oficial apisunat en Storage (misma emisión que file_url plantilla). */
+  file_url_sunat?: string | null;
+  /** URL temporal apisunat (p. ej. comprobantes antiguos). */
+  sunat_pdf_ticket?: string | null;
+  /** Condición de venta mostrada en el PDF del panel. */
+  condicion_venta?: string;
+  /** Fecha de emisión del CPE (AAAA-MM-DD), misma que SUNAT. */
+  fecha_emision_ymd?: string;
+  /** Hora de emisión del CPE (HH:mm:ss), misma que SUNAT. */
+  hora_emision_hms?: string;
+  /** Hash del comprobante (QR / validación). */
+  sunat_hash?: string | null;
+  /** Serie SUNAT (ej. B001). */
+  serie?: string;
+  correlativo?: number;
   preview_url?: string;
   amount: number;
   court_type: string;
@@ -224,6 +239,8 @@ export type EmitComprobanteParams = {
   fecha_de_emision?: string;
   /** HH:mm o HH:mm:ss (Lima) */
   hora_de_emision?: string;
+  /** Texto en el PDF formal (Cond. Venta); apisunat puede seguir mostrando “Contado” si no expone el campo. */
+  condicion_venta?: string;
 };
 
 // Transferencias: colección transfers. Registro de todos los pagos procesados.

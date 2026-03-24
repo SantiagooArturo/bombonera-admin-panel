@@ -476,8 +476,8 @@ export function usePaymentSidebar(options?: UsePaymentSidebarOptions) {
       }
       toast(
         result.sunat_estado === "PENDIENTE"
-          ? "Anulación enviada a SUNAT (pendiente de respuesta)"
-          : "Comprobante anulado ante SUNAT",
+          ? "Anulación enviada (en proceso)"
+          : "Comprobante anulado",
         "success"
       );
       setInvoices((prev) =>

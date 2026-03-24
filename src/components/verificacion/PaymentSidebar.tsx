@@ -10,6 +10,10 @@ import { calculateReservationPrice, courtConfigsToMap, formatDisplayPhone, wspLi
 import { WHATSAPP_ICON_PATH as WSP_ICON_PATH } from "@/features/operaciones/whatsappIconPath";
 import { EmitInvoiceModal } from "./EmitInvoiceModal";
 import { RegisterPaymentFormCobros } from "./RegisterPaymentFormCobros";
+import {
+  invoicePersonalizedPdfAbsoluteUrlForSend,
+  invoicePlantillaPdfHref,
+} from "@/features/boletas/utils/invoicePdfLinks";
 
 // ─── Props ───────────────────────────────────────────────────────────────────
 
@@ -973,7 +977,7 @@ const TransferCard = memo(function TransferCard({
               onClick={() => onVerify(transfer.id, !!transfer.verified)}
               className={`w-full py-2.5 px-4 rounded-xl font-bold text-sm transition-all active:scale-[0.98] flex items-center justify-center gap-2 ${transfer.verified
                 ? "bg-white border-2 border-gray-200 text-gray-600 hover:border-red-200 hover:text-red-500"
-                : "bg-green-600 text-white hover:bg-green-700 shadow-sm"
+                : "bg-field-dark text-white hover:opacity-95 shadow-sm"
                 }`}
             >
               {transfer.verified ? (
@@ -1002,7 +1006,10 @@ const TransferCard = memo(function TransferCard({
           ) : invoice ? (
             <div className="space-y-3">
               <div className="w-full relative">
-                <PdfPreviewThumbnail url={invoice.file_url} onClickPreview={onViewImage} />
+                <PdfPreviewThumbnail
+                  url={invoicePlantillaPdfHref(invoice) ?? invoice.file_url}
+                  onClickPreview={onViewImage}
+                />
                 {invoice.status === "attached" && (
                   <button
                     type="button"
@@ -1026,7 +1033,7 @@ const TransferCard = memo(function TransferCard({
               </div>
               <div className="flex gap-2">
                 <a
-                  href={`/api/proxy-file?url=${encodeURIComponent(invoice.file_url)}`}
+                  href={invoicePlantillaPdfHref(invoice) ?? `/api/proxy-file?url=${encodeURIComponent(invoice.file_url)}`}
                   download={`boleta_${invoice.id}.pdf`}
                   className="flex-1 py-2.5 px-3 rounded-xl font-bold text-sm bg-blue-50 border-2 border-blue-100 text-blue-700 hover:bg-blue-100 flex items-center justify-center gap-2 transition-colors"
                 >
@@ -1039,10 +1046,12 @@ const TransferCard = memo(function TransferCard({
                     setWspStatus("sending");
                     setWspError(null);
                     try {
+                      const fileUrlForBot =
+                        invoicePersonalizedPdfAbsoluteUrlForSend(invoice) ?? invoice.file_url;
                       const res = await fetch("/api/invoices/send", {
                         method: "POST",
                         headers: { "Content-Type": "application/json" },
-                        body: JSON.stringify({ chat_id: chatId, file_url: invoice.file_url }),
+                        body: JSON.stringify({ chat_id: chatId, file_url: fileUrlForBot }),
                       });
                       if (!res.ok) {
                         const data = await res.json().catch(() => ({}));
@@ -1078,7 +1087,7 @@ const TransferCard = memo(function TransferCard({
               )}
               {isInvoiceVoided ? (
                 <p className="rounded-xl border-2 border-gray-200 bg-gray-100 py-2.5 px-3 text-center text-sm font-bold text-gray-600">
-                  Anulado ante SUNAT
+                  Anulado
                 </p>
               ) : canVoidSunat ? (
                 <button
@@ -1088,7 +1097,7 @@ const TransferCard = memo(function TransferCard({
                     const label = invoice.tipo_comprobante === "factura" ? "factura" : "boleta";
                     if (
                       !confirm(
-                        `¿Anular esta ${label} (${invoice.serie_correlativo}) en SUNAT?\n\nNo se puede deshacer desde el panel. Las boletas se anulan vía resumen diario; las facturas vía comunicación de baja.`
+                        `¿Anular esta ${label} (${invoice.serie_correlativo})?\n\nNo se puede deshacer desde el panel.`
                       )
                     ) {
                       return;
@@ -1105,12 +1114,12 @@ const TransferCard = memo(function TransferCard({
                   {voidingInvoice
                     ? "Anulando…"
                     : invoice.tipo_comprobante === "factura"
-                      ? "Anular factura"
-                      : "Anular boleta"}
+                      ? "Anular"
+                      : "Anular"}
                 </button>
               ) : invoiceStatusNorm === "emitted" && !invoice.serie_correlativo ? (
                 <p className="text-xs text-amber-800">
-                  No se puede anular desde el panel: falta serie/correlativo SUNAT en este registro.
+                  No se puede anular: falta número de comprobante en el registro.
                 </p>
               ) : null}
             </div>
@@ -1147,7 +1156,7 @@ const TransferCard = memo(function TransferCard({
               <button
                 onClick={() => setShowEmitModal(true)}
                 disabled={attachingInvoiceId === transfer.id || emittingInvoiceId === transfer.id}
-                className="w-full py-2.5 px-4 rounded-xl font-bold text-sm bg-green-600 text-white hover:bg-green-700 flex items-center justify-center gap-2 border border-green-700 disabled:opacity-60 disabled:cursor-not-allowed"
+                className="flex w-full min-h-[44px] items-center justify-center gap-2 rounded-xl border border-field-dark bg-field-dark px-4 py-2.5 text-sm font-bold text-white hover:opacity-95 disabled:cursor-not-allowed disabled:opacity-60"
               >
                 {emittingInvoiceId === transfer.id ? (
                   <><svg className="w-4 h-4 animate-spin" fill="none" viewBox="0 0 24 24"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" /><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" /></svg>Emitiendo...</>

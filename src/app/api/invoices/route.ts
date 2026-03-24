@@ -3,10 +3,14 @@ import { getDb, getStorageBucket } from "@/lib/firebase-admin";
 import { randomUUID } from "crypto";
 import { getCourtLabelForReservation } from "@/lib/court-config-server";
 import { BOLETA_SIN_DOCUMENTO_CLIENTE_MAX_SOLES } from "@/features/boletas/constants/sunat";
+import { normalizeCondicionVentaInput } from "@/features/boletas/constants/condicionVenta";
 import { buildFormalComprobanteInput } from "@/features/boletas/pdf/buildFormalComprobanteInput";
+import { generateSunatQrDataUrl } from "@/features/boletas/pdf/generateSunatQrDataUrl";
 import { getEmisorSunatFromEnv } from "@/features/boletas/pdf/emisorSunatEnv";
+import { fechaYmdToDdMmYyyy, formatEmision12hPe } from "@/features/boletas/utils/fechaEmisionMostrada12h";
 import { validateEmissionDateTimeForApi } from "@/features/boletas/utils/limaEmissionDatetime";
 import { receptorNombreSnapshot } from "@/features/boletas/utils/sanitizeReceptorNombre";
+import { buildSunatCpeQrPayload } from "@/features/boletas/utils/sunatQrPayload";
 
 // ── Configuración apisunat.pe (Lucode) ──
 // Docs: https://docs.apisunat.pe/integracion/facturacion-electronica/configuracion-api
@@ -193,7 +197,10 @@ export async function POST(request: NextRequest) {
       misc_emission: miscEmissionRaw,
       fecha_de_emision: fechaEmisionClient,
       hora_de_emision: horaEmisionClient,
+      condicion_venta: condicionVentaRaw,
     } = body;
+
+    const condicionVenta = normalizeCondicionVentaInput(condicionVentaRaw);
 
     const miscEmission = miscEmissionRaw === true;
     const isManual = manualEmission === true;
@@ -339,13 +346,13 @@ export async function POST(request: NextRequest) {
         : (() => {
             const courtLabel = getCourtLabelForReservation(field, court_type);
             let d = `Alquiler cancha ${courtLabel}`;
-            if (date) {
-              const dateObj = new Date(date + "T12:00:00");
+    if (date) {
+      const dateObj = new Date(date + "T12:00:00");
               d += ` - ${dateObj.toLocaleDateString("es-PE", { day: "2-digit", month: "2-digit", year: "numeric" })}`;
-            }
-            if (time_slots?.length > 0) {
-              const startH = time_slots[0];
-              const lastH = parseInt(time_slots[time_slots.length - 1].split(":")[0]) + 1;
+    }
+    if (time_slots?.length > 0) {
+      const startH = time_slots[0];
+      const lastH = parseInt(time_slots[time_slots.length - 1].split(":")[0]) + 1;
               d += ` ${formatHour12(startH)}-${formatHour12(`${lastH}:00`)}`;
             }
             return d;
@@ -417,13 +424,13 @@ export async function POST(request: NextRequest) {
       correlativo = await getNextCorrelativo(db, serieSunat);
 
       const emitRes = await fetch(APISUNAT_URL_VAL, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
           Authorization: `Bearer ${APISUNAT_TOKEN_VAL}`,
-        },
+      },
         body: JSON.stringify({ ...apisunatBaseBody, numero: correlativo }),
-      });
+    });
 
       emitStatus = emitRes.status;
       emitData = (await emitRes.json()) as Record<string, unknown>;
@@ -433,7 +440,7 @@ export async function POST(request: NextRequest) {
       // Si NO es error de duplicado, es un error real → no reintentar
       if (!isDuplicateError(emitData.message as string)) {
         console.error("apisunat emission error:", emitData);
-        return NextResponse.json(
+      return NextResponse.json(
           { error: `Error de SUNAT: ${(emitData.message as string) || "Error desconocido"}` },
           { status: emitStatus === 401 ? 401 : 400 }
         );
@@ -462,24 +469,72 @@ export async function POST(request: NextRequest) {
     const persistClienteNum =
       tipoComprobante === "boleta" && clienteTipoDocSunat === "0" ? "" : cleanDoc;
 
-    // 7. PDF para descarga: plantilla formal tipo SUNAT (no es el XML firmado). Fallback: ticket apisunat.
+    // 7. PDFs: plantilla del panel (formal + QR) y ticket oficial apisunat, cada uno en Storage.
     const pdfTicketUrl: string | null = pdfPayload.ticket || null;
-    let fileUrl = pdfTicketUrl;
-    const storagePath = `invoices/${serieCorrelativo}.pdf`;
-    const storageFile = bucket.file(storagePath);
-    const downloadToken = randomUUID();
+    const pathFormal = `invoices/${serieCorrelativo}-formal.pdf`;
+    const pathSunat = `invoices/${serieCorrelativo}-sunat.pdf`;
+    const tokenFormal = randomUUID();
+    const tokenSunat = randomUUID();
     const bucketName = bucket.name;
-    const encodedPath = encodeURIComponent(storagePath);
-    const firebaseFileUrl = `https://firebasestorage.googleapis.com/v0/b/${bucketName}/o/${encodedPath}?alt=media&token=${downloadToken}`;
 
-    let formalPdfSaved = false;
+    const firebaseMediaUrl = (path: string, token: string): string => {
+      const encodedPath = encodeURIComponent(path);
+      return `https://firebasestorage.googleapis.com/v0/b/${bucketName}/o/${encodedPath}?alt=media&token=${token}`;
+    };
+
+    let sunatBuffer: Buffer | null = null;
+    if (pdfTicketUrl) {
+      try {
+        const pdfRes = await fetch(pdfTicketUrl, {
+          headers: { Authorization: `Bearer ${APISUNAT_TOKEN_VAL}` },
+        });
+        if (pdfRes.ok) {
+          sunatBuffer = Buffer.from(await pdfRes.arrayBuffer());
+        } else {
+          console.warn("No se pudo descargar PDF ticket apisunat:", pdfRes.status);
+        }
+      } catch (pdfErr) {
+        console.warn("Error descargando PDF de apisunat:", pdfErr);
+      }
+    }
+
+    const hashStr = String(payload.hash || "").trim();
+    const emisorCfg = getEmisorSunatFromEnv();
+    const opGravadaQr = Math.round((totalAmount / 1.18) * 100) / 100;
+    const igvQr = Math.round((totalAmount - opGravadaQr) * 100) / 100;
+    let qrDataUrl: string | null = null;
+    if (hashStr) {
+      try {
+        const qrPayload = buildSunatCpeQrPayload({
+          rucEmisor: emisorCfg.ruc,
+          tipoComprobante: tipoComprobante,
+          serie: serieSunat,
+          numeroCorrelativo: correlativo,
+          totalIgv: igvQr,
+          importeTotal: totalAmount,
+          fechaEmisionDdMmYyyy: fechaYmdToDdMmYyyy(fechaEmision),
+          tipoDocClienteSunat: clienteTipoDocSunat,
+          numeroDocCliente: cleanDoc,
+          digestValueBase64: hashStr,
+        });
+        qrDataUrl = await generateSunatQrDataUrl(qrPayload);
+      } catch (qrErr) {
+        console.warn("QR CPE (PDF formal): no generado", qrErr);
+      }
+    }
+
+    const fechaEmisionMostrada = formatEmision12hPe(fechaEmision, horaEmision);
+
+    let fileUrlFormal: string | null = null;
     try {
       const formalInput = buildFormalComprobanteInput({
         tipo: tipoComprobante,
-        emisor: getEmisorSunatFromEnv(),
+        emisor: emisorCfg,
         serieCorrelativo,
         fechaEmisionYmd: fechaEmision,
-        horaEmision,
+        fechaEmisionMostrada,
+        condicionVenta,
+        qrImageDataUrl: qrDataUrl,
         receptorNombre: clienteName,
         clienteTipoDocumento: clienteTipoDocSunat,
         clienteNumeroDocumento: persistClienteNum || undefined,
@@ -490,40 +545,38 @@ export async function POST(request: NextRequest) {
         "@/features/boletas/pdf/renderFormalComprobanteBuffer"
       );
       const formalBuffer = await renderFormalComprobanteBuffer(formalInput);
-      await storageFile.save(formalBuffer, {
+      await bucket.file(pathFormal).save(formalBuffer, {
         metadata: {
           contentType: "application/pdf",
-          metadata: { firebaseStorageDownloadTokens: downloadToken },
+          metadata: { firebaseStorageDownloadTokens: tokenFormal },
         },
       });
-      fileUrl = firebaseFileUrl;
-      formalPdfSaved = true;
+      fileUrlFormal = firebaseMediaUrl(pathFormal, tokenFormal);
     } catch (formalErr) {
-      console.warn("PDF formal (plantilla panel): no generado, se intentará PDF apisunat", formalErr);
+      console.warn("PDF formal (plantilla panel): no generado", formalErr);
     }
 
-    if (!formalPdfSaved && pdfTicketUrl) {
+    let fileUrlSunatStored: string | null = null;
+    if (sunatBuffer) {
       try {
-        const pdfRes = await fetch(pdfTicketUrl, {
-          headers: { Authorization: `Bearer ${APISUNAT_TOKEN_VAL}` },
+        await bucket.file(pathSunat).save(sunatBuffer, {
+          metadata: {
+            contentType: "application/pdf",
+            metadata: { firebaseStorageDownloadTokens: tokenSunat },
+          },
         });
-
-        if (pdfRes.ok) {
-          const pdfBuffer = Buffer.from(await pdfRes.arrayBuffer());
-          await storageFile.save(pdfBuffer, {
-            metadata: {
-              contentType: "application/pdf",
-              metadata: { firebaseStorageDownloadTokens: downloadToken },
-            },
-          });
-          fileUrl = firebaseFileUrl;
-        } else {
-          console.warn("No se pudo descargar PDF de apisunat, usando URL externa");
-        }
-      } catch (pdfErr) {
-        console.warn("Error descargando PDF de apisunat:", pdfErr);
+        fileUrlSunatStored = firebaseMediaUrl(pathSunat, tokenSunat);
+      } catch (sunatSaveErr) {
+        console.warn("No se pudo guardar PDF apisunat en Storage", sunatSaveErr);
       }
     }
+
+    const fileUrl =
+      fileUrlFormal ||
+      fileUrlSunatStored ||
+      pdfTicketUrl ||
+      "";
+    const fileUrlSunat = fileUrlSunatStored || "";
 
     // 8. Guardar metadata en Firestore (todo lo útil para reportes / panel)
     const repSnapRaw = String(representative_name || "").trim() || clienteName;
@@ -537,6 +590,8 @@ export async function POST(request: NextRequest) {
       cliente_tipo_documento: clienteTipoDocSunat,
       representative_name_snapshot: repSnap,
       file_url: fileUrl || "",
+      file_url_sunat: fileUrlSunat,
+      condicion_venta: condicionVenta,
       amount: totalAmount,
       descripcion,
       court_type: court_type || "",
@@ -556,6 +611,9 @@ export async function POST(request: NextRequest) {
       sunat_pdf_ticket: pdfTicketUrl,
       status: "emitted",
       created_at: new Date().toISOString(),
+      /** Para regenerar la plantilla PDF con la misma fecha/hora que envió apisunat. */
+      fecha_emision_ymd: fechaEmision,
+      hora_emision_hms: horaEmision,
     };
 
     const docRef = await db.collection("invoices").add(invoiceData);
@@ -564,6 +622,7 @@ export async function POST(request: NextRequest) {
       success: true,
       invoice_id: docRef.id,
       file_url: fileUrl,
+      file_url_sunat: fileUrlSunat,
       serie_correlativo: serieCorrelativo,
       sunat_estado: payload.estado,
       cliente_denominacion: clienteName,
@@ -574,6 +633,7 @@ export async function POST(request: NextRequest) {
       phone_number: effectivePhone || "",
       amount: totalAmount,
       tipo_comprobante: tipoComprobante,
+      condicion_venta: condicionVenta,
     });
   } catch (error) {
     const msg =

@@ -251,11 +251,11 @@ function UsuariosContent() {
       <div className="p-6 md:p-10 max-w-fit">
         <div className="mb-8 flex flex-wrap items-center justify-between gap-4">
           <div>
-            <h1 className="text-heading-lg font-bold text-gray-900">Usuarios</h1>
-            <p className="text-body-lg text-gray-500 mt-1">
-              Gestiona usuarios, reservas y cobros
-            </p>
-          </div>
+          <h1 className="text-heading-lg font-bold text-gray-900">Usuarios</h1>
+          <p className="text-body-lg text-gray-500 mt-1">
+            Gestiona usuarios, reservas y cobros
+          </p>
+        </div>
           <button
             onClick={() => setAddUserOpen(true)}
             className="inline-flex items-center gap-2 px-5 py-3 font-semibold rounded-xl bg-bombonera-600 text-white hover:bg-bombonera-700 transition-colors"
@@ -442,16 +442,16 @@ function UsuariosContent() {
                       const wa = userWhatsAppPhone(user);
                       const phoneDisplay = wa ? formatDisplayPhone(wa) : "—";
                       return (
-                        <tr
-                          key={user.id}
+                          <tr
+                            key={user.id}
                           className={`border-b border-gray-100 last:border-0 transition-colors ${
-                            attention
-                              ? "bg-red-50 hover:bg-red-100/60"
-                              : "hover:bg-gray-50/50"
-                          }`}
-                        >
+                              attention
+                                ? "bg-red-50 hover:bg-red-100/60"
+                                : "hover:bg-gray-50/50"
+                            }`}
+                          >
                           <td className="p-6">
-                            <div className="flex flex-col gap-1">
+                              <div className="flex flex-col gap-1">
                               {/* Nombre (editable) */}
                               {editingNameId === user.id ? (
                                 <div className="flex items-center gap-2">
@@ -511,8 +511,8 @@ function UsuariosContent() {
                               ) : (
                                 <span className="text-sm text-gray-400 font-mono px-2 py-1" title="Sin número válido — edítalo en Pagos / drawer">
                                   —
-                                </span>
-                              )}
+                                  </span>
+                                )}
 
                               {/* Alerta si necesita atención */}
                               {user.needs_help && (
@@ -529,44 +529,44 @@ function UsuariosContent() {
                                       title={user.help_reason}
                                     >
                                       {user.help_reason}
-                                    </span>
+                              </span>
                                   )}
                                 </div>
                               )}
                             </div>
-                          </td>
+                            </td>
                           <td className="p-6 text-base text-gray-700">{user.reservation_count}</td>
                           <td className="p-6">
-                            <select
+                              <select
                               value={user.client_type}
-                              onChange={(e) => {
+                                onChange={(e) => {
                                 handleClientTypeChange(user.id, e.target.value as ClientType);
-                              }}
-                              disabled={updatingClientType === user.id}
+                                }}
+                                disabled={updatingClientType === user.id}
                               className={`px-3 py-1.5 rounded-lg text-base font-medium border-2 cursor-pointer transition-colors ${
-                                user.client_type === "sospechoso_fraude"
-                                  ? "bg-red-50 text-red-700 border-red-200"
-                                  : user.client_type === "recurrente"
-                                  ? "bg-green-50 text-green-700 border-green-200"
+                                  user.client_type === "sospechoso_fraude"
+                                    ? "bg-red-50 text-red-700 border-red-200"
+                                    : user.client_type === "recurrente"
+                                    ? "bg-green-50 text-green-700 border-green-200"
                                   : "bg-blue-50 text-blue-700 border-blue-200"
-                              } disabled:opacity-50`}
-                            >
+                                } disabled:opacity-50`}
+                              >
                               <option value="casual">Casual</option>
-                              <option value="recurrente">Recurrente</option>
-                              <option value="sospechoso_fraude">Peligro de fraude</option>
-                            </select>
-                          </td>
+                                <option value="recurrente">Recurrente</option>
+                                <option value="sospechoso_fraude">Peligro de fraude</option>
+                              </select>
+                            </td>
                           <td className="p-6 text-center">
-                            <button
+                              <button
                               onClick={() => {
-                                const currentlyOff = !(user.is_automated ?? true);
-                                if (currentlyOff && user.client_type === "sospechoso_fraude") {
-                                  toast("Cambia el tipo de cliente antes de activar el bot", "error");
-                                  return;
-                                }
-                                handleToggleAutomation(user.id, user.is_automated ?? true);
-                              }}
-                              disabled={togglingId === user.id}
+                                  const currentlyOff = !(user.is_automated ?? true);
+                                  if (currentlyOff && user.client_type === "sospechoso_fraude") {
+                                    toast("Cambia el tipo de cliente antes de activar el bot", "error");
+                                    return;
+                                  }
+                                  handleToggleAutomation(user.id, user.is_automated ?? true);
+                                }}
+                                disabled={togglingId === user.id}
                               className={`relative inline-flex h-7 w-12 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none disabled:opacity-50 ${
                                 (user.is_automated ?? true) ? "bg-green-500" : "bg-gray-300"
                               }`}
@@ -618,18 +618,18 @@ function UsuariosContent() {
                                   Ver reservas
                                 </span>
                               )}
-                              <button
-                                onClick={() => setResetConfirmId(user.id)}
+                                  <button
+                                    onClick={() => setResetConfirmId(user.id)}
                                 className="p-2 text-gray-300 hover:text-red-500 hover:bg-red-50 rounded-lg transition-colors"
                                 title="Eliminar usuario"
-                              >
+                                  >
                                 <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
-                                </svg>
-                              </button>
+                                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                                    </svg>
+                                  </button>
                             </div>
-                          </td>
-                        </tr>
+                                </td>
+                              </tr>
                       );
                     })
                   )}

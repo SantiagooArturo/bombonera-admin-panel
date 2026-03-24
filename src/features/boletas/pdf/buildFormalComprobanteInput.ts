@@ -10,7 +10,9 @@ export function buildFormalComprobanteInput(params: {
   emisor: EmisorSunatConfig;
   serieCorrelativo: string;
   fechaEmisionYmd: string;
-  horaEmision: string;
+  fechaEmisionMostrada: string;
+  condicionVenta: string;
+  qrImageDataUrl?: string | null;
   receptorNombre: string;
   clienteTipoDocumento?: string;
   clienteNumeroDocumento?: string;
@@ -42,7 +44,9 @@ export function buildFormalComprobanteInput(params: {
     },
     serieCorrelativo: params.serieCorrelativo,
     fechaEmisionYmd: params.fechaEmisionYmd,
-    horaEmision: params.horaEmision,
+    fechaEmisionMostrada: params.fechaEmisionMostrada,
+    condicionVenta: params.condicionVenta,
+    qrImageDataUrl: params.qrImageDataUrl ?? null,
     receptorNombre: params.receptorNombre,
     receptorDocLabel,
     moneda: "SOLES",

@@ -13,11 +13,11 @@ import {
 } from "../utils/invoiceTableColumns";
 import { fetchAllInvoices } from "../services/fetchInvoices";
 import { voidSunatInvoice } from "../services/voidSunatInvoice";
-import { EmitMiscInvoiceModal } from "./EmitMiscInvoiceModal";
-
-function invoicePdfHref(fileUrl: string) {
-  return `/api/proxy-file?url=${encodeURIComponent(fileUrl)}`;
-}
+import { EmitComprobanteModal } from "./EmitComprobanteModal";
+import {
+  invoicePersonalizedPdfAbsoluteUrlForSend,
+  invoicePlantillaPdfHref,
+} from "../utils/invoicePdfLinks";
 
 type ComprobanteTab = "todos" | "boletas" | "facturas";
 
@@ -63,7 +63,9 @@ export function BoletasPage() {
   }, [invoices]);
 
   const sendWsp = useCallback(async (inv: Invoice) => {
-    if (!inv.file_url) return;
+    const fileUrlForBot =
+      invoicePersonalizedPdfAbsoluteUrlForSend(inv) ?? inv.file_url?.trim() ?? "";
+    if (!fileUrlForBot) return;
     const chatId = String(inv.phone_number || "").trim();
     if (!chatId) {
       setWspStatus((s) => ({ ...s, [inv.id]: "error" }));
@@ -87,7 +89,7 @@ export function BoletasPage() {
       const res = await fetch("/api/invoices/send", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ chat_id: chatId, file_url: inv.file_url }),
+        body: JSON.stringify({ chat_id: chatId, file_url: fileUrlForBot }),
       });
       if (!res.ok) {
         const data = await res.json().catch(() => ({}));
@@ -109,15 +111,15 @@ export function BoletasPage() {
       const emittedLike =
         st === "emitted" || (st === "" && Boolean(String(inv.serie_correlativo || "").trim()));
       if (st === "voided" || st === "attached" || !emittedLike) {
-        toast("Solo se anulan comprobantes emitidos por SUNAT desde el panel.", "error");
+        toast("Solo se pueden anular comprobantes emitidos desde el panel.", "error");
         return;
       }
       if (!inv.serie_correlativo?.trim()) {
-        toast("Falta serie/correlativo SUNAT.", "error");
+        toast("Falta número de comprobante.", "error");
         return;
       }
       const label = inv.tipo_comprobante === "factura" ? "factura" : "boleta";
-      if (!confirm(`¿Anular esta ${label} (${inv.serie_correlativo}) en SUNAT?`)) return;
+      if (!confirm(`¿Anular esta ${label} (${inv.serie_correlativo})?`)) return;
       setVoidingInvoiceId(inv.id);
       try {
         const result = await voidSunatInvoice(inv.id);
@@ -126,7 +128,7 @@ export function BoletasPage() {
           return;
         }
         toast(
-          result.sunat_estado === "PENDIENTE" ? "Anulación enviada (pendiente SUNAT)" : "Anulado ante SUNAT",
+          result.sunat_estado === "PENDIENTE" ? "Anulación enviada (en proceso)" : "Comprobante anulado",
           "success"
         );
         await load();
@@ -156,8 +158,8 @@ export function BoletasPage() {
     <div className="mx-auto w-full max-w-[min(100%,100rem)] px-5 py-8 sm:px-8 lg:px-12 xl:px-14">
       <div className="mb-6 flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
         <div>
-          <h1 className="text-xl font-bold text-gray-900 md:text-2xl">Comprobantes electrónicos</h1>
-          <p className="mt-1 text-sm text-gray-600">Boletas y facturas SUNAT, ordenados por fecha de emisión.</p>
+          <h1 className="text-xl font-bold text-gray-900 md:text-2xl">Comprobantes</h1>
+          <p className="mt-1 text-sm text-gray-600">Boletas y facturas, por fecha.</p>
         </div>
         <button
           type="button"
@@ -169,7 +171,8 @@ export function BoletasPage() {
       </div>
 
       {miscModalOpen ? (
-        <EmitMiscInvoiceModal
+        <EmitComprobanteModal
+          mode="misc"
           onClose={() => setMiscModalOpen(false)}
           onSuccess={() => void load()}
         />
@@ -189,41 +192,45 @@ export function BoletasPage() {
 
       <div className="overflow-hidden rounded-xl border border-gray-200 bg-white shadow-sm">
         <div className="overflow-x-auto">
-          <table className="w-full min-w-[1240px] border-collapse text-sm">
+          <table className="w-full min-w-[1380px] border-collapse text-sm">
             <thead>
               <tr className="border-b border-gray-200 bg-gray-50 text-left">
-                <th className="whitespace-nowrap px-5 py-3.5 text-base font-bold text-gray-800">Nro. CPE</th>
-                <th className="min-w-[11rem] px-5 py-3.5 text-base font-bold text-gray-800">Receptor</th>
-                <th className="min-w-[18rem] px-5 py-3.5 text-base font-bold text-gray-800 lg:min-w-[22rem]">
+                <th className="whitespace-nowrap px-6 py-4 text-base font-bold text-gray-800">Nro. CPE</th>
+                <th className="min-w-[11rem] px-6 py-4 text-base font-bold text-gray-800">Receptor</th>
+                <th className="min-w-[18rem] px-6 py-4 text-base font-bold text-gray-800 lg:min-w-[22rem]">
                   Descripción
                 </th>
-                <th className="whitespace-nowrap px-5 py-3.5 text-base font-bold text-gray-800">WhatsApp</th>
-                <th className="whitespace-nowrap px-5 py-3.5 text-right text-base font-bold text-gray-800">
+                <th className="whitespace-nowrap px-6 py-4 text-base font-bold text-gray-800">WhatsApp</th>
+                <th className="whitespace-nowrap px-6 py-4 text-right text-base font-bold text-gray-800">
                   Importe total
                 </th>
-                <th className="whitespace-nowrap px-5 py-3.5 text-center text-base font-bold text-gray-800">
+                <th className="whitespace-nowrap px-6 py-4 text-center text-base font-bold text-gray-800">
                   Fecha de emisión
                 </th>
-                <th className="px-5 py-3.5 text-center text-base font-bold text-gray-800">Acciones</th>
-                <th className="whitespace-nowrap px-5 py-3.5 text-center text-base font-bold text-gray-800">Anular</th>
+                <th className="min-w-[9.5rem] whitespace-nowrap px-6 py-4 text-center text-base font-bold text-gray-800">
+                  Comprobante
+                </th>
+                <th className="px-6 py-4 text-center text-base font-bold text-gray-800">Acciones</th>
+                <th className="whitespace-nowrap px-6 py-4 text-center text-base font-bold text-gray-800">Anular</th>
               </tr>
             </thead>
             <tbody>
               {!loading && rows.length === 0 ? (
                 <tr>
-                  <td colSpan={8} className="px-6 py-12 text-center text-gray-500">
+                  <td colSpan={9} className="px-6 py-12 text-center text-gray-500">
                     No hay comprobantes en esta vista.
                   </td>
                 </tr>
               ) : null}
               {loading ? (
                 <tr>
-                  <td colSpan={8} className="px-6 py-12 text-center text-gray-400">
+                  <td colSpan={9} className="px-6 py-12 text-center text-gray-400">
                     Cargando…
                   </td>
                 </tr>
               ) : (
                 rows.map((inv, idx) => {
+                  const plantillaHref = invoicePlantillaPdfHref(inv);
                   const st = wspStatus[inv.id] ?? "idle";
                   const wErr = wspError[inv.id];
                   const isFactura = inv.tipo_comprobante === "factura";
@@ -235,7 +242,7 @@ export function BoletasPage() {
                   const isVoidedRow = invSt === "voided";
                   return (
                     <tr key={inv.id} className={idx % 2 === 0 ? "bg-white" : "bg-gray-50/60"}>
-                      <td className="border-t border-gray-100 px-5 py-3.5 font-mono text-base text-gray-900">
+                      <td className="border-t border-gray-100 px-6 py-4 font-mono text-base text-gray-900">
                         {inv.serie_correlativo || "—"}
                         {isFactura ? (
                           <span className="ml-2 rounded bg-violet-100 px-1.5 py-0.5 text-xs font-semibold text-violet-800">
@@ -243,27 +250,20 @@ export function BoletasPage() {
                           </span>
                         ) : null}
                       </td>
-                      <td
-                        className="border-t border-gray-100 px-5 py-3.5 text-base text-gray-900"
-                        title={
-                          !invoiceReceptorOnly(inv)
-                            ? "Sin nombre de cliente en base de datos (emisión antigua o incompleta)."
-                            : undefined
-                        }
-                      >
+                      <td className="border-t border-gray-100 px-6 py-4 text-base text-gray-900">
                         {invoiceReceptorOnly(inv) || "—"}
                       </td>
-                      <td className="max-w-xl break-words border-t border-gray-100 px-5 py-3.5 text-base leading-relaxed text-gray-700">
+                      <td className="max-w-xl break-words border-t border-gray-100 px-6 py-4 text-base leading-relaxed text-gray-700">
                         {invoiceDescripcionOnly(inv) || "—"}
                       </td>
-                      <td className="border-t border-gray-100 px-5 py-3.5 font-mono text-base tabular-nums text-gray-800">
+                      <td className="border-t border-gray-100 px-6 py-4 font-mono text-base tabular-nums text-gray-800">
                         {inv.phone_number?.trim() ? (
                           <a
                             href={wspLink(inv.phone_number)}
                             target="_blank"
                             rel="noopener noreferrer"
                             className="text-green-700 underline decoration-green-600/50 underline-offset-2 hover:text-green-900"
-                            title="Abrir chat en WhatsApp"
+                            title="WhatsApp"
                           >
                             {invoiceTelefonoDisplay(inv)}
                           </a>
@@ -271,34 +271,51 @@ export function BoletasPage() {
                           "—"
                         )}
                       </td>
-                      <td className="border-t border-gray-100 px-5 py-3.5 text-right text-base font-semibold tabular-nums text-gray-900">
+                      <td className="border-t border-gray-100 px-6 py-4 text-right text-base font-semibold tabular-nums text-gray-900">
                         S/ {(inv.amount ?? 0).toFixed(2)}
                       </td>
-                      <td className="border-t border-gray-100 px-5 py-3.5 text-center text-base text-gray-700">
+                      <td className="border-t border-gray-100 px-6 py-4 text-center text-base text-gray-700">
                         {formatInvoiceEmissionDate(inv.created_at)}
                       </td>
-                      <td className="border-t border-gray-100 px-5 py-3.5">
-                        <div className="flex flex-wrap items-center justify-center gap-2">
-                          {inv.file_url ? (
+                      <td className="border-t border-gray-100 px-6 py-4 align-middle">
+                        <div className="flex flex-row flex-wrap items-center justify-center gap-x-2 gap-y-1.5">
+                          {plantillaHref ? (
                             <a
-                              href={invoicePdfHref(inv.file_url)}
+                              href={plantillaHref}
                               target="_blank"
                               rel="noopener noreferrer"
-                              className="inline-flex items-center gap-1 rounded-lg border border-blue-200 bg-blue-50 px-2.5 py-1.5 text-xs font-bold text-blue-800 hover:bg-blue-100"
+                              title={isFactura ? "Abrir factura" : "Abrir boleta"}
+                              className="inline-flex shrink-0 items-center justify-center whitespace-nowrap rounded-lg border border-blue-200 bg-blue-50 px-2.5 py-1.5 text-xs font-bold text-blue-800 hover:bg-blue-100"
                             >
-                              Ver
+                              {isFactura ? "Ver factura" : "Ver boleta"}
                             </a>
                           ) : (
-                            <span className="text-xs text-gray-400">Sin PDF</span>
+                            <span className="shrink-0 text-xs text-gray-400">—</span>
                           )}
-                          {inv.file_url ? (
+                          {/*
+                            PDF oficial apisunat (revivir):
+                            import { invoiceSunatPdfHref } from "../utils/invoicePdfLinks";
+                            {invoiceSunatPdfHref(inv) ? (
+                              <a
+                                href={invoiceSunatPdfHref(inv)!}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className="inline-flex shrink-0 … border-slate-300 bg-slate-50 …"
+                              >
+                                PDF SUNAT
+                              </a>
+                            ) : (
+                              <span className="shrink-0 text-xs text-gray-400">Sin SUNAT</span>
+                            )}
+                          */}
+                        </div>
+                      </td>
+                      <td className="border-t border-gray-100 px-6 py-4">
+                        <div className="flex flex-wrap items-center justify-center gap-2">
+                          {invoicePersonalizedPdfAbsoluteUrlForSend(inv) || inv.file_url?.trim() ? (
                             <button
                               type="button"
-                              title={
-                                !inv.phone_number?.trim()
-                                  ? "Falta teléfono en el comprobante"
-                                  : "Enviar PDF por WhatsApp"
-                              }
+                              title={!inv.phone_number?.trim() ? "Falta teléfono" : "Enviar por WhatsApp"}
                               disabled={!inv.phone_number?.trim() || st === "sending" || st === "sent"}
                               onClick={() => void sendWsp(inv)}
                               className={`inline-flex items-center gap-1 rounded-lg border-2 px-2.5 py-1.5 text-xs font-bold transition-colors ${
@@ -333,7 +350,7 @@ export function BoletasPage() {
                         </div>
                         {wErr ? <p className="mt-1 text-center text-xs text-red-600">{wErr}</p> : null}
                       </td>
-                      <td className="border-t border-gray-100 px-5 py-3.5 text-center align-top">
+                      <td className="border-t border-gray-100 px-6 py-4 text-center align-top">
                         {isVoidedRow ? (
                           <span className="inline-flex rounded-md bg-gray-200 px-2.5 py-1.5 text-xs font-semibold text-gray-800">
                             Anulado
@@ -343,11 +360,7 @@ export function BoletasPage() {
                             type="button"
                             disabled={voidingInvoiceId === inv.id}
                             onClick={() => void handleVoidRow(inv)}
-                            title={
-                              isFactura
-                                ? "Comunicación de baja ante SUNAT"
-                                : "Anular en resumen diario (SUNAT)"
-                            }
+                            title={isFactura ? "Anular factura" : "Anular boleta"}
                             className="w-full min-w-[7.5rem] rounded-lg border-2 border-red-200 bg-red-50 px-3 py-2 text-xs font-bold text-red-800 hover:bg-red-100 disabled:opacity-60 sm:w-auto"
                           >
                             {voidingInvoiceId === inv.id
@@ -357,12 +370,7 @@ export function BoletasPage() {
                                 : "Anular boleta"}
                           </button>
                         ) : (
-                          <span
-                            className="text-xs text-gray-400"
-                            title="Solo comprobantes emitidos por el panel con serie SUNAT"
-                          >
-                            —
-                          </span>
+                          <span className="text-xs text-gray-400">—</span>
                         )}
                       </td>
                     </tr>
@@ -374,10 +382,6 @@ export function BoletasPage() {
         </div>
       </div>
 
-      <p className="mt-4 text-xs text-gray-500">
-        <strong>Receptor</strong>: cliente SUNAT (y respaldo desde reserva si faltaba dato).{" "}
-        <strong>WhatsApp</strong>: contacto para enviar el PDF. Fechas en huso Lima.
-      </p>
     </div>
   );
 }

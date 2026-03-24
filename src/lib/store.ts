@@ -697,6 +697,7 @@ class Store {
       if (params.descripcion?.trim()) body.descripcion = params.descripcion.trim();
       if (params.fecha_de_emision?.trim()) body.fecha_de_emision = params.fecha_de_emision.trim();
       if (params.hora_de_emision?.trim()) body.hora_de_emision = params.hora_de_emision.trim();
+      if (params.condicion_venta?.trim()) body.condicion_venta = params.condicion_venta.trim();
 
       const res = await fetch("/api/invoices", {
         method: "POST",
@@ -716,6 +717,10 @@ class Store {
         user_id: reservation.chat_id,
         phone_number: reservation.phone_number,
         file_url: result.file_url,
+        file_url_sunat:
+          typeof result.file_url_sunat === "string" && result.file_url_sunat.trim()
+            ? result.file_url_sunat.trim()
+            : undefined,
         amount: amountToBill,
         court_type: reservation.court_type,
         field: reservation.field ?? null,
@@ -739,6 +744,8 @@ class Store {
             : "boleta",
         serie_correlativo:
           typeof result.serie_correlativo === "string" ? result.serie_correlativo : undefined,
+        condicion_venta:
+          typeof result.condicion_venta === "string" ? result.condicion_venta : params.condicion_venta?.trim(),
       };
 
       this.invoices = [...this.invoices, newInvoice];
@@ -775,6 +782,7 @@ class Store {
       if (params.descripcion?.trim()) body.descripcion = params.descripcion.trim();
       if (params.fecha_de_emision?.trim()) body.fecha_de_emision = params.fecha_de_emision.trim();
       if (params.hora_de_emision?.trim()) body.hora_de_emision = params.hora_de_emision.trim();
+      if (params.condicion_venta?.trim()) body.condicion_venta = params.condicion_venta.trim();
 
       const res = await fetch("/api/invoices", {
         method: "POST",

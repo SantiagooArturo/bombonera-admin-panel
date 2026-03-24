@@ -25,7 +25,7 @@ export default function ReceiptPopup({ onYes, onNo }: ReceiptPopupProps) {
           </button>
           <button
             onClick={onYes}
-            className="flex-1 px-6 py-4 font-semibold rounded-xl bg-green-600 text-white hover:bg-green-700 transition-colors"
+            className="flex-1 rounded-xl border border-field-dark bg-field-dark px-6 py-4 font-semibold text-white transition-colors hover:opacity-95"
           >
             Sí, emitir
           </button>

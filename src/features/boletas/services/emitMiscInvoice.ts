@@ -9,12 +9,14 @@ export type EmitMiscInvoiceParams = {
   fecha_de_emision?: string;
   /** HH:mm (Lima) */
   hora_de_emision?: string;
+  condicion_venta?: string;
 };
 
 export type EmitMiscInvoiceResult = {
   success: boolean;
   invoice_id?: string;
   file_url?: string;
+  file_url_sunat?: string;
   serie_correlativo?: string;
   error?: string;
 };
@@ -46,6 +48,7 @@ export async function emitMiscInvoice(params: EmitMiscInvoiceParams): Promise<Em
   }
   if (params.fecha_de_emision?.trim()) body.fecha_de_emision = params.fecha_de_emision.trim();
   if (params.hora_de_emision?.trim()) body.hora_de_emision = params.hora_de_emision.trim();
+  if (params.condicion_venta?.trim()) body.condicion_venta = params.condicion_venta.trim();
 
   const res = await fetch("/api/invoices", {
     method: "POST",

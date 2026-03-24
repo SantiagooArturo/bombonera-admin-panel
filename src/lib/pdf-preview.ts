@@ -43,8 +43,15 @@ export async function renderPdfToDataUrl(source: string, scale = 2): Promise<str
   try {
     const pdfjsLib = await loadPdfJs();
 
-    const proxyUrl = `/api/proxy-file?url=${encodeURIComponent(source)}`;
-    const response = await fetch(proxyUrl);
+    /** Rutas de esta app (formal-pdf, etc.): fetch directo. URLs absolutas externas: vía proxy CORS. */
+    const fetchUrl =
+      /^https?:\/\//i.test(source) || source.startsWith("//")
+        ? `/api/proxy-file?url=${encodeURIComponent(source)}`
+        : source.startsWith("/")
+          ? source
+          : `/api/proxy-file?url=${encodeURIComponent(source)}`;
+
+    const response = await fetch(fetchUrl);
     const data = new Uint8Array(await response.arrayBuffer());
     const pdf = await pdfjsLib.getDocument({ data }).promise;
     const page = await pdf.getPage(1);

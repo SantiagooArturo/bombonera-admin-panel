@@ -18,5 +18,5 @@ export function invoiceConceptSummary(inv: Invoice): string {
   const ct = inv.court_type as CourtType | undefined;
   if (ct && COURT_LABELS[ct]) parts.push(COURT_LABELS[ct]);
   if (parts.length) return parts.join(" · ");
-  return "Comprobante SUNAT";
+  return "Sin detalle";
 }
