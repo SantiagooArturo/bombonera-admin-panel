@@ -35,6 +35,16 @@ const NAV_ITEMS = [
     ),
   },
   {
+    href: "/boletas",
+    label: "Boletas Emitidas",
+    icon: (
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" className="w-6 h-6 shrink-0">
+        <path fillRule="evenodd" d="M5.625 1.5c-1.036 0-1.875.84-1.875 1.875v17.25c0 1.035.84 1.875 1.875 1.875h12.75c1.035 0 1.875-.84 1.875-1.875V12.75A3.75 3.75 0 0 0 16.5 9h-1.875a1.875 1.875 0 0 1-1.875-1.875V5.25A3.75 3.75 0 0 0 9 1.5H5.625Z" clipRule="evenodd" />
+        <path d="M12.971 1.816A5.23 5.23 0 0 1 14.25 5.25v1.875c0 .207.043.412.127.602a2.25 2.25 0 0 0 1.59 1.59 2.25 2.25 0 0 0 .602.127H18a5.23 5.23 0 0 1 3.434 1.279l-3.162-3.162a.75.75 0 0 0-1.061 0l-2.122 2.122a.75.75 0 0 1-1.06 0L12.97 1.816Z" />
+      </svg>
+    ),
+  },
+  {
     href: "/precios",
     label: "Precios",
     icon: (

@@ -2,6 +2,10 @@ import { NextRequest, NextResponse } from "next/server";
 import { getDb, getStorageBucket } from "@/lib/firebase-admin";
 import { randomUUID } from "crypto";
 import { getCourtLabelForReservation } from "@/lib/court-config-server";
+import {
+  receptorNombreParaSunat,
+  receptorNombreSnapshot,
+} from "@/features/boletas/utils/sanitizeReceptorNombre";
 
 // ── Configuración apisunat.pe (Lucode) ──
 // Docs: https://docs.apisunat.pe/integracion/facturacion-electronica/configuracion-api
@@ -85,9 +89,26 @@ export async function GET(request: NextRequest) {
     const userIdInParam = request.nextUrl.searchParams.get("user_id_in");
     const reservationId = request.nextUrl.searchParams.get("reservation_id");
     const transferIdsParam = request.nextUrl.searchParams.get("transfer_ids");
+    const fromParam = request.nextUrl.searchParams.get("from");
+    const toParam = request.nextUrl.searchParams.get("to");
+    const listAllParam = request.nextUrl.searchParams.get("list") === "all";
 
     let query: FirebaseFirestore.Query = db.collection("invoices");
-    if (userIdInParam) {
+    /** Listado completo del panel /boletas (orden por emisión). */
+    if (listAllParam) {
+      query = query.orderBy("created_at", "desc");
+    } else if (fromParam && toParam) {
+      const fromStart = new Date(`${fromParam.trim()}T00:00:00-05:00`);
+      const toEnd = new Date(`${toParam.trim()}T23:59:59.999-05:00`);
+      if (!Number.isNaN(fromStart.getTime()) && !Number.isNaN(toEnd.getTime()) && fromStart <= toEnd) {
+        const fromIso = fromStart.toISOString();
+        const toIso = toEnd.toISOString();
+        query = query
+          .where("created_at", ">=", fromIso)
+          .where("created_at", "<=", toIso)
+          .orderBy("created_at", "desc");
+      }
+    } else if (userIdInParam) {
       const ids = Array.from(
         new Set(
           userIdInParam
@@ -383,16 +404,24 @@ export async function POST(request: NextRequest) {
       }
     }
 
-    // 8. Guardar metadata en Firestore
+    // 8. Guardar metadata en Firestore (todo lo útil para reportes / panel)
+    const repSnapRaw = String(representative_name || "").trim();
+    const repSnap = receptorNombreSnapshot(repSnapRaw);
     const invoiceData = {
       reservation_id: isManual ? "manual" : reservation_id,
       user_id,
       phone_number: phone_number || "",
+      cliente_denominacion: clienteName,
+      cliente_numero_de_documento: cleanDoc,
+      cliente_tipo_documento: tipoComprobante === "factura" ? "6" : "1",
+      representative_name_snapshot: repSnap,
       file_url: fileUrl || "",
       amount: totalAmount,
       descripcion,
       court_type: court_type || "",
+      field: field ?? null,
       date: date || "",
+      time_slots: Array.isArray(time_slots) ? time_slots : [],
       transfer_id: transfer_id || null,
       serie: serieSunat,
       tipo_comprobante: tipoComprobante,
@@ -416,6 +445,14 @@ export async function POST(request: NextRequest) {
       file_url: fileUrl,
       serie_correlativo: serieCorrelativo,
       sunat_estado: payload.estado,
+      cliente_denominacion: clienteName,
+      cliente_numero_de_documento: cleanDoc,
+      cliente_tipo_documento: invoiceData.cliente_tipo_documento,
+      representative_name_snapshot: repSnap,
+      descripcion,
+      phone_number: phone_number || "",
+      amount: totalAmount,
+      tipo_comprobante: tipoComprobante,
     });
   } catch (error) {
     const msg =

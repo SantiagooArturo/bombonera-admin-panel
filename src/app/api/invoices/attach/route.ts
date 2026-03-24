@@ -1,6 +1,10 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getDb, getStorageBucket } from "@/lib/firebase-admin";
 import { randomUUID } from "crypto";
+import {
+  receptorNombreParaSunat,
+  receptorNombreSnapshot,
+} from "@/features/boletas/utils/sanitizeReceptorNombre";
 
 async function uploadToStorage(bucket: ReturnType<typeof getStorageBucket>, buffer: Buffer, filename: string, contentType: string) {
   const file = bucket.file(filename);
@@ -36,6 +40,34 @@ export async function POST(request: NextRequest) {
 
     const db = getDb();
 
+    let clienteDenominacion = "";
+    let clienteNumero = "";
+    let representativeSnapshot = "";
+    let resField: number | null = null;
+    try {
+      const resDoc = await db.collection("reservations").doc(reservationId).get();
+      if (resDoc.exists) {
+        const rd = resDoc.data() || {};
+        const rawRep = String(rd.representative_name || "").trim();
+        if (rawRep) {
+          representativeSnapshot = receptorNombreSnapshot(rawRep);
+          clienteDenominacion =
+            rawRep.length >= 3
+              ? receptorNombreParaSunat(rawRep) || "CLIENTE GENERAL"
+              : rawRep.toUpperCase();
+        }
+        const dni = String(rd.dni || "").replace(/\D/g, "");
+        const okDni =
+          (dni.length === 8 || dni.length === 11) && !/^0+$/.test(dni);
+        if (okDni) {
+          clienteNumero = dni;
+        }
+        if (typeof rd.field === "number") resField = rd.field;
+      }
+    } catch (e) {
+      console.warn("attach invoice: no se pudo leer reserva para receptor", e);
+    }
+
     if (transferId) {
       const transferDoc = await db.collection("transfers").doc(transferId).get();
       const transferAmount = transferDoc.exists ? (transferDoc.data()?.amount ?? 0) : 0;
@@ -70,14 +102,22 @@ export async function POST(request: NextRequest) {
       reservation_id: reservationId,
       user_id: userId,
       phone_number: phoneNumber,
+      cliente_denominacion: clienteDenominacion || "",
+      cliente_numero_de_documento: clienteNumero || "",
+      cliente_tipo_documento:
+        clienteNumero.length === 11 ? "6" : clienteNumero.length === 8 ? "1" : "",
+      representative_name_snapshot: representativeSnapshot || "",
       file_url: fileUrl,
       preview_url: previewUrl,
       amount,
       court_type: courtType,
+      field: resField,
       date,
+      descripcion: "Boleta PDF adjuntada manualmente al pago",
       transfer_id: transferId || null,
       status: "attached",
       source: "manual",
+      tipo_comprobante: "boleta" as const,
       created_at: new Date().toISOString(),
     };
 

@@ -704,7 +704,7 @@ class Store {
         throw new Error(msg);
       }
 
-      // Add to local state so UI updates immediately
+      // Add to local state so UI updates immediately (mismos campos que guarda Firestore)
       const newInvoice: Invoice = {
         id: result.invoice_id,
         reservation_id: reservation.id,
@@ -713,11 +713,28 @@ class Store {
         file_url: result.file_url,
         amount: amountToBill,
         court_type: reservation.court_type,
+        field: reservation.field ?? null,
         date: reservation.date,
-        transfer_id: transfer?.id, // Ensure Invoice type has this optional field or cast it
+        time_slots: reservation.time_slots,
+        transfer_id: transfer?.id,
         status: "emitted",
         created_at: new Date().toISOString(),
-      } as Invoice; // Casting in case type definition is outdated
+        descripcion: typeof result.descripcion === "string" ? result.descripcion : undefined,
+        cliente_denominacion:
+          typeof result.cliente_denominacion === "string" ? result.cliente_denominacion : undefined,
+        cliente_numero_de_documento:
+          typeof result.cliente_numero_de_documento === "string" ? result.cliente_numero_de_documento : undefined,
+        cliente_tipo_documento:
+          typeof result.cliente_tipo_documento === "string" ? result.cliente_tipo_documento : undefined,
+        representative_name_snapshot:
+          typeof result.representative_name_snapshot === "string" ? result.representative_name_snapshot : undefined,
+        tipo_comprobante:
+          result.tipo_comprobante === "factura" || params.tipo_comprobante === "factura"
+            ? "factura"
+            : "boleta",
+        serie_correlativo:
+          typeof result.serie_correlativo === "string" ? result.serie_correlativo : undefined,
+      };
 
       this.invoices = [...this.invoices, newInvoice];
       this.notify();

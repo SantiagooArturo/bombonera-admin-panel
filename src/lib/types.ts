@@ -182,7 +182,11 @@ export interface Invoice {
   preview_url?: string;
   amount: number;
   court_type: string;
+  /** Cancha (copiado al emitir). */
+  field?: number | null;
   date: string;
+  /** Franjas (copiadas al emitir). */
+  time_slots?: string[];
   transfer_id?: string | null;
   status: string;
   created_at: string;
@@ -192,6 +196,17 @@ export interface Invoice {
   serie_correlativo?: string;
   /** Si se guarda en Firestore (emisión futura o migración). */
   descripcion?: string;
+  /** Razón social / nombre en el comprobante SUNAT (emisión reciente). */
+  cliente_denominacion?: string;
+  /** DNI (8) o RUC (11) del receptor en SUNAT. */
+  cliente_numero_de_documento?: string;
+  /** "1" boleta (DNI), "6" factura (RUC). */
+  cliente_tipo_documento?: string;
+  /**
+   * Nombre del representante en la reserva al emitir (no confundir con WhatsApp).
+   * Útil si faltaba cliente_denominacion en datos viejos o para auditoría.
+   */
+  representative_name_snapshot?: string;
   sunat_estado?: string | null;
 }
 
