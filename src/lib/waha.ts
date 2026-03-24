@@ -1,14 +1,11 @@
 import { getDb } from "@/lib/firebase-admin";
+import { getChatbotApiUrl } from "@/lib/chatbot-api-url";
 import {
   getWahaApiKey,
   getWahaSession,
   getWahaUrl,
   isWahaConfigured,
 } from "@/lib/waha-server-config";
-
-let rawChatUrl = process.env.CHATBOT_API_URL || "";
-if (rawChatUrl && !rawChatUrl.startsWith("http")) rawChatUrl = `https://${rawChatUrl}`;
-const CHATBOT_API_URL = rawChatUrl;
 
 function normalizeChatId(chatId: string): string {
   const raw = (chatId || "").trim();
@@ -86,8 +83,9 @@ export async function sendWhatsAppMessage(chatId: string, text: string) {
   const normalizedChatId = resolved.chatId;
   const firebaseId = resolved.firebaseId;
 
-  if (CHATBOT_API_URL) {
-    const res = await fetch(`${CHATBOT_API_URL}/chatbot/send-bot-message/`, {
+  const chatbotUrl = getChatbotApiUrl();
+  if (chatbotUrl) {
+    const res = await fetch(`${chatbotUrl}/chatbot/send-bot-message/`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({

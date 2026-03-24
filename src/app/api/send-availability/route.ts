@@ -1,9 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
+import { getChatbotApiUrl } from "@/lib/chatbot-api-url";
 import { resolveWhatsAppTarget } from "@/lib/waha";
-
-let rawUrl = process.env.CHATBOT_API_URL || "";
-if (rawUrl && !rawUrl.startsWith("http")) rawUrl = `https://${rawUrl}`;
-const CHATBOT_API_URL = rawUrl;
 
 export async function POST(request: NextRequest) {
   try {
@@ -14,7 +11,8 @@ export async function POST(request: NextRequest) {
     if (!date || typeof date !== "string") {
       return NextResponse.json({ error: "date es obligatorio" }, { status: 400 });
     }
-    if (!CHATBOT_API_URL) {
+    const chatbotUrl = getChatbotApiUrl();
+    if (!chatbotUrl) {
       return NextResponse.json(
         { error: "CHATBOT_API_URL no configurado para enviar imagen de horarios." },
         { status: 500 }
@@ -22,7 +20,7 @@ export async function POST(request: NextRequest) {
     }
 
     const target = await resolveWhatsAppTarget(chat_id);
-    const botRes = await fetch(`${CHATBOT_API_URL}/chatbot/send-schedule-image/`, {
+    const botRes = await fetch(`${chatbotUrl}/chatbot/send-schedule-image/`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({

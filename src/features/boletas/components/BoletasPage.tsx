@@ -74,9 +74,15 @@ export function BoletasPage() {
   }, [searchedInvoices]);
 
   const sendWsp = useCallback(async (inv: Invoice) => {
-    const fileUrlForBot =
-      invoicePersonalizedPdfAbsoluteUrlForSend(inv) ?? inv.file_url?.trim() ?? "";
-    if (!fileUrlForBot) return;
+    const hasPdf = Boolean(invoicePlantillaPdfHref(inv) || inv.file_url?.trim());
+    if (!hasPdf) {
+      setWspStatus((s) => ({ ...s, [inv.id]: "error" }));
+      setWspError((e) => ({
+        ...e,
+        [inv.id]: "Este comprobante no tiene PDF para enviar.",
+      }));
+      return;
+    }
     const chatId = String(inv.phone_number || "").trim();
     if (!chatId) {
       setWspStatus((s) => ({ ...s, [inv.id]: "error" }));
@@ -102,7 +108,7 @@ export function BoletasPage() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           chat_id: chatId,
-          file_url: fileUrlForBot,
+          invoice_id: inv.id,
           filename: invoiceComprobantePdfDownloadFilename(inv),
         }),
       });

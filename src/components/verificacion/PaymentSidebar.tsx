@@ -10,10 +10,7 @@ import { calculateReservationPrice, courtConfigsToMap, formatDisplayPhone, wspLi
 import { WHATSAPP_ICON_PATH as WSP_ICON_PATH } from "@/features/operaciones/whatsappIconPath";
 import { EmitInvoiceModal } from "./EmitInvoiceModal";
 import { RegisterPaymentFormCobros } from "./RegisterPaymentFormCobros";
-import {
-  invoicePersonalizedPdfAbsoluteUrlForSend,
-  invoicePlantillaPdfHref,
-} from "@/features/boletas/utils/invoicePdfLinks";
+import { invoicePlantillaPdfHref } from "@/features/boletas/utils/invoicePdfLinks";
 import { invoiceComprobantePdfDownloadFilename } from "@/features/boletas/utils/comprobantePdfFilename";
 
 // ─── Props ───────────────────────────────────────────────────────────────────
@@ -1047,14 +1044,12 @@ const TransferCard = memo(function TransferCard({
                     setWspStatus("sending");
                     setWspError(null);
                     try {
-                      const fileUrlForBot =
-                        invoicePersonalizedPdfAbsoluteUrlForSend(invoice) ?? invoice.file_url;
                       const res = await fetch("/api/invoices/send", {
                         method: "POST",
                         headers: { "Content-Type": "application/json" },
                         body: JSON.stringify({
                           chat_id: chatId,
-                          file_url: fileUrlForBot,
+                          invoice_id: invoice.id,
                           filename: invoiceComprobantePdfDownloadFilename(invoice),
                         }),
                       });
