@@ -121,8 +121,8 @@ export function SaludWahaQrPanel() {
     <div className="bg-white rounded-2xl border border-gray-200 shadow-sm p-6 h-full">
       <h2 className="text-xl font-bold text-gray-900">Vincular WhatsApp</h2>
       <p className="text-sm text-gray-500 mt-1">
-        El keepalive marcó un problema. Escanea el código con WhatsApp en tu teléfono para reconectar la sesión WAHA. El código se
-        renueva solo cada minuto aproximadamente.
+        El keepalive marcó un problema. Escanea el código con WhatsApp en tu teléfono para reconectar la sesión WAHA. WhatsApp
+        renueva el QR a menudo; este panel vuelve a pedirlo cada pocos segundos para mostrar siempre uno vigente.
       </p>
 
       <div className="mt-6 flex flex-col items-center">
