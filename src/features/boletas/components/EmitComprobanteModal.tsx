@@ -354,7 +354,7 @@ export const EmitComprobanteModal = memo(function EmitComprobanteModal(props: Em
               type="text"
               value={descripcionEdit}
               onChange={(e) => setDescripcionEdit(e.target.value)}
-              placeholder={misc ? "Ej: Venta del día" : "Ej: Alquiler cancha"}
+              placeholder={misc ? "Ej: Venta del día" : "Ej: Alquiler cancha 9"}
               className={inputClass}
               autoComplete="off"
             />

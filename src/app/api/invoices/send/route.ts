@@ -75,7 +75,7 @@ export async function POST(request: NextRequest) {
       body: JSON.stringify({
         chat_id: target.chatId,
         file_base64: pdfBase64,
-        caption: "Aquí tienes tu boleta de pago 🧾",
+        caption: "Muchas Gracias!",
         filename: sanitizeSendPdfFilename(filenameOpt),
       }),
       signal: AbortSignal.timeout(BOT_TIMEOUT_MS),

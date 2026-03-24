@@ -338,21 +338,34 @@ export async function POST(request: NextRequest) {
     const valorUnitario = (totalAmount / 1.18).toFixed(6);
 
     // 2. Descripción del servicio (aparece en la boleta impresa)
+    // Negocio: mostrar número de cancha (ej. 9), no el tipo (ej. 6 vs 6).
     const descripcion =
       typeof descripcionOverride === "string" && descripcionOverride.trim().length > 0
         ? descripcionOverride.trim()
         : isManual
         ? "Servicios diversos"
-        : (() => {
-            const courtLabel = getCourtLabelForReservation(field, court_type);
-            let d = `Alquiler cancha ${courtLabel}`;
-    if (date) {
-      const dateObj = new Date(date + "T12:00:00");
+        : await (async () => {
+            const fieldNum =
+              typeof field === "number" && Number.isFinite(field)
+                ? field
+                : field != null && String(field).trim() !== ""
+                  ? parseInt(String(field), 10)
+                  : NaN;
+            const courtPart =
+              Number.isFinite(fieldNum) && fieldNum >= 1 && fieldNum <= 12
+                ? String(fieldNum)
+                : await getCourtLabelForReservation(
+                    Number.isFinite(fieldNum) ? fieldNum : null,
+                    typeof court_type === "string" ? court_type : undefined
+                  );
+            let d = `Alquiler cancha ${courtPart}`;
+            if (date) {
+              const dateObj = new Date(date + "T12:00:00");
               d += ` - ${dateObj.toLocaleDateString("es-PE", { day: "2-digit", month: "2-digit", year: "numeric" })}`;
-    }
-    if (time_slots?.length > 0) {
-      const startH = time_slots[0];
-      const lastH = parseInt(time_slots[time_slots.length - 1].split(":")[0]) + 1;
+            }
+            if (time_slots?.length > 0) {
+              const startH = time_slots[0];
+              const lastH = parseInt(time_slots[time_slots.length - 1].split(":")[0]) + 1;
               d += ` ${formatHour12(startH)}-${formatHour12(`${lastH}:00`)}`;
             }
             return d;

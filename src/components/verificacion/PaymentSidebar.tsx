@@ -840,12 +840,18 @@ const PaymentAccordionList = memo(function PaymentAccordionList({
 
 // ─── Transfer Card ───────────────────────────────────────────────────────────
 
-/** Construye la descripción que usará SUNAT (formato 12h: 10am-12pm). */
+/** Construye la descripción que usará SUNAT (formato 12h: 10am-12pm). Prioriza número de cancha, no el tipo (6vs6). */
 function buildInvoiceDescription(reservation: Reservation | undefined, courtConfigs: CourtFieldConfig[] | null | undefined): string {
   if (!reservation) return "Alquiler cancha — datos de reserva no disponibles";
-  const cfg = reservation.field && courtConfigs?.length ? courtConfigs.find((c) => c.field === reservation.field) : null;
-  const courtLabel = cfg ? getCourtSizeLabel(cfg) : (reservation.field === 9 ? "5 vs 5" : "6 vs 6");
-  let desc = `Alquiler cancha ${courtLabel}`;
+  const f = reservation.field;
+  const courtPart =
+    f != null && f >= 1 && f <= 12
+      ? String(f)
+      : (() => {
+          const cfg = f && courtConfigs?.length ? courtConfigs.find((c) => c.field === f) : null;
+          return cfg ? getCourtSizeLabel(cfg) : f === 9 ? "5 vs 5" : "6 vs 6";
+        })();
+  let desc = `Alquiler cancha ${courtPart}`;
   if (reservation.date) {
     const d = new Date(reservation.date + "T12:00:00");
     desc += ` - ${d.toLocaleDateString("es-PE", { day: "2-digit", month: "2-digit", year: "numeric" })}`;
