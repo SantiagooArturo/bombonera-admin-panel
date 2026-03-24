@@ -1,9 +1,9 @@
 import { NextResponse } from "next/server";
 import {
-  WAHA_API_KEY,
   WAHA_ENV_MISSING,
-  WAHA_SESSION,
-  WAHA_URL,
+  getWahaApiKey,
+  getWahaSession,
+  getWahaUrl,
   isWahaConfigured,
 } from "@/lib/waha-server-config";
 
@@ -20,10 +20,12 @@ export async function GET() {
       );
     }
 
-    const headers: Record<string, string> = { Accept: "application/json" };
-    headers["X-Api-Key"] = WAHA_API_KEY;
+    const headers: Record<string, string> = {
+      Accept: "application/json",
+      "X-Api-Key": getWahaApiKey(),
+    };
 
-    const res = await fetch(`${WAHA_URL}/api/sessions/${encodeURIComponent(WAHA_SESSION)}`, {
+    const res = await fetch(`${getWahaUrl()}/api/sessions/${encodeURIComponent(getWahaSession())}`, {
       headers,
       cache: "no-store",
     });

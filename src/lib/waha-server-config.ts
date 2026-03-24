@@ -1,9 +1,11 @@
 /**
  * Configuración del servidor WAHA (solo servidor / API routes).
- * Requiere en entorno: WAHA_URL, WAHA_API_KEY.
- * Opcional: WAHA_SESSION (nombre de sesión; por defecto "default").
+ * Requiere: WAHA_URL, WAHA_API_KEY. Opcional: WAHA_SESSION (default "default").
  *
- * QR (documentación WAHA): GET {WAHA_URL}/api/{WAHA_SESSION}/auth/qr
+ * Importante: leer `process.env` con getters en cada uso, no en constantes de módulo;
+ * si no, en Next.js a veces quedan vacías en dev/build al inlining.
+ *
+ * QR: GET {getWahaUrl()}/api/{getWahaSession()}/auth/qr
  */
 function normalizeWahaBaseUrl(raw: string | undefined): string {
   let u = (raw ?? "").trim();
@@ -12,12 +14,21 @@ function normalizeWahaBaseUrl(raw: string | undefined): string {
   return u.replace(/\/+$/, "");
 }
 
-export const WAHA_URL = normalizeWahaBaseUrl(process.env.WAHA_URL);
-export const WAHA_API_KEY = (process.env.WAHA_API_KEY ?? "").trim();
-export const WAHA_SESSION = (process.env.WAHA_SESSION ?? "default").trim() || "default";
+export function getWahaUrl(): string {
+  return normalizeWahaBaseUrl(process.env.WAHA_URL);
+}
+
+export function getWahaApiKey(): string {
+  return (process.env.WAHA_API_KEY ?? "").trim();
+}
+
+export function getWahaSession(): string {
+  const s = (process.env.WAHA_SESSION ?? "default").trim();
+  return s || "default";
+}
 
 export function isWahaConfigured(): boolean {
-  return Boolean(WAHA_URL && WAHA_API_KEY);
+  return Boolean(getWahaUrl() && getWahaApiKey());
 }
 
 /** Mensaje para respuestas API cuando faltan variables de entorno. */

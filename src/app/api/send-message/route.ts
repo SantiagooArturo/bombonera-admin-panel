@@ -1,9 +1,9 @@
 import { NextRequest, NextResponse } from "next/server";
 import {
-  WAHA_API_KEY,
   WAHA_ENV_MISSING,
-  WAHA_SESSION,
-  WAHA_URL,
+  getWahaApiKey,
+  getWahaSession,
+  getWahaUrl,
   isWahaConfigured,
 } from "@/lib/waha-server-config";
 
@@ -24,14 +24,14 @@ export async function POST(request: NextRequest) {
 
     const headers: Record<string, string> = {
       "Content-Type": "application/json",
-      "X-Api-Key": WAHA_API_KEY,
+      "X-Api-Key": getWahaApiKey(),
     };
 
-    const res = await fetch(`${WAHA_URL}/api/sendText`, {
+    const res = await fetch(`${getWahaUrl()}/api/sendText`, {
       method: "POST",
       headers,
       body: JSON.stringify({
-        session: WAHA_SESSION,
+        session: getWahaSession(),
         chatId: chat_id,
         text: message,
       }),

@@ -1,8 +1,8 @@
 import { getDb } from "@/lib/firebase-admin";
 import {
-  WAHA_API_KEY,
-  WAHA_SESSION,
-  WAHA_URL,
+  getWahaApiKey,
+  getWahaSession,
+  getWahaUrl,
   isWahaConfigured,
 } from "@/lib/waha-server-config";
 
@@ -118,14 +118,14 @@ export async function sendWhatsAppMessage(chatId: string, text: string) {
 
   const headers: Record<string, string> = {
     "Content-Type": "application/json",
-    "X-Api-Key": WAHA_API_KEY,
+    "X-Api-Key": getWahaApiKey(),
   };
 
-  const res = await fetch(`${WAHA_URL}/api/sendText`, {
+  const res = await fetch(`${getWahaUrl()}/api/sendText`, {
     method: "POST",
     headers,
     body: JSON.stringify({
-      session: WAHA_SESSION,
+      session: getWahaSession(),
       chatId: normalizedChatId,
       text,
     }),

@@ -1,6 +1,11 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getCourtLabelForReservation } from "@/lib/court-config-server";
-import { WAHA_API_KEY, WAHA_SESSION, WAHA_URL, isWahaConfigured } from "@/lib/waha-server-config";
+import {
+  getWahaApiKey,
+  getWahaSession,
+  getWahaUrl,
+  isWahaConfigured,
+} from "@/lib/waha-server-config";
 
 async function sendWhatsAppMessage(chatId: string, text: string) {
   if (!isWahaConfigured()) {
@@ -9,14 +14,14 @@ async function sendWhatsAppMessage(chatId: string, text: string) {
 
   const headers: Record<string, string> = {
     "Content-Type": "application/json",
-    "X-Api-Key": WAHA_API_KEY,
+    "X-Api-Key": getWahaApiKey(),
   };
 
-  const res = await fetch(`${WAHA_URL}/api/sendText`, {
+  const res = await fetch(`${getWahaUrl()}/api/sendText`, {
     method: "POST",
     headers,
     body: JSON.stringify({
-      session: WAHA_SESSION,
+      session: getWahaSession(),
       chatId,
       text,
     }),
