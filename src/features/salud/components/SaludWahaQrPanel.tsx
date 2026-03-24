@@ -3,8 +3,8 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { WahaQrImage, WahaSession } from "@/lib/types";
 
-const SESSION_POLL_MS = 3_000;
-const QR_REFRESH_MS = 50_000;
+/** Mismo intervalo para sesión y QR: el QR de WhatsApp rota ~cada ~60s sin fase conocida; pedir cada pocos s asegura imagen vigente. */
+const WAHA_POLL_MS = 3_000;
 
 function parseSession(json: unknown): WahaSession | null {
   if (!json || typeof json !== "object") return null;
@@ -86,7 +86,7 @@ export function SaludWahaQrPanel() {
     };
 
     pollSession();
-    const sid = setInterval(pollSession, SESSION_POLL_MS);
+    const sid = setInterval(pollSession, WAHA_POLL_MS);
     return () => {
       offRef.current = true;
       clearInterval(sid);
@@ -96,7 +96,7 @@ export function SaludWahaQrPanel() {
   useEffect(() => {
     if (wahaConnected) return;
     loadQr();
-    const qid = setInterval(loadQr, QR_REFRESH_MS);
+    const qid = setInterval(loadQr, WAHA_POLL_MS);
     return () => clearInterval(qid);
   }, [wahaConnected, loadQr]);
 
