@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { Invoice } from "@/lib/types";
 import { useToastContext } from "@/components/ClientLayout";
 import { WHATSAPP_ICON_PATH } from "@/features/operaciones/whatsappIconPath";
@@ -15,10 +15,7 @@ import {
 import { fetchAllInvoices } from "../services/fetchInvoices";
 import { voidSunatInvoice } from "../services/voidSunatInvoice";
 import { EmitComprobanteModal } from "./EmitComprobanteModal";
-import {
-  invoicePersonalizedPdfAbsoluteUrlForSend,
-  invoicePlantillaPdfHref,
-} from "../utils/invoicePdfLinks";
+import { invoicePlantillaPdfHref } from "../utils/invoicePdfLinks";
 import { invoiceComprobantePdfDownloadFilename } from "../utils/comprobantePdfFilename";
 import { invoiceMatchesSearch } from "../utils/invoiceMatchesSearch";
 import { BoletasMobileList } from "./BoletasMobileList";
@@ -37,6 +34,8 @@ export function BoletasPage() {
   const [voidingInvoiceId, setVoidingInvoiceId] = useState<string | null>(null);
   const [miscModalOpen, setMiscModalOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
+  /** Evita depender de `didStart` tras setState (Strict Mode / batching puede dejar la petición sin ejecutar). */
+  const wspSendInFlightRef = useRef<Set<string>>(new Set());
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -74,55 +73,60 @@ export function BoletasPage() {
   }, [searchedInvoices]);
 
   const sendWsp = useCallback(async (inv: Invoice) => {
+    const id = inv.id;
     const hasPdf = Boolean(invoicePlantillaPdfHref(inv) || inv.file_url?.trim());
     if (!hasPdf) {
-      setWspStatus((s) => ({ ...s, [inv.id]: "error" }));
+      setWspStatus((s) => ({ ...s, [id]: "error" }));
       setWspError((e) => ({
         ...e,
-        [inv.id]: "Este comprobante no tiene PDF para enviar.",
+        [id]: "Este comprobante no tiene PDF para enviar.",
       }));
       return;
     }
     const chatId = String(inv.phone_number || "").trim();
     if (!chatId) {
-      setWspStatus((s) => ({ ...s, [inv.id]: "error" }));
-      setWspError((e) => ({ ...e, [inv.id]: "Este comprobante no tiene teléfono para WhatsApp." }));
+      setWspStatus((s) => ({ ...s, [id]: "error" }));
+      setWspError((e) => ({ ...e, [id]: "Este comprobante no tiene teléfono para WhatsApp." }));
       return;
     }
-    let didStart = false;
-    setWspStatus((s) => {
-      const cur = s[inv.id] ?? "idle";
-      if (cur === "sending" || cur === "sent") return s;
-      didStart = true;
-      return { ...s, [inv.id]: "sending" };
-    });
-    if (!didStart) return;
+
+    if (wspSendInFlightRef.current.has(id)) return;
+    wspSendInFlightRef.current.add(id);
+
+    setWspStatus((s) => ({ ...s, [id]: "sending" }));
     setWspError((e) => {
       const next = { ...e };
-      delete next[inv.id];
+      delete next[id];
       return next;
     });
+
     try {
       const res = await fetch("/api/invoices/send", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           chat_id: chatId,
-          invoice_id: inv.id,
+          invoice_id: id,
           filename: invoiceComprobantePdfDownloadFilename(inv),
         }),
+        signal: AbortSignal.timeout(130_000),
       });
       if (!res.ok) {
         const data = await res.json().catch(() => ({}));
         throw new Error(typeof data?.error === "string" ? data.error : "No se pudo enviar.");
       }
-      setWspStatus((s) => ({ ...s, [inv.id]: "sent" }));
+      setWspStatus((s) => ({ ...s, [id]: "sent" }));
     } catch (err) {
-      setWspStatus((s) => ({ ...s, [inv.id]: "error" }));
-      setWspError((e) => ({
-        ...e,
-        [inv.id]: err instanceof Error ? err.message : "No se pudo enviar.",
-      }));
+      const msg =
+        err instanceof Error
+          ? err.name === "TimeoutError" || err.message.includes("aborted")
+            ? "Tiempo de espera agotado al enviar."
+            : err.message
+          : "No se pudo enviar.";
+      setWspStatus((s) => ({ ...s, [id]: "error" }));
+      setWspError((e) => ({ ...e, [id]: msg }));
+    } finally {
+      wspSendInFlightRef.current.delete(id);
     }
   }, []);
 
@@ -402,7 +406,7 @@ export function BoletasPage() {
                       </td>
                       <td className="border-t border-gray-100 px-2 py-5 align-middle lg:px-3 xl:px-3.5">
                         <div className="flex flex-wrap items-center justify-center gap-1">
-                          {invoicePersonalizedPdfAbsoluteUrlForSend(inv) || inv.file_url?.trim() ? (
+                          {invoicePlantillaPdfHref(inv) || inv.file_url?.trim() ? (
                             <button
                               type="button"
                               title={!inv.phone_number?.trim() ? "Falta teléfono" : "Enviar por WhatsApp"}

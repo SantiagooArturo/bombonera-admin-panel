@@ -10,10 +10,7 @@ import {
   invoiceReceptorOnly,
   invoiceTelefonoDisplay,
 } from "../utils/invoiceTableColumns";
-import {
-  invoicePersonalizedPdfAbsoluteUrlForSend,
-  invoicePlantillaPdfHref,
-} from "../utils/invoicePdfLinks";
+import { invoicePlantillaPdfHref } from "../utils/invoicePdfLinks";
 import { IconOpenInNewTab, SerieCorrelativoCell } from "./boletasSharedUi";
 
 type BoletasMobileListProps = {
@@ -79,7 +76,7 @@ export function BoletasMobileList({
         const isVoidedRow = invSt === "voided";
         const recText = invoiceReceptorOnly(inv) || "—";
         const descText = invoiceDescripcionOnly(inv) || "—";
-        const canSend = Boolean(invoicePersonalizedPdfAbsoluteUrlForSend(inv) || inv.file_url?.trim());
+        const canSend = Boolean(invoicePlantillaPdfHref(inv) || inv.file_url?.trim());
         const hasPhone = Boolean(inv.phone_number?.trim());
         const cancha = canchaSummary(inv);
 
