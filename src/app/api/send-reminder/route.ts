@@ -1,8 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getCourtLabelForReservation } from "@/lib/court-config-server";
-
-const WAHA_URL = "https://waha-live-wahaa.dmncie.easypanel.host";
-const WAHA_API_KEY = "MiClaveSegura123";
+import { WAHA_API_KEY, WAHA_URL } from "@/lib/waha-server-config";
 
 async function sendWhatsAppMessage(chatId: string, text: string) {
   const headers: Record<string, string> = {

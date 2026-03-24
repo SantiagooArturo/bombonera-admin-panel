@@ -25,6 +25,8 @@ interface PaymentSidebarProps {
   onEmitInvoice: (transfer: Transfer, params: EmitComprobanteParams) => void;
   onAttachInvoice: (transfer: Transfer, file: File) => void;
   onDetachInvoice: (invoiceId: string) => Promise<boolean>;
+  /** Anular boleta/factura emitida ante SUNAT (apisunat). */
+  onVoidSunatInvoice?: (invoiceId: string) => Promise<boolean>;
   onUpdateDni: (dni: string) => Promise<boolean>;
   onUpdateRuc?: (ruc: string) => Promise<boolean>;
   onUpdateName?: (name: string) => Promise<boolean>;
@@ -152,6 +154,7 @@ interface SimplifiedPaymentTransferHandlers {
   onEmitInvoice: (t: Transfer, p: EmitComprobanteParams) => void;
   onAttachInvoice: (t: Transfer, f: File) => void;
   onDetachInvoice: (id: string) => Promise<boolean>;
+  onVoidSunatInvoice?: (invoiceId: string) => Promise<boolean>;
   onRevokeManualPayment: (id: string) => void;
   onRegisterPayment: (reservationId: string | null, amount: number, method: PaymentMethod, mediaUrl?: string) => void;
   onViewImage: (url: string) => void;
@@ -227,6 +230,7 @@ function ReservationDetailContent({
     onEmitInvoice,
     onAttachInvoice,
     onDetachInvoice,
+    onVoidSunatInvoice,
     onRevokeManualPayment,
     onRegisterPayment,
     onViewImage,
@@ -677,6 +681,7 @@ function ReservationDetailContent({
                   onEmitInvoice={onEmitInvoice}
                   onAttachInvoice={onAttachInvoice}
                   onDetachInvoice={onDetachInvoice}
+                  onVoidSunatInvoice={onVoidSunatInvoice}
                   onRevoke={onRevokeManualPayment}
                   onViewImage={onViewImage}
                   onHover={(hovering) => onHoverTransferChanged(hovering ? transfer.id : null)}
@@ -714,6 +719,7 @@ const PaymentAccordionList = memo(function PaymentAccordionList({
   onEmitInvoice,
   onAttachInvoice,
   onDetachInvoice,
+  onVoidSunatInvoice,
   onRevokeManualPayment,
   onToggleApplied,
   onViewImage,
@@ -732,6 +738,7 @@ const PaymentAccordionList = memo(function PaymentAccordionList({
   onEmitInvoice: (t: Transfer, p: EmitComprobanteParams) => void;
   onAttachInvoice: (t: Transfer, f: File) => void;
   onDetachInvoice: (id: string) => Promise<boolean>;
+  onVoidSunatInvoice?: (invoiceId: string) => Promise<boolean>;
   onRevokeManualPayment: (id: string) => void;
   onToggleApplied: (transferId: string, applied: boolean) => void;
   onViewImage: (url: string) => void;
@@ -812,6 +819,7 @@ const PaymentAccordionList = memo(function PaymentAccordionList({
                   onEmitInvoice={onEmitInvoice}
                   onAttachInvoice={onAttachInvoice}
                   onDetachInvoice={onDetachInvoice}
+                  onVoidSunatInvoice={onVoidSunatInvoice}
                   onRevoke={onRevokeManualPayment}
                   onViewImage={onViewImage}
                   onHover={(h) => onHover(h ? t.id : null)}
@@ -851,7 +859,7 @@ function buildInvoiceDescription(reservation: Reservation | undefined, courtConf
 }
 
 const TransferCard = memo(function TransferCard({
-  transfer, invoice, reservation, courtConfigs, emittingInvoiceId, attachingInvoiceId, onVerify, onEmitInvoice, onAttachInvoice, onDetachInvoice, onRevoke, onViewImage, onHover, chatId, clientDni, clientRuc,
+  transfer, invoice, reservation, courtConfigs, emittingInvoiceId, attachingInvoiceId, onVerify, onEmitInvoice, onAttachInvoice, onDetachInvoice, onVoidSunatInvoice, onRevoke, onViewImage, onHover, chatId, clientDni, clientRuc,
 }: {
   transfer: Transfer;
   invoice: Invoice | undefined;
@@ -863,6 +871,7 @@ const TransferCard = memo(function TransferCard({
   onEmitInvoice: (transfer: Transfer, params: EmitComprobanteParams) => void;
   onAttachInvoice: (transfer: Transfer, file: File) => void;
   onDetachInvoice: (invoiceId: string) => Promise<boolean>;
+  onVoidSunatInvoice?: (invoiceId: string) => Promise<boolean>;
   onRevoke: (transferId: string) => void;
   onViewImage: (url: string) => void;
   onHover: (hovering: boolean) => void;
@@ -876,9 +885,17 @@ const TransferCard = memo(function TransferCard({
   const [wspStatus, setWspStatus] = useState<"idle" | "sending" | "sent" | "error">("idle");
   const [wspError, setWspError] = useState<string | null>(null);
   const [detachingInvoice, setDetachingInvoice] = useState(false);
+  const [voidingInvoice, setVoidingInvoice] = useState(false);
   const isManualLike = transfer.source === "manual" || transfer.source === "manual_adjustment";
   const isValidated = transfer.verified || isManualLike;
   const canAttach = isValidated && !invoice;
+  const invoiceStatusNorm = invoice?.status ?? (invoice?.serie_correlativo ? "emitted" : "");
+  const isInvoiceVoided = invoiceStatusNorm === "voided";
+  const canVoidSunat =
+    !!onVoidSunatInvoice &&
+    !!invoice &&
+    invoiceStatusNorm === "emitted" &&
+    Boolean(String(invoice.serie_correlativo || "").trim());
 
   const handleDrop = useCallback((e: React.DragEvent) => {
     e.preventDefault();
@@ -1059,13 +1076,43 @@ const TransferCard = memo(function TransferCard({
               {wspError && (
                 <p className="text-xs text-red-600 font-medium">{wspError}</p>
               )}
-              <button
-                type="button"
-                onClick={() => alert("Esta funcionalidad aún está en desarrollo")}
-                className="w-full py-2.5 px-4 rounded-xl text-sm font-bold border-2 border-red-300 bg-red-50 text-red-800 hover:bg-red-100 transition-colors"
-              >
-                {invoice.tipo_comprobante === "factura" ? "Anular factura" : "Anular boleta"}
-              </button>
+              {isInvoiceVoided ? (
+                <p className="rounded-xl border-2 border-gray-200 bg-gray-100 py-2.5 px-3 text-center text-sm font-bold text-gray-600">
+                  Anulado ante SUNAT
+                </p>
+              ) : canVoidSunat ? (
+                <button
+                  type="button"
+                  disabled={voidingInvoice}
+                  onClick={async () => {
+                    const label = invoice.tipo_comprobante === "factura" ? "factura" : "boleta";
+                    if (
+                      !confirm(
+                        `¿Anular esta ${label} (${invoice.serie_correlativo}) en SUNAT?\n\nNo se puede deshacer desde el panel. Las boletas se anulan vía resumen diario; las facturas vía comunicación de baja.`
+                      )
+                    ) {
+                      return;
+                    }
+                    setVoidingInvoice(true);
+                    try {
+                      await onVoidSunatInvoice!(invoice.id);
+                    } finally {
+                      setVoidingInvoice(false);
+                    }
+                  }}
+                  className="w-full py-2.5 px-4 rounded-xl text-sm font-bold border-2 border-red-300 bg-red-50 text-red-800 hover:bg-red-100 transition-colors disabled:opacity-60"
+                >
+                  {voidingInvoice
+                    ? "Anulando…"
+                    : invoice.tipo_comprobante === "factura"
+                      ? "Anular factura"
+                      : "Anular boleta"}
+                </button>
+              ) : invoiceStatusNorm === "emitted" && !invoice.serie_correlativo ? (
+                <p className="text-xs text-amber-800">
+                  No se puede anular desde el panel: falta serie/correlativo SUNAT en este registro.
+                </p>
+              ) : null}
             </div>
           ) : (
             <div className="space-y-3">
@@ -1260,6 +1307,7 @@ const CobrosTabContent = memo(function CobrosTabContent({
   onEmitInvoice,
   onAttachInvoice,
   onDetachInvoice,
+  onVoidSunatInvoice,
   onRevokeManualPayment,
   onRegisterPayment,
   onToggleApplied,
@@ -1284,6 +1332,7 @@ const CobrosTabContent = memo(function CobrosTabContent({
   onEmitInvoice: (t: Transfer, p: EmitComprobanteParams) => void;
   onAttachInvoice: (t: Transfer, f: File) => void;
   onDetachInvoice: (id: string) => Promise<boolean>;
+  onVoidSunatInvoice?: (invoiceId: string) => Promise<boolean>;
   onRevokeManualPayment: (id: string) => void;
   onRegisterPayment: (reservationId: string | null, amount: number, method: PaymentMethod, mediaUrl?: string) => void;
   onToggleApplied: (transferId: string, applied: boolean) => void;
@@ -1486,6 +1535,7 @@ const CobrosTabContent = memo(function CobrosTabContent({
               onEmitInvoice={onEmitInvoice}
               onAttachInvoice={onAttachInvoice}
               onDetachInvoice={onDetachInvoice}
+              onVoidSunatInvoice={onVoidSunatInvoice}
               onRevokeManualPayment={onRevokeManualPayment}
               onToggleApplied={handleToggleAppliedWithSession}
               onViewImage={setViewingImage}
@@ -1545,6 +1595,7 @@ const PaymentSidebar = memo(function PaymentSidebar({
   onEmitInvoice,
   onAttachInvoice,
   onDetachInvoice,
+  onVoidSunatInvoice,
   onUpdateDni,
   onUpdateRuc,
   onUpdateName,
@@ -1783,6 +1834,7 @@ const PaymentSidebar = memo(function PaymentSidebar({
               onEmitInvoice,
               onAttachInvoice,
               onDetachInvoice,
+              onVoidSunatInvoice,
               onRevokeManualPayment,
               onRegisterPayment,
               onViewImage: (url) => setViewingImage(url),
@@ -1810,6 +1862,7 @@ const PaymentSidebar = memo(function PaymentSidebar({
             onEmitInvoice={onEmitInvoice}
             onAttachInvoice={onAttachInvoice}
             onDetachInvoice={onDetachInvoice}
+            onVoidSunatInvoice={onVoidSunatInvoice}
             onRevokeManualPayment={onRevokeManualPayment}
             onRegisterPayment={onRegisterPayment}
             onToggleApplied={onToggleApplied ?? (() => {})}

@@ -263,6 +263,7 @@ function VerificacionContent() {
                     onEmitInvoice={sidebar.handleEmitInvoice}
                     onAttachInvoice={sidebar.handleAttachInvoice}
                     onDetachInvoice={sidebar.handleDetachInvoice}
+                    onVoidSunatInvoice={sidebar.handleVoidSunatInvoice}
                     onUpdateDni={sidebar.handleUpdateDni}
                     onUpdateRuc={sidebar.handleUpdateRuc}
                     onUpdateName={sidebar.handleUpdateName}

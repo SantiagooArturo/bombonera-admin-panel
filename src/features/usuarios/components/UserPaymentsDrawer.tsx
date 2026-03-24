@@ -12,6 +12,8 @@ import { RegisterPaymentFormCobros } from "@/components/verificacion/RegisterPay
 import { UserDrawerClientInfo } from "./UserDrawerClientInfo";
 import { collectInvoiceUserKeys } from "@/features/usuarios/utils/collectInvoiceUserKeys";
 import { invoiceConceptSummary } from "@/features/usuarios/utils/invoiceConceptSummary";
+import { voidSunatInvoice } from "@/features/boletas/services/voidSunatInvoice";
+import { mergeInvoiceVoided } from "@/features/boletas/utils/mergeInvoiceVoided";
 
 function invoicePdfHref(fileUrl: string) {
   return `/api/proxy-file?url=${encodeURIComponent(fileUrl)}`;
@@ -61,6 +63,7 @@ export default function UserPaymentsDrawer({ user, onClose, onUserUpdated }: Use
     Record<string, "idle" | "sending" | "sent" | "error">
   >({});
   const [invoiceWspError, setInvoiceWspError] = useState<Record<string, string>>({});
+  const [voidingInvoiceId, setVoidingInvoiceId] = useState<string | null>(null);
 
   useEffect(() => {
     setLocalUser(user);
@@ -224,6 +227,51 @@ export default function UserPaymentsDrawer({ user, onClose, onUserUpdated }: Use
   useEffect(() => {
     loadData();
   }, [loadData]);
+
+  const handleVoidSunatFromDrawer = useCallback(
+    async (inv: Invoice) => {
+      const st = String(inv.status || "");
+      const emittedLike =
+        st === "emitted" || (st === "" && Boolean(String(inv.serie_correlativo || "").trim()));
+      if (st === "voided") return;
+      if (st === "attached" || !emittedLike) {
+        toast("Solo se anulan comprobantes emitidos por SUNAT desde el panel.", "error");
+        return;
+      }
+      if (!String(inv.serie_correlativo || "").trim()) {
+        toast("Falta serie/correlativo SUNAT en este comprobante.", "error");
+        return;
+      }
+      const label = inv.tipo_comprobante === "factura" ? "factura" : "boleta";
+      if (
+        !confirm(
+          `¿Anular esta ${label} (${inv.serie_correlativo}) en SUNAT?\n\nNo se puede deshacer desde el panel.`
+        )
+      ) {
+        return;
+      }
+      setVoidingInvoiceId(inv.id);
+      try {
+        const result = await voidSunatInvoice(inv.id);
+        if (!result.success) {
+          toast(result.error, "error");
+          return;
+        }
+        toast(
+          result.sunat_estado === "PENDIENTE"
+            ? "Anulación enviada a SUNAT (pendiente)"
+            : "Comprobante anulado ante SUNAT",
+          "success"
+        );
+        setInvoices((prev) =>
+          prev.map((i) => (i.id === inv.id ? mergeInvoiceVoided(i, result.sunat_estado) : i))
+        );
+      } finally {
+        setVoidingInvoiceId(null);
+      }
+    },
+    [toast]
+  );
 
   const handleVerify = useCallback(async (transferId: string, currentVerified: boolean) => {
     const ok = await store.verifyTransfer(transferId, !currentVerified);
@@ -529,6 +577,13 @@ export default function UserPaymentsDrawer({ user, onClose, onUserUpdated }: Use
                           const isFactura = inv.tipo_comprobante === "factura";
                           const wspStatus = invoiceWspStatus[inv.id] ?? "idle";
                           const wspErr = invoiceWspError[inv.id];
+                          const invSt = String(inv.status || "");
+                          const invEmittedLike =
+                            invSt === "emitted" ||
+                            (invSt === "" && Boolean(String(inv.serie_correlativo || "").trim()));
+                          const invVoided = invSt === "voided";
+                          const canVoidDrawer =
+                            invEmittedLike && Boolean(String(inv.serie_correlativo || "").trim());
 
                           return (
                             <li
@@ -697,13 +752,28 @@ export default function UserPaymentsDrawer({ user, onClose, onUserUpdated }: Use
                                       ) : null}
                                     </>
                                   ) : null}
-                                  <button
-                                    type="button"
-                                    onClick={() => alert("Esta funcionalidad aún está en desarrollo")}
-                                    className="w-full rounded-xl border-2 border-red-300 bg-red-50 py-2.5 px-4 text-sm font-bold text-red-800 transition-colors hover:bg-red-100"
-                                  >
-                                    {isFactura ? "Anular factura" : "Anular boleta"}
-                                  </button>
+                                  {invVoided ? (
+                                    <p className="rounded-xl border-2 border-gray-200 bg-gray-100 py-2.5 px-3 text-center text-sm font-bold text-gray-600">
+                                      Anulado ante SUNAT
+                                    </p>
+                                  ) : canVoidDrawer ? (
+                                    <button
+                                      type="button"
+                                      disabled={voidingInvoiceId === inv.id}
+                                      onClick={() => void handleVoidSunatFromDrawer(inv)}
+                                      className="w-full rounded-xl border-2 border-red-300 bg-red-50 py-2.5 px-4 text-sm font-bold text-red-800 transition-colors hover:bg-red-100 disabled:opacity-60"
+                                    >
+                                      {voidingInvoiceId === inv.id
+                                        ? "Anulando…"
+                                        : isFactura
+                                          ? "Anular factura"
+                                          : "Anular boleta"}
+                                    </button>
+                                  ) : invEmittedLike && !inv.serie_correlativo ? (
+                                    <p className="text-xs text-amber-800">
+                                      No se puede anular: falta serie/correlativo en el registro.
+                                    </p>
+                                  ) : null}
                                 </div>
                               </div>
                             </li>

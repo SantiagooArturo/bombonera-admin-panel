@@ -1,12 +1,9 @@
 import { getDb } from "@/lib/firebase-admin";
+import { WAHA_API_KEY, WAHA_SESSION, WAHA_URL } from "@/lib/waha-server-config";
 
 let rawChatUrl = process.env.CHATBOT_API_URL || "";
 if (rawChatUrl && !rawChatUrl.startsWith("http")) rawChatUrl = `https://${rawChatUrl}`;
 const CHATBOT_API_URL = rawChatUrl;
-
-const WAHA_URL = "https://waha-live-wahaa.dmncie.easypanel.host";
-const WAHA_API_KEY = "MiClaveSegura123";
-const WAHA_SESSION = process.env.WAHA_SESSION || "default";
 
 function normalizeChatId(chatId: string): string {
   const raw = (chatId || "").trim();

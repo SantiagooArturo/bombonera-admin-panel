@@ -208,6 +208,9 @@ export interface Invoice {
    */
   representative_name_snapshot?: string;
   sunat_estado?: string | null;
+  /** ISO si se anuló vía apisunat (comunicación de baja / resumen diario). */
+  voided_at?: string;
+  void_motivo?: string;
 }
 
 /** Formulario emitir boleta/factura → cuerpo hacia POST /api/invoices */
@@ -274,4 +277,23 @@ export interface BotHealthStatus {
   last_error_message: string | null;
   consecutive_failures: number;
   cron_schedule: string;
+}
+
+/** Respuesta de GET /api/{sesión}/auth/qr en WAHA (proxy: /api/waha/qr). */
+export interface WahaQrImage {
+  mimetype: string;
+  data: string;
+}
+
+/** Cuenta vinculada cuando la sesión WAHA está activa. */
+export interface WahaSessionUser {
+  id: string;
+  pushName?: string | null;
+}
+
+/** Estado de sesión WAHA (proxy: /api/waha/session). */
+export interface WahaSession {
+  name: string;
+  status: string;
+  me: WahaSessionUser | null;
 }

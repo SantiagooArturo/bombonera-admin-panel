@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import type { Invoice } from "@/lib/types";
+import { useToastContext } from "@/components/ClientLayout";
 import { WHATSAPP_ICON_PATH } from "@/features/operaciones/whatsappIconPath";
 import { formatInvoiceEmissionDate } from "../utils/formatInvoiceEmissionDate";
 import { wspLink } from "@/features/operaciones/utils";
@@ -11,6 +12,8 @@ import {
   invoiceTelefonoDisplay,
 } from "../utils/invoiceTableColumns";
 import { fetchAllInvoices } from "../services/fetchInvoices";
+import { voidSunatInvoice } from "../services/voidSunatInvoice";
+import { mergeInvoiceVoided } from "../utils/mergeInvoiceVoided";
 import { EmitMiscInvoiceModal } from "./EmitMiscInvoiceModal";
 
 function invoicePdfHref(fileUrl: string) {
@@ -20,12 +23,14 @@ function invoicePdfHref(fileUrl: string) {
 type ComprobanteTab = "todos" | "boletas" | "facturas";
 
 export function BoletasPage() {
+  const toast = useToastContext();
   const [tab, setTab] = useState<ComprobanteTab>("todos");
   const [invoices, setInvoices] = useState<Invoice[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [wspStatus, setWspStatus] = useState<Record<string, "idle" | "sending" | "sent" | "error">>({});
   const [wspError, setWspError] = useState<Record<string, string>>({});
+  const [voidingInvoiceId, setVoidingInvoiceId] = useState<string | null>(null);
   const [miscModalOpen, setMiscModalOpen] = useState(false);
 
   const load = useCallback(async () => {
@@ -99,6 +104,40 @@ export function BoletasPage() {
     }
   }, []);
 
+  const handleVoidRow = useCallback(
+    async (inv: Invoice) => {
+      const st = String(inv.status || "");
+      const emittedLike =
+        st === "emitted" || (st === "" && Boolean(String(inv.serie_correlativo || "").trim()));
+      if (st === "voided" || st === "attached" || !emittedLike) {
+        toast("Solo se anulan comprobantes emitidos por SUNAT desde el panel.", "error");
+        return;
+      }
+      if (!inv.serie_correlativo?.trim()) {
+        toast("Falta serie/correlativo SUNAT.", "error");
+        return;
+      }
+      const label = inv.tipo_comprobante === "factura" ? "factura" : "boleta";
+      if (!confirm(`¿Anular esta ${label} (${inv.serie_correlativo}) en SUNAT?`)) return;
+      setVoidingInvoiceId(inv.id);
+      try {
+        const result = await voidSunatInvoice(inv.id);
+        if (!result.success) {
+          toast(result.error, "error");
+          return;
+        }
+        toast(
+          result.sunat_estado === "PENDIENTE" ? "Anulación enviada (pendiente SUNAT)" : "Anulado ante SUNAT",
+          "success"
+        );
+        await load();
+      } finally {
+        setVoidingInvoiceId(null);
+      }
+    },
+    [toast, load]
+  );
+
   const tabBtn = (id: ComprobanteTab, label: string, count: number) => (
     <button
       type="button"
@@ -151,7 +190,7 @@ export function BoletasPage() {
 
       <div className="overflow-hidden rounded-xl border border-gray-200 bg-white shadow-sm">
         <div className="overflow-x-auto">
-          <table className="w-full min-w-[980px] border-collapse text-sm">
+          <table className="w-full min-w-[1060px] border-collapse text-sm">
             <thead>
               <tr className="border-b border-gray-200 bg-gray-50 text-left">
                 <th className="px-4 py-3 font-bold text-gray-800">Nro. CPE</th>
@@ -161,19 +200,20 @@ export function BoletasPage() {
                 <th className="px-4 py-3 text-right font-bold text-gray-800">Importe total</th>
                 <th className="px-4 py-3 text-center font-bold text-gray-800">Fecha de emisión</th>
                 <th className="px-4 py-3 text-center font-bold text-gray-800">Acciones</th>
+                <th className="px-4 py-3 text-center font-bold text-gray-800">Anular</th>
               </tr>
             </thead>
             <tbody>
               {!loading && rows.length === 0 ? (
                 <tr>
-                  <td colSpan={7} className="px-4 py-12 text-center text-gray-500">
+                  <td colSpan={8} className="px-4 py-12 text-center text-gray-500">
                     No hay comprobantes en esta vista.
                   </td>
                 </tr>
               ) : null}
               {loading ? (
                 <tr>
-                  <td colSpan={7} className="px-4 py-12 text-center text-gray-400">
+                  <td colSpan={8} className="px-4 py-12 text-center text-gray-400">
                     Cargando…
                   </td>
                 </tr>
@@ -182,6 +222,12 @@ export function BoletasPage() {
                   const st = wspStatus[inv.id] ?? "idle";
                   const wErr = wspError[inv.id];
                   const isFactura = inv.tipo_comprobante === "factura";
+                  const invSt = String(inv.status || "");
+                  const emittedLike =
+                    invSt === "emitted" ||
+                    (invSt === "" && Boolean(String(inv.serie_correlativo || "").trim()));
+                  const canVoidRow = emittedLike && Boolean(String(inv.serie_correlativo || "").trim());
+                  const isVoidedRow = invSt === "voided";
                   return (
                     <tr key={inv.id} className={idx % 2 === 0 ? "bg-white" : "bg-gray-50/60"}>
                       <td className="border-t border-gray-100 px-4 py-3 font-mono text-gray-900">
@@ -281,6 +327,38 @@ export function BoletasPage() {
                           ) : null}
                         </div>
                         {wErr ? <p className="mt-1 text-center text-xs text-red-600">{wErr}</p> : null}
+                      </td>
+                      <td className="border-t border-gray-100 px-3 py-3 text-center align-top">
+                        {isVoidedRow ? (
+                          <span className="inline-flex rounded-md bg-gray-200 px-2.5 py-1.5 text-xs font-semibold text-gray-800">
+                            Anulado
+                          </span>
+                        ) : canVoidRow ? (
+                          <button
+                            type="button"
+                            disabled={voidingInvoiceId === inv.id}
+                            onClick={() => void handleVoidRow(inv)}
+                            title={
+                              isFactura
+                                ? "Comunicación de baja ante SUNAT"
+                                : "Anular en resumen diario (SUNAT)"
+                            }
+                            className="w-full min-w-[7.5rem] rounded-lg border-2 border-red-200 bg-red-50 px-3 py-2 text-xs font-bold text-red-800 hover:bg-red-100 disabled:opacity-60 sm:w-auto"
+                          >
+                            {voidingInvoiceId === inv.id
+                              ? "Anulando…"
+                              : isFactura
+                                ? "Anular factura"
+                                : "Anular boleta"}
+                          </button>
+                        ) : (
+                          <span
+                            className="text-xs text-gray-400"
+                            title="Solo comprobantes emitidos por el panel con serie SUNAT"
+                          >
+                            —
+                          </span>
+                        )}
                       </td>
                     </tr>
                   );

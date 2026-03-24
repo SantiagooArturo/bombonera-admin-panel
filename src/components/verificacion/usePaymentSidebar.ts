@@ -4,6 +4,8 @@ import { useState, useCallback, useRef } from "react";
 import { useStore } from "@/lib/hooks";
 import { useToastContext } from "@/components/ClientLayout";
 import type { Reservation, Transfer, Invoice, PaymentMethod, ClientType, EmitComprobanteParams } from "@/lib/types";
+import { voidSunatInvoice } from "@/features/boletas/services/voidSunatInvoice";
+import { mergeInvoiceVoided } from "@/features/boletas/utils/mergeInvoiceVoided";
 import { normalizePeruPhone } from "@/features/operaciones/utils";
 
 interface UsePaymentSidebarOptions {
@@ -465,6 +467,27 @@ export function usePaymentSidebar(options?: UsePaymentSidebarOptions) {
     }
   }, [selectedReservation, toast]);
 
+  const handleVoidSunatInvoice = useCallback(
+    async (invoiceId: string) => {
+      const result = await voidSunatInvoice(invoiceId);
+      if (!result.success) {
+        toast(result.error, "error");
+        return false;
+      }
+      toast(
+        result.sunat_estado === "PENDIENTE"
+          ? "Anulación enviada a SUNAT (pendiente de respuesta)"
+          : "Comprobante anulado ante SUNAT",
+        "success"
+      );
+      setInvoices((prev) =>
+        prev.map((i) => (i.id === invoiceId ? mergeInvoiceVoided(i, result.sunat_estado) : i))
+      );
+      return true;
+    },
+    [toast]
+  );
+
   const handleRevokeManualPayment = useCallback(async (transferId: string) => {
     const transfer = transfers.find((t) => t.id === transferId);
     if (!transfer) return;
@@ -689,6 +712,7 @@ export function usePaymentSidebar(options?: UsePaymentSidebarOptions) {
     statusUpdating,
     handleAttachInvoice,
     handleDetachInvoice,
+    handleVoidSunatInvoice,
     handleRevokeManualPayment,
     handleRegisterPayment,
     handleUpdateAmountPaid,

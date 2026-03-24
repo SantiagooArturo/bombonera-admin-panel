@@ -1,8 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-
-const WAHA_URL = "https://waha-live-wahaa.dmncie.easypanel.host";
-const WAHA_API_KEY = "MiClaveSegura123";
-const WAHA_SESSION = process.env.WAHA_SESSION || "default";
+import { WAHA_API_KEY, WAHA_SESSION, WAHA_URL } from "@/lib/waha-server-config";
 
 export async function POST(request: NextRequest) {
   try {

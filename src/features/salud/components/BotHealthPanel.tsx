@@ -31,7 +31,12 @@ const FALLBACK_STATUS: BotHealthStatus = {
   cron_schedule: "0 */4 * * *",
 };
 
-export function BotHealthPanel() {
+export function BotHealthPanel({
+  onHealthResolved,
+}: {
+  /** Se llama cuando termina una carga (inicial o tras actualizar): `true` si el keepalive está OK. */
+  onHealthResolved?: (healthy: boolean) => void;
+} = {}) {
   const [status, setStatus] = useState<BotHealthStatus | null>(null);
   const [loading, setLoading] = useState(true);
   const [probingNow, setProbingNow] = useState(false);
@@ -59,6 +64,12 @@ export function BotHealthPanel() {
   const isInitialLoading = loading && !status;
   const isGreen =
     effectiveStatus.indicator === "green" || effectiveStatus.status === "ok";
+
+  useEffect(() => {
+    if (!loading) {
+      onHealthResolved?.(isGreen);
+    }
+  }, [loading, isGreen, onHealthResolved]);
 
   const probeNow = useCallback(async () => {
     setProbingNow(true);
