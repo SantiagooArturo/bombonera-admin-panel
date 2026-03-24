@@ -2,10 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { getDb, getStorageBucket } from "@/lib/firebase-admin";
 import { randomUUID } from "crypto";
 import { getCourtLabelForReservation } from "@/lib/court-config-server";
-import {
-  receptorNombreParaSunat,
-  receptorNombreSnapshot,
-} from "@/features/boletas/utils/sanitizeReceptorNombre";
+import { receptorNombreSnapshot } from "@/features/boletas/utils/sanitizeReceptorNombre";
 
 // ── Configuración apisunat.pe (Lucode) ──
 // Docs: https://docs.apisunat.pe/integracion/facturacion-electronica/configuracion-api
