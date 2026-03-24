@@ -4,7 +4,7 @@ import { useState, useEffect, useCallback, useMemo } from "react";
 import ReactDOM from "react-dom";
 import { useStore } from "@/lib/hooks";
 import { useToastContext } from "@/components/ClientLayout";
-import type { User, Transfer, Invoice, Reservation } from "@/lib/types";
+import type { User, Transfer, Invoice, Reservation, EmitComprobanteParams } from "@/lib/types";
 import { normalizePeruPhone, userWhatsAppPhone } from "@/features/operaciones/utils";
 import { WHATSAPP_ICON_PATH } from "@/features/operaciones/whatsappIconPath";
 import { EmitInvoiceModal } from "@/components/verificacion/EmitInvoiceModal";
@@ -236,22 +236,12 @@ export default function UserPaymentsDrawer({ user, onClose, onUserUpdated }: Use
   }, [store, toast, loadData]);
 
   const handleEmitInvoice = useCallback(
-    async (
-      transfer: Transfer & { id: string },
-      params: {
-        tipo_comprobante: "boleta" | "factura";
-        doc_num: string;
-        cliente_denominacion?: string;
-        descripcion?: string;
-        amount?: number;
-      }
-    ) => {
+    async (transfer: Transfer & { id: string }, params: EmitComprobanteParams) => {
       if (transfer.id === "manual") {
         setEmittingId("manual");
         try {
           await store.emitInvoiceManual(localUser, {
-            tipo_comprobante: params.tipo_comprobante,
-            doc_num: params.doc_num,
+            ...params,
             amount: params.amount ?? 0,
             descripcion: (params.descripcion || "").trim() || "Servicios diversos",
             cliente_denominacion: (params.cliente_denominacion || "").trim() || "CLIENTE GENERAL",

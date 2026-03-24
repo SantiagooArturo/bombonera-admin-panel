@@ -2,7 +2,7 @@
 
 import { useState, useRef, useEffect, useCallback, useMemo, memo } from "react";
 import ReactDOM from "react-dom";
-import { Transfer, Invoice, Reservation, PaymentMethod, ClientType, CLIENT_TYPE_LABELS, STATUS_LABELS, getPendingExpiryTimeFormatted, type ReservationStatus } from "@/lib/types";
+import { Transfer, Invoice, Reservation, PaymentMethod, ClientType, CLIENT_TYPE_LABELS, STATUS_LABELS, getPendingExpiryTimeFormatted, type ReservationStatus, type EmitComprobanteParams } from "@/lib/types";
 import { PdfPreviewThumbnail } from "@/components/PdfPreviewThumbnail";
 import type { CourtFieldConfig } from "@/lib/court-config";
 import { getCourtSizeLabel } from "@/lib/court-config";
@@ -22,15 +22,7 @@ interface PaymentSidebarProps {
   attachingInvoiceId: string | null;
   paymentLoading: boolean;
   onVerifyTransfer: (transferId: string, currentStatus: boolean) => void;
-  onEmitInvoice: (
-    transfer: Transfer,
-    params: {
-      tipo_comprobante: "boleta" | "factura";
-      doc_num: string;
-      cliente_denominacion?: string;
-      descripcion?: string;
-    }
-  ) => void;
+  onEmitInvoice: (transfer: Transfer, params: EmitComprobanteParams) => void;
   onAttachInvoice: (transfer: Transfer, file: File) => void;
   onDetachInvoice: (invoiceId: string) => Promise<boolean>;
   onUpdateDni: (dni: string) => Promise<boolean>;
@@ -157,7 +149,7 @@ interface SimplifiedPaymentTransferHandlers {
   attachingInvoiceId: string | null;
   paymentLoading: boolean;
   onVerifyTransfer: (transferId: string, currentStatus: boolean) => void;
-  onEmitInvoice: (t: Transfer, p: { tipo_comprobante: "boleta" | "factura"; doc_num: string; cliente_denominacion?: string; descripcion?: string }) => void;
+  onEmitInvoice: (t: Transfer, p: EmitComprobanteParams) => void;
   onAttachInvoice: (t: Transfer, f: File) => void;
   onDetachInvoice: (id: string) => Promise<boolean>;
   onRevokeManualPayment: (id: string) => void;
@@ -737,7 +729,7 @@ const PaymentAccordionList = memo(function PaymentAccordionList({
   emittingInvoiceId: string | null;
   attachingInvoiceId: string | null;
   onVerifyTransfer: (id: string, verified: boolean) => void;
-  onEmitInvoice: (t: Transfer, p: { tipo_comprobante: "boleta" | "factura"; doc_num: string; cliente_denominacion?: string; descripcion?: string }) => void;
+  onEmitInvoice: (t: Transfer, p: EmitComprobanteParams) => void;
   onAttachInvoice: (t: Transfer, f: File) => void;
   onDetachInvoice: (id: string) => Promise<boolean>;
   onRevokeManualPayment: (id: string) => void;
@@ -868,15 +860,7 @@ const TransferCard = memo(function TransferCard({
   emittingInvoiceId: string | null;
   attachingInvoiceId: string | null;
   onVerify: (transferId: string, currentStatus: boolean) => void;
-  onEmitInvoice: (
-    transfer: Transfer,
-    params: {
-      tipo_comprobante: "boleta" | "factura";
-      doc_num: string;
-      cliente_denominacion?: string;
-      descripcion?: string;
-    }
-  ) => void;
+  onEmitInvoice: (transfer: Transfer, params: EmitComprobanteParams) => void;
   onAttachInvoice: (transfer: Transfer, file: File) => void;
   onDetachInvoice: (invoiceId: string) => Promise<boolean>;
   onRevoke: (transferId: string) => void;
@@ -1297,7 +1281,7 @@ const CobrosTabContent = memo(function CobrosTabContent({
   emittingInvoiceId: string | null;
   attachingInvoiceId: string | null;
   onVerifyTransfer: (id: string, verified: boolean) => void;
-  onEmitInvoice: (t: Transfer, p: { tipo_comprobante: "boleta" | "factura"; doc_num: string; cliente_denominacion?: string; descripcion?: string }) => void;
+  onEmitInvoice: (t: Transfer, p: EmitComprobanteParams) => void;
   onAttachInvoice: (t: Transfer, f: File) => void;
   onDetachInvoice: (id: string) => Promise<boolean>;
   onRevokeManualPayment: (id: string) => void;

@@ -11,6 +11,7 @@ import {
   invoiceTelefonoDisplay,
 } from "../utils/invoiceTableColumns";
 import { fetchAllInvoices } from "../services/fetchInvoices";
+import { EmitMiscInvoiceModal } from "./EmitMiscInvoiceModal";
 
 function invoicePdfHref(fileUrl: string) {
   return `/api/proxy-file?url=${encodeURIComponent(fileUrl)}`;
@@ -25,6 +26,7 @@ export function BoletasPage() {
   const [error, setError] = useState<string | null>(null);
   const [wspStatus, setWspStatus] = useState<Record<string, "idle" | "sending" | "sent" | "error">>({});
   const [wspError, setWspError] = useState<Record<string, string>>({});
+  const [miscModalOpen, setMiscModalOpen] = useState(false);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -114,10 +116,26 @@ export function BoletasPage() {
 
   return (
     <div className="mx-auto max-w-6xl px-4 py-8 md:px-8">
-      <div className="mb-6">
-        <h1 className="text-xl font-bold text-gray-900 md:text-2xl">Comprobantes electrónicos</h1>
-        <p className="mt-1 text-sm text-gray-600">Boletas y facturas SUNAT, ordenados por fecha de emisión.</p>
+      <div className="mb-6 flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
+        <div>
+          <h1 className="text-xl font-bold text-gray-900 md:text-2xl">Comprobantes electrónicos</h1>
+          <p className="mt-1 text-sm text-gray-600">Boletas y facturas SUNAT, ordenados por fecha de emisión.</p>
+        </div>
+        <button
+          type="button"
+          onClick={() => setMiscModalOpen(true)}
+          className="shrink-0 rounded-xl bg-field-dark px-4 py-2.5 text-sm font-bold text-white shadow-sm hover:opacity-95"
+        >
+          Emitir boleta / factura
+        </button>
       </div>
+
+      {miscModalOpen ? (
+        <EmitMiscInvoiceModal
+          onClose={() => setMiscModalOpen(false)}
+          onSuccess={() => void load()}
+        />
+      ) : null}
 
       <div className="mb-6 rounded-xl border border-gray-200 bg-gray-100 p-1 shadow-sm">
         <div className="flex gap-1" role="tablist" aria-label="Tipo de comprobante">

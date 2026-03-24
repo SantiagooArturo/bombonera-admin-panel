@@ -2,6 +2,10 @@ import { NextRequest, NextResponse } from "next/server";
 import { getDb, getStorageBucket } from "@/lib/firebase-admin";
 import { randomUUID } from "crypto";
 import { getCourtLabelForReservation } from "@/lib/court-config-server";
+import { BOLETA_SIN_DOCUMENTO_CLIENTE_MAX_SOLES } from "@/features/boletas/constants/sunat";
+import { buildFormalComprobanteInput } from "@/features/boletas/pdf/buildFormalComprobanteInput";
+import { getEmisorSunatFromEnv } from "@/features/boletas/pdf/emisorSunatEnv";
+import { validateEmissionDateTimeForApi } from "@/features/boletas/utils/limaEmissionDatetime";
 import { receptorNombreSnapshot } from "@/features/boletas/utils/sanitizeReceptorNombre";
 
 // ── Configuración apisunat.pe (Lucode) ──
@@ -16,6 +20,7 @@ const APISUNAT_SERIE_FACTURA = process.env.APISUNAT_SERIE_FACTURA || "F001";
 // o si el contador quedó desincronizado por cualquier razón.
 const MAX_EMISSION_RETRIES = 5;
 
+const MISC_PANEL_USER_ID = "misc_panel";
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -185,16 +190,35 @@ export async function POST(request: NextRequest) {
       cliente_denominacion: clienteOverride,
       descripcion: descripcionOverride,
       manual: manualEmission,
+      misc_emission: miscEmissionRaw,
+      fecha_de_emision: fechaEmisionClient,
+      hora_de_emision: horaEmisionClient,
     } = body;
 
+    const miscEmission = miscEmissionRaw === true;
     const isManual = manualEmission === true;
+
+    if (miscEmission && !isManual) {
+      return NextResponse.json(
+        { error: "Emisión miscelánea requiere manual: true" },
+        { status: 400 }
+      );
+    }
+
+    let effectiveUserId = user_id;
+    let effectivePhone = phone_number;
+    if (miscEmission) {
+      effectiveUserId = MISC_PANEL_USER_ID;
+      effectivePhone = "";
+    }
+
     if (!isManual && (!reservation_id || !user_id)) {
       return NextResponse.json(
         { error: "Faltan reservation_id o user_id" },
         { status: 400 }
       );
     }
-    if (isManual && (!user_id || !phone_number)) {
+    if (isManual && !miscEmission && (!user_id || !phone_number)) {
       return NextResponse.json(
         { error: "En emisión manual faltan user_id o phone_number" },
         { status: 400 }
@@ -204,12 +228,86 @@ export async function POST(request: NextRequest) {
     // ── Validación de documento de identidad ──
     const tipoComprobante: "boleta" | "factura" =
       tipo_comprobante === "factura" ? "factura" : "boleta";
-    const cleanDoc = String(doc_num || "").replace(/\D/g, "");
-    if (tipoComprobante === "factura" && cleanDoc.length !== 11) {
-      return NextResponse.json({ error: "RUC inválido para factura" }, { status: 400 });
+
+    const totalAmountEarly =
+      typeof amount === "number" && amount > 0 ? amount : Number(amount) > 0 ? Number(amount) : 0;
+
+    if (isManual && totalAmountEarly <= 0) {
+      return NextResponse.json(
+        { error: "En emisión manual el monto debe ser mayor a 0" },
+        { status: 400 }
+      );
     }
-    if (tipoComprobante === "boleta" && cleanDoc.length !== 8) {
-      return NextResponse.json({ error: "DNI inválido para boleta" }, { status: 400 });
+
+    let cleanDoc = String(doc_num || "").replace(/\D/g, "");
+    /** Código catálogo SUNAT 06 enviado a apisunat. */
+    let clienteTipoDocSunat: string;
+
+    if (miscEmission) {
+      const denom = typeof clienteOverride === "string" ? clienteOverride.trim() : "";
+      if (denom.length < 3) {
+        return NextResponse.json(
+          { error: "Indique nombre o razón social del receptor (mín. 3 caracteres)." },
+          { status: 400 }
+        );
+      }
+      if (tipoComprobante === "factura") {
+        if (cleanDoc.length !== 11) {
+          return NextResponse.json({ error: "RUC inválido para factura (11 dígitos)." }, { status: 400 });
+        }
+        clienteTipoDocSunat = "6";
+      } else {
+        if (cleanDoc.length === 8) {
+          clienteTipoDocSunat = "1";
+        } else if (cleanDoc.length === 0) {
+          if (totalAmountEarly > BOLETA_SIN_DOCUMENTO_CLIENTE_MAX_SOLES) {
+            return NextResponse.json(
+              {
+                error: `Si el total supera S/ ${BOLETA_SIN_DOCUMENTO_CLIENTE_MAX_SOLES} debe indicar DNI (8 dígitos) o emitir factura con RUC.`,
+              },
+              { status: 400 }
+            );
+          }
+          cleanDoc = "0";
+          clienteTipoDocSunat = "0";
+        } else {
+          return NextResponse.json(
+            {
+              error: "DNI: 8 dígitos o déjelo vacío si el total no supera S/ 700 (norma SUNAT).",
+            },
+            { status: 400 }
+          );
+        }
+      }
+    } else {
+      if (tipoComprobante === "factura") {
+        if (cleanDoc.length !== 11) {
+          return NextResponse.json({ error: "RUC inválido para factura" }, { status: 400 });
+        }
+        clienteTipoDocSunat = "6";
+      } else {
+        if (cleanDoc.length === 8) {
+          clienteTipoDocSunat = "1";
+        } else if (cleanDoc.length === 0) {
+          if (totalAmountEarly > BOLETA_SIN_DOCUMENTO_CLIENTE_MAX_SOLES) {
+            return NextResponse.json(
+              {
+                error: `Para boletas sobre S/ ${BOLETA_SIN_DOCUMENTO_CLIENTE_MAX_SOLES} debe indicar DNI (8 dígitos) o emitir factura.`,
+              },
+              { status: 400 }
+            );
+          }
+          cleanDoc = "0";
+          clienteTipoDocSunat = "0";
+        } else {
+          return NextResponse.json(
+            {
+              error: "DNI: 8 dígitos o vacío si el total es como máximo S/ 700.",
+            },
+            { status: 400 }
+          );
+        }
+      }
     }
 
     if (transfer_id && !isManual) {
@@ -224,19 +322,12 @@ export async function POST(request: NextRequest) {
       }
     }
 
-    if (isManual && (typeof amount !== "number" || amount <= 0)) {
-      return NextResponse.json(
-        { error: "En emisión manual el monto debe ser mayor a 0" },
-        { status: 400 }
-      );
-    }
-
     const serieSunat =
       tipoComprobante === "factura" ? APISUNAT_SERIE_FACTURA : APISUNAT_SERIE_BOLETA;
 
     // 1. Calcular valor unitario sin IGV (apisunat calcula IGV internamente)
     //    El monto recibido INCLUYE IGV → valor_unitario = monto / 1.18
-    const totalAmount = typeof amount === "number" && amount > 0 ? amount : (amount || 0);
+    const totalAmount = totalAmountEarly;
     const valorUnitario = (totalAmount / 1.18).toFixed(6);
 
     // 2. Descripción del servicio (aparece en la boleta impresa)
@@ -260,11 +351,15 @@ export async function POST(request: NextRequest) {
             return d;
           })();
 
-    // 3. Fecha y hora de emisión (timezone Lima UTC-5)
-    const now = new Date();
-    const limaDate = new Date(now.toLocaleString("en-US", { timeZone: "America/Lima" }));
-    const fechaEmision = `${limaDate.getFullYear()}-${String(limaDate.getMonth() + 1).padStart(2, "0")}-${String(limaDate.getDate()).padStart(2, "0")}`;
-    const horaEmision = limaDate.toTimeString().split(" ")[0];
+    // 3. Fecha y hora de emisión (Lima); el panel puede enviar fecha_de_emision / hora_de_emision
+    const emissionParsed = validateEmissionDateTimeForApi(
+      typeof fechaEmisionClient === "string" ? fechaEmisionClient : undefined,
+      typeof horaEmisionClient === "string" ? horaEmisionClient : undefined
+    );
+    if ("error" in emissionParsed) {
+      return NextResponse.json({ error: emissionParsed.error }, { status: 400 });
+    }
+    const { fechaEmision, horaEmision } = emissionParsed;
 
     // 4. Nombre del cliente
     const clienteName =
@@ -290,7 +385,7 @@ export async function POST(request: NextRequest) {
       hora_de_emision: horaEmision,
       moneda: "PEN",
       tipo_operacion: "0101",
-      cliente_tipo_de_documento: tipoComprobante === "factura" ? "6" : "1",
+      cliente_tipo_de_documento: clienteTipoDocSunat,
       cliente_numero_de_documento: cleanDoc,
       cliente_denominacion: clienteName,
       cliente_direccion: "LIMA",
@@ -362,14 +457,52 @@ export async function POST(request: NextRequest) {
     const payload = (emitData.payload || {}) as Record<string, unknown>;
     const pdfPayload = (payload.pdf || {}) as Record<string, string>;
 
-    // 7. Descargar PDF desde apisunat.pe y subirlo a Firebase Storage
-    //    apisunat devuelve la URL del PDF directamente en payload.pdf.ticket
-    //    Lo descargamos y lo re-subimos a nuestro Storage para control propio
-    const pdfTicketUrl: string | null = pdfPayload.ticket || null;
     const serieCorrelativo = `${serieSunat}-${correlativo}`;
-    let fileUrl = pdfTicketUrl; // fallback: URL externa de apisunat
+    /** En panel no guardamos "0" cuando SUNAT va sin documento del cliente (boleta ≤ S/ 700). */
+    const persistClienteNum =
+      tipoComprobante === "boleta" && clienteTipoDocSunat === "0" ? "" : cleanDoc;
 
-    if (pdfTicketUrl) {
+    // 7. PDF para descarga: plantilla formal tipo SUNAT (no es el XML firmado). Fallback: ticket apisunat.
+    const pdfTicketUrl: string | null = pdfPayload.ticket || null;
+    let fileUrl = pdfTicketUrl;
+    const storagePath = `invoices/${serieCorrelativo}.pdf`;
+    const storageFile = bucket.file(storagePath);
+    const downloadToken = randomUUID();
+    const bucketName = bucket.name;
+    const encodedPath = encodeURIComponent(storagePath);
+    const firebaseFileUrl = `https://firebasestorage.googleapis.com/v0/b/${bucketName}/o/${encodedPath}?alt=media&token=${downloadToken}`;
+
+    let formalPdfSaved = false;
+    try {
+      const formalInput = buildFormalComprobanteInput({
+        tipo: tipoComprobante,
+        emisor: getEmisorSunatFromEnv(),
+        serieCorrelativo,
+        fechaEmisionYmd: fechaEmision,
+        horaEmision,
+        receptorNombre: clienteName,
+        clienteTipoDocumento: clienteTipoDocSunat,
+        clienteNumeroDocumento: persistClienteNum || undefined,
+        descripcion,
+        totalConIgv: totalAmount,
+      });
+      const { renderFormalComprobanteBuffer } = await import(
+        "@/features/boletas/pdf/renderFormalComprobanteBuffer"
+      );
+      const formalBuffer = await renderFormalComprobanteBuffer(formalInput);
+      await storageFile.save(formalBuffer, {
+        metadata: {
+          contentType: "application/pdf",
+          metadata: { firebaseStorageDownloadTokens: downloadToken },
+        },
+      });
+      fileUrl = firebaseFileUrl;
+      formalPdfSaved = true;
+    } catch (formalErr) {
+      console.warn("PDF formal (plantilla panel): no generado, se intentará PDF apisunat", formalErr);
+    }
+
+    if (!formalPdfSaved && pdfTicketUrl) {
       try {
         const pdfRes = await fetch(pdfTicketUrl, {
           headers: { Authorization: `Bearer ${APISUNAT_TOKEN_VAL}` },
@@ -377,40 +510,31 @@ export async function POST(request: NextRequest) {
 
         if (pdfRes.ok) {
           const pdfBuffer = Buffer.from(await pdfRes.arrayBuffer());
-          const storagePath = `invoices/${serieCorrelativo}.pdf`;
-          const file = bucket.file(storagePath);
-          const downloadToken = randomUUID();
-
-          await file.save(pdfBuffer, {
+          await storageFile.save(pdfBuffer, {
             metadata: {
               contentType: "application/pdf",
               metadata: { firebaseStorageDownloadTokens: downloadToken },
             },
           });
-
-          const bucketName = bucket.name;
-          const encodedPath = encodeURIComponent(storagePath);
-          fileUrl = `https://firebasestorage.googleapis.com/v0/b/${bucketName}/o/${encodedPath}?alt=media&token=${downloadToken}`;
+          fileUrl = firebaseFileUrl;
         } else {
           console.warn("No se pudo descargar PDF de apisunat, usando URL externa");
         }
       } catch (pdfErr) {
-        // Si falla la descarga del PDF, no bloqueamos la emisión.
-        // La boleta ya fue emitida en SUNAT, simplemente usamos la URL externa.
         console.warn("Error descargando PDF de apisunat:", pdfErr);
       }
     }
 
     // 8. Guardar metadata en Firestore (todo lo útil para reportes / panel)
-    const repSnapRaw = String(representative_name || "").trim();
+    const repSnapRaw = String(representative_name || "").trim() || clienteName;
     const repSnap = receptorNombreSnapshot(repSnapRaw);
     const invoiceData = {
       reservation_id: isManual ? "manual" : reservation_id,
-      user_id,
-      phone_number: phone_number || "",
+      user_id: effectiveUserId,
+      phone_number: effectivePhone || "",
       cliente_denominacion: clienteName,
-      cliente_numero_de_documento: cleanDoc,
-      cliente_tipo_documento: tipoComprobante === "factura" ? "6" : "1",
+      cliente_numero_de_documento: persistClienteNum,
+      cliente_tipo_documento: clienteTipoDocSunat,
       representative_name_snapshot: repSnap,
       file_url: fileUrl || "",
       amount: totalAmount,
@@ -443,11 +567,11 @@ export async function POST(request: NextRequest) {
       serie_correlativo: serieCorrelativo,
       sunat_estado: payload.estado,
       cliente_denominacion: clienteName,
-      cliente_numero_de_documento: cleanDoc,
+      cliente_numero_de_documento: persistClienteNum,
       cliente_tipo_documento: invoiceData.cliente_tipo_documento,
       representative_name_snapshot: repSnap,
       descripcion,
-      phone_number: phone_number || "",
+      phone_number: effectivePhone || "",
       amount: totalAmount,
       tipo_comprobante: tipoComprobante,
     });

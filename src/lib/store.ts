@@ -1,4 +1,13 @@
-import type { Reservation, BlockedSlot, BlockRule, AutomatedNumber, User, Invoice, ClientType } from "./types";
+import type {
+  Reservation,
+  BlockedSlot,
+  BlockRule,
+  AutomatedNumber,
+  User,
+  Invoice,
+  ClientType,
+  EmitComprobanteParams,
+} from "./types";
 import { normalizePeruPhone, isValidPeruPhone } from "@/features/operaciones/utils";
 
 // API-backed store that syncs with Firebase via Next.js API routes
@@ -663,13 +672,7 @@ class Store {
   async emitInvoice(
     reservation: Reservation,
     transfer: { id: string; amount: number } | undefined,
-    params: {
-      tipo_comprobante: "boleta" | "factura";
-      doc_num: string;
-      cliente_denominacion?: string;
-      descripcion?: string;
-      amount?: number;
-    }
+    params: EmitComprobanteParams
   ) {
     try {
       const amountToBill = typeof params.amount === "number" && params.amount > 0
@@ -692,6 +695,8 @@ class Store {
       };
       if (params.cliente_denominacion?.trim()) body.cliente_denominacion = params.cliente_denominacion.trim();
       if (params.descripcion?.trim()) body.descripcion = params.descripcion.trim();
+      if (params.fecha_de_emision?.trim()) body.fecha_de_emision = params.fecha_de_emision.trim();
+      if (params.hora_de_emision?.trim()) body.hora_de_emision = params.hora_de_emision.trim();
 
       const res = await fetch("/api/invoices", {
         method: "POST",
@@ -748,13 +753,7 @@ class Store {
 
   async emitInvoiceManual(
     user: { id: string; phone_number?: string; custom_name?: string; contact_name?: string; last_representative_name?: string },
-    params: {
-      tipo_comprobante: "boleta" | "factura";
-      doc_num: string;
-      amount: number;
-      descripcion?: string;
-      cliente_denominacion?: string;
-    }
+    params: EmitComprobanteParams & { amount: number }
   ) {
     try {
       const body: Record<string, unknown> = {
@@ -774,6 +773,8 @@ class Store {
       };
       if (params.cliente_denominacion?.trim()) body.cliente_denominacion = params.cliente_denominacion.trim();
       if (params.descripcion?.trim()) body.descripcion = params.descripcion.trim();
+      if (params.fecha_de_emision?.trim()) body.fecha_de_emision = params.fecha_de_emision.trim();
+      if (params.hora_de_emision?.trim()) body.hora_de_emision = params.hora_de_emision.trim();
 
       const res = await fetch("/api/invoices", {
         method: "POST",

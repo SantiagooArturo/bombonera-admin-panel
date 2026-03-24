@@ -210,6 +210,19 @@ export interface Invoice {
   sunat_estado?: string | null;
 }
 
+/** Formulario emitir boleta/factura → cuerpo hacia POST /api/invoices */
+export type EmitComprobanteParams = {
+  tipo_comprobante: "boleta" | "factura";
+  doc_num: string;
+  cliente_denominacion?: string;
+  descripcion?: string;
+  amount?: number;
+  /** AAAA-MM-DD (Lima) */
+  fecha_de_emision?: string;
+  /** HH:mm o HH:mm:ss (Lima) */
+  hora_de_emision?: string;
+};
+
 // Transferencias: colección transfers. Registro de todos los pagos procesados.
 export type TransferStatus = "applied" | "rejected_duplicate" | "partial";
 

@@ -3,7 +3,7 @@
 import { useState, useCallback, useRef } from "react";
 import { useStore } from "@/lib/hooks";
 import { useToastContext } from "@/components/ClientLayout";
-import type { Reservation, Transfer, Invoice, PaymentMethod, ClientType } from "@/lib/types";
+import type { Reservation, Transfer, Invoice, PaymentMethod, ClientType, EmitComprobanteParams } from "@/lib/types";
 import { normalizePeruPhone } from "@/features/operaciones/utils";
 
 interface UsePaymentSidebarOptions {
@@ -269,16 +269,7 @@ export function usePaymentSidebar(options?: UsePaymentSidebarOptions) {
     }
   }, [store, toast]);
 
-  const handleEmitInvoice = useCallback(async (
-    transfer: Transfer,
-    params: {
-      tipo_comprobante: "boleta" | "factura";
-      doc_num: string;
-      cliente_denominacion?: string;
-      descripcion?: string;
-      amount?: number;
-    }
-  ) => {
+  const handleEmitInvoice = useCallback(async (transfer: Transfer, params: EmitComprobanteParams) => {
     if (!selectedReservation) {
       toast("No hay reserva seleccionada", "error");
       return;
@@ -296,7 +287,7 @@ export function usePaymentSidebar(options?: UsePaymentSidebarOptions) {
         const newInvoices = ids.length > 0 ? await store.fetchInvoicesByTransferIds(ids) : [];
         setInvoices(newInvoices || []);
 
-        const docNum = params.doc_num.replace(/\D/g, "");
+        const docNum = String(params.doc_num || "").replace(/\D/g, "");
         const chatId = String(selectedReservation.chat_id || selectedReservation.phone_number || "").replace(/\D/g, "");
         const userDocId = chatId.length >= 9 ? normalizePeruPhone(chatId) : chatId;
         if (params.tipo_comprobante === "boleta" && docNum.length === 8) {
