@@ -122,8 +122,6 @@ export const EmitComprobanteModal = memo(function EmitComprobanteModal(props: Em
     if (!store.isLoaded("users")) void store.fetchUsers();
   }, [misc, store]);
 
-  const userCount = misc ? store.getUsers().length : 0;
-
   const emitClienteDirectoryOptions = useMemo(() => {
     if (!misc) return [];
     return store
@@ -138,7 +136,7 @@ export const EmitComprobanteModal = memo(function EmitComprobanteModal(props: Em
         return { phone: normalized, name, searchText };
       })
       .filter((o) => o.phone.replace(/\D/g, "").length >= 9);
-  }, [misc, store, userCount]);
+  }, [misc, store]);
 
   const prevPanelLinkPhoneRef = useRef("");
   useEffect(() => {
@@ -177,7 +175,7 @@ export const EmitComprobanteModal = memo(function EmitComprobanteModal(props: Em
         else setClienteEdit(sanitizeDirectoryClientLabel(getUserName(u)));
       }
     }
-  }, [misc, panelLinkPhoneNorm, docType, store, userCount]);
+  }, [misc, panelLinkPhoneNorm, docType, store]);
 
   const transferInitialCliente = !isMiscProps(props) ? props.initialCliente : undefined;
   const transferInitialDescripcion = !isMiscProps(props) ? props.initialDescripcion : undefined;

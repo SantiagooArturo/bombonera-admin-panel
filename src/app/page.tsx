@@ -73,7 +73,6 @@ export default function DashboardPage() {
     (sum, r) => sum + Math.max((r.total_price || 0) - (r.amount_paid ?? 0), 0),
     0
   );
-  const arrivedCount = filteredReservations.filter((r) => r.arrived).length;
   const showPendientes = isTodayRange(dateRange.start, dateRange.end);
 
   const usersNeedingHelp = useMemo(() => users.filter((u) => u.needs_help), [users]);
@@ -190,12 +189,10 @@ export default function DashboardPage() {
                   }
                 />
               </div>
-              <div className="border-t border-gray-100 px-6 py-3 flex items-center justify-between text-sm text-gray-500">
-                <span>
-                  Asistencia: <strong className="text-gray-900">{arrivedCount}</strong> de {filteredReservations.length}
-                </span>
+              <div className="border-t border-gray-100 px-6 py-3 flex flex-wrap items-center justify-between gap-2 text-sm text-gray-500">
+                <span>Las cifras son del período elegido; no se cuentan reservas canceladas.</span>
                 {showPendientes && (
-                  <Link href="/operaciones" className="text-bombonera-600 font-semibold hover:underline">
+                  <Link href="/operaciones" className="shrink-0 font-semibold text-bombonera-600 hover:underline">
                     Ver en vivo →
                   </Link>
                 )}

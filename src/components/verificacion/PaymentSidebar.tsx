@@ -798,7 +798,6 @@ const CobrosNearbyPaymentRow = memo(function CobrosNearbyPaymentRow({
   onDetachInvoice: (id: string) => Promise<boolean>;
 }) {
   const isManualLike = transfer.source === "manual" || transfer.source === "manual_adjustment";
-  const verifiedLike = cobrosTransferVerifiedLike(transfer);
   void onToggleApplied;
   void onRevoke;
   const fileInputRef = useRef<HTMLInputElement>(null);

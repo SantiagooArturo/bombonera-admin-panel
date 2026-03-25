@@ -40,8 +40,6 @@ export const RegistrarPagoModal = memo(function RegistrarPagoModal({ onClose, on
     }
   }, [store]);
 
-  const userCount = store.getUsers().length;
-
   const emitClienteDirectoryOptions = useMemo(
     () =>
       store
@@ -56,7 +54,7 @@ export const RegistrarPagoModal = memo(function RegistrarPagoModal({ onClose, on
           return { phone: normalized, name, searchText };
         })
         .filter((o) => o.phone.replace(/\D/g, "").length >= 9),
-    [store, userCount]
+    [store]
   );
 
   useEffect(() => {
@@ -78,7 +76,7 @@ export const RegistrarPagoModal = memo(function RegistrarPagoModal({ onClose, on
         setDni((u.last_dni || "").replace(/\D/g, "").slice(0, 8));
       }
     }
-  }, [phoneNorm, store, userCount]);
+  }, [phoneNorm, store]);
 
   const clearFile = useCallback(() => {
     setFile(null);
