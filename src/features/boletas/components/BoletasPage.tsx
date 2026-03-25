@@ -9,6 +9,7 @@ import { WHATSAPP_ICON_PATH } from "@/features/operaciones/whatsappIconPath";
 import { formatInvoiceEmissionDate } from "../utils/formatInvoiceEmissionDate";
 import { formatSolesAmountDisplay } from "../utils/formatSolesAmountDisplay";
 import { wspLink } from "@/features/operaciones/utils";
+import { anchorPropsForHref } from "@/lib/internal-href";
 import {
   invoiceDescripcionOnly,
   invoiceReceptorOnly,
@@ -317,6 +318,7 @@ export function BoletasPage() {
               ) : (
                 rows.map((inv, idx) => {
                   const plantillaHref = invoicePlantillaPdfHref(inv);
+                  const invPhoneWspHref = inv.phone_number?.trim() ? wspLink(inv.phone_number) : null;
                   const st = wspStatus[inv.id] ?? "idle";
                   const wErr = wspError[inv.id];
                   const isFactura = inv.tipo_comprobante === "factura";
@@ -357,11 +359,10 @@ export function BoletasPage() {
                         </p>
                       </td>
                       <td className="w-[5.75rem] max-w-[5.75rem] border-t border-gray-100 px-1.5 py-5 align-middle font-mono text-xs tabular-nums text-gray-800 xl:px-2 xl:text-sm">
-                        {inv.phone_number?.trim() ? (
+                        {invPhoneWspHref ? (
                           <a
-                            href={wspLink(inv.phone_number)}
-                            target="_blank"
-                            rel="noopener noreferrer"
+                            href={invPhoneWspHref}
+                            {...anchorPropsForHref(invPhoneWspHref)}
                             className="block truncate text-green-700 underline decoration-green-600/50 underline-offset-2 hover:text-green-900"
                             title={invoiceTelefonoDisplay(inv)}
                           >
@@ -384,10 +385,9 @@ export function BoletasPage() {
                           {plantillaHref ? (
                             <a
                               href={plantillaHref}
-                              target="_blank"
-                              rel="noopener noreferrer"
-                              title="Ver comprobante (se abre en una pestaña nueva)"
-                              aria-label="Ver comprobante en una pestaña nueva"
+                              {...anchorPropsForHref(plantillaHref)}
+                              title="Ver comprobante"
+                              aria-label="Ver comprobante"
                               className="inline-flex shrink-0 items-center justify-center gap-1.5 whitespace-nowrap rounded-lg border border-blue-200 bg-blue-50 px-3 py-2 text-xs font-bold text-blue-800 hover:bg-blue-100"
                             >
                               <IconOpenInNewTab className="h-3.5 w-3.5 shrink-0 opacity-90" />

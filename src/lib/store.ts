@@ -694,7 +694,7 @@ class Store {
     reservation: Reservation,
     transfer: { id: string; amount: number } | undefined,
     params: EmitComprobanteParams
-  ) {
+  ): Promise<Invoice> {
     try {
       const amountToBill = typeof params.amount === "number" && params.amount > 0
         ? params.amount
@@ -791,7 +791,7 @@ class Store {
       this.invoices = [...this.invoices, newInvoice];
       this.notify();
 
-      return result;
+      return newInvoice;
     } catch (error) {
       console.error("Error emitting invoice:", error);
       throw error;

@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useCallback, useRef } from "react";
+import { useState, useCallback, useRef, useEffect } from "react";
 import { useStore } from "@/lib/hooks";
 import { useToastContext } from "@/components/ClientLayout";
 import type { Reservation, Transfer, Invoice, PaymentMethod, ClientType, EmitComprobanteParams } from "@/lib/types";
@@ -12,6 +12,13 @@ interface UsePaymentSidebarOptions {
   onReservationUpdated?: (resId: string, patch: Partial<Reservation>) => void;
   onReservationDeleted?: (resId: string) => void;
 }
+
+/** Tras subir «Pagado»: el usuario elige solo PATCH o registrar cobro y abrir el emisor (sin emitir SUNAT hasta que confirme en el modal). */
+export type AmountPaidDeltaPrompt = {
+  reservationId: string;
+  amountPaid: number;
+  delta: number;
+};
 
 export function usePaymentSidebar(options?: UsePaymentSidebarOptions) {
   const store = useStore();
@@ -29,6 +36,13 @@ export function usePaymentSidebar(options?: UsePaymentSidebarOptions) {
   const [emittingInvoiceId, setEmittingInvoiceId] = useState<string | null>(null);
   const [attachingInvoiceId, setAttachingInvoiceId] = useState<string | null>(null);
   const [paymentLoading, setPaymentLoading] = useState(false);
+  /** Tras registrar cobro desde edición de «Pagado», abrir emisor de comprobante en el sidebar. */
+  const [pendingEmitFromAmountEdit, setPendingEmitFromAmountEdit] = useState<Transfer | null>(null);
+  const [amountPaidDeltaPrompt, setAmountPaidDeltaPrompt] = useState<AmountPaidDeltaPrompt | null>(null);
+  const amountPaidDeltaPromptRef = useRef<AmountPaidDeltaPrompt | null>(null);
+  useEffect(() => {
+    amountPaidDeltaPromptRef.current = amountPaidDeltaPrompt;
+  }, [amountPaidDeltaPrompt]);
   const [cancellingReservation, setCancellingReservation] = useState(false);
   const [clientType, setClientType] = useState<ClientType>("casual");
   const [clientTypeLoading, setClientTypeLoading] = useState(false);
@@ -53,6 +67,7 @@ export function usePaymentSidebar(options?: UsePaymentSidebarOptions) {
       allReservationsChatIdRef.current = null;
     }
     setSelectedReservation(reservation);
+    setAmountPaidDeltaPrompt(null);
     setLoadingData(true);
     setClientTypeLoading(true);
 
@@ -180,6 +195,8 @@ export function usePaymentSidebar(options?: UsePaymentSidebarOptions) {
     setClientTypeLoading(false);
     setClientTypeUpdating(false);
     setUserNames({});
+    setPendingEmitFromAmountEdit(null);
+    setAmountPaidDeltaPrompt(null);
   }, []);
 
   const handleUpdateClientType = useCallback(async (nextType: ClientType) => {
@@ -262,20 +279,19 @@ export function usePaymentSidebar(options?: UsePaymentSidebarOptions) {
     }
   }, [store, toast]);
 
-  const handleEmitInvoice = useCallback(async (transfer: Transfer, params: EmitComprobanteParams) => {
-    if (!selectedReservation) {
-      toast("No hay reserva seleccionada", "error");
-      return;
-    }
-    setEmittingInvoiceId(transfer.id);
-    try {
-      const result = await store.emitInvoice(
-        selectedReservation,
-        { id: transfer.id, amount: transfer.amount || 0 },
-        { ...params, amount: typeof params.amount === "number" ? params.amount : undefined }
-      );
-      if (result) {
-        toast("Comprobante emitido correctamente", "success");
+  const handleEmitInvoice = useCallback(
+    async (transfer: Transfer, params: EmitComprobanteParams): Promise<Invoice | null> => {
+      if (!selectedReservation) {
+        toast("No hay reserva seleccionada", "error");
+        return null;
+      }
+      setEmittingInvoiceId(transfer.id);
+      try {
+        const invoice = await store.emitInvoice(
+          selectedReservation,
+          { id: transfer.id, amount: transfer.amount || 0 },
+          { ...params, amount: typeof params.amount === "number" ? params.amount : undefined }
+        );
         const ids = transfers.map((t) => t.id).filter(Boolean);
         const newInvoices = ids.length > 0 ? await store.fetchInvoicesByTransferIds(ids) : [];
         setInvoices(newInvoices || []);
@@ -296,17 +312,18 @@ export function usePaymentSidebar(options?: UsePaymentSidebarOptions) {
           await store.updateUserDoc(userDocId, { last_ruc: docNum });
           setUserNames((prev) => ({ ...prev, last_ruc: docNum }));
         }
-      } else {
-        toast("Error al emitir comprobante", "error");
+        return invoice;
+      } catch (error) {
+        const msg =
+          error instanceof Error ? error.message : "Error inesperado al emitir comprobante";
+        toast(msg, "error");
+        return null;
+      } finally {
+        setEmittingInvoiceId(null);
       }
-    } catch (error) {
-      const msg =
-        error instanceof Error ? error.message : "Error inesperado al emitir comprobante";
-      toast(msg, "error");
-    } finally {
-      setEmittingInvoiceId(null);
-    }
-  }, [store, toast, selectedReservation, transfers, userNames.last_dni, userNames.last_ruc]);
+    },
+    [store, toast, selectedReservation, transfers, userNames.last_dni, userNames.last_ruc]
+  );
 
   const handleUpdateName = useCallback(async (name: string) => {
     if (!selectedReservation) return false;
@@ -512,50 +529,138 @@ export function usePaymentSidebar(options?: UsePaymentSidebarOptions) {
     }
   }, [store, toast, transfers, allClientReservations, options]);
 
-  const handleUpdateAmountPaid = useCallback(async (amountPaid: number, reservationId?: string) => {
-    const id = reservationId ?? selectedReservation?.id;
-    if (!id) return false;
-    const prevReservations = allClientReservations;
-    const prevSelected = selectedReservation;
-    const patch: Partial<Reservation> = { amount_paid: amountPaid, amount_paid_manual: true };
-    setAllClientReservations((prev) =>
-      prev.map((r) => (r.id === id ? { ...r, ...patch } : r))
-    );
-    setAllReservationsThisWeek((prev) =>
-      prev.map((r) => (r.id === id ? { ...r, ...patch } : r))
-    );
-    setSelectedReservation((prev) =>
-      prev?.id === id ? { ...prev, ...patch } : prev
-    );
-    options?.onReservationUpdated?.(id, patch);
-    try {
-      const res = await fetch("/api/reservations", {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ id, amount_paid: amountPaid, amount_paid_direct: true }),
-      });
-      if (!res.ok) {
+  const clearPendingEmitFromAmountEdit = useCallback(() => {
+    setPendingEmitFromAmountEdit(null);
+  }, []);
+
+  const persistDirectAmountPaid = useCallback(
+    async (id: string, amountPaid: number): Promise<boolean> => {
+      const prevReservations = allClientReservations;
+      const prevSelected = selectedReservation;
+      const patch: Partial<Reservation> = { amount_paid: amountPaid, amount_paid_manual: true };
+      setAllClientReservations((prev) => prev.map((r) => (r.id === id ? { ...r, ...patch } : r)));
+      setAllReservationsThisWeek((prev) => prev.map((r) => (r.id === id ? { ...r, ...patch } : r)));
+      setSelectedReservation((prev) => (prev?.id === id ? { ...prev, ...patch } : prev));
+      options?.onReservationUpdated?.(id, patch);
+      try {
+        const res = await fetch("/api/reservations", {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ id, amount_paid: amountPaid, amount_paid_direct: true }),
+        });
+        if (!res.ok) {
+          setAllClientReservations(prevReservations);
+          setSelectedReservation(prevSelected);
+          toast("No se pudo actualizar el monto pagado", "error");
+          return false;
+        }
+        const resForChat = prevReservations.find((r) => r.id === id) ?? prevSelected;
+        const chatId = resForChat?.chat_id || resForChat?.phone_number || "";
+        if (chatId) {
+          store.fetchTransfersByChatId(chatId).then((newTransfers) => {
+            setTransfers(newTransfers || []);
+          });
+        }
+        toast("Monto pagado actualizado", "success");
+        return true;
+      } catch {
         setAllClientReservations(prevReservations);
         setSelectedReservation(prevSelected);
-        toast("No se pudo actualizar el monto pagado", "error");
+        toast("Error al actualizar monto pagado", "error");
         return false;
       }
-      const resForChat = prevReservations.find((r) => r.id === id) ?? prevSelected;
-      const chatId = resForChat?.chat_id || resForChat?.phone_number || "";
-      if (chatId) {
-        store.fetchTransfersByChatId(chatId).then((newTransfers) => {
-          setTransfers(newTransfers || []);
-        });
+    },
+    [allClientReservations, selectedReservation, options, toast, store]
+  );
+
+  const resolveAmountPaidDeltaPrompt = useCallback(
+    async (choice: "direct" | "emit"): Promise<boolean> => {
+      const p = amountPaidDeltaPromptRef.current;
+      if (!p) return false;
+
+      const { reservationId: id, amountPaid, delta } = p;
+      const resSnapshot =
+        selectedReservation?.id === id
+          ? selectedReservation
+          : allClientReservations.find((r) => r.id === id) ?? selectedReservation;
+
+      setPaymentLoading(true);
+      let ok = false;
+      try {
+        if (choice === "direct") {
+          ok = await persistDirectAmountPaid(id, amountPaid);
+        } else {
+          const phoneNumber = String(resSnapshot?.phone_number || selectedReservation?.phone_number || "").trim();
+          if (!phoneNumber) {
+            toast("Falta teléfono del cliente para registrar el cobro", "error");
+            ok = await persistDirectAmountPaid(id, amountPaid);
+          } else {
+            try {
+              const result = await store.processManualPayment(id, delta, phoneNumber, "digital");
+              if (!result?.success || !result.transfer_id) {
+                toast("No se pudo registrar el cobro. Se guardará solo el monto como ajuste.", "error");
+                ok = await persistDirectAmountPaid(id, amountPaid);
+              } else {
+                const newPaidFromServer = result.new_amount_paid ?? amountPaid;
+                const patch: Partial<Reservation> = {
+                  amount_paid: newPaidFromServer,
+                  amount_paid_manual: true,
+                  confirmed: true,
+                };
+                if (resSnapshot?.status === "pending") {
+                  patch.status = "confirmed";
+                }
+                setAllClientReservations((prev) => prev.map((r) => (r.id === id ? { ...r, ...patch } : r)));
+                setAllReservationsThisWeek((prev) => prev.map((r) => (r.id === id ? { ...r, ...patch } : r)));
+                setSelectedReservation((prev) => (prev?.id === id ? { ...prev, ...patch } : prev));
+                options?.onReservationUpdated?.(id, patch);
+
+                const chatKey = resSnapshot?.chat_id || resSnapshot?.phone_number || phoneNumber || "";
+                const newTransfers = await store.fetchTransfersByChatId(chatKey);
+                setTransfers(newTransfers || []);
+                const transfer = (newTransfers || []).find((t) => t.id === result.transfer_id);
+                if (transfer) {
+                  setPendingEmitFromAmountEdit(transfer);
+                }
+                toast(`Cobro registrado: S/ ${delta.toFixed(2)}. Completa la emisión en el formulario.`, "success");
+                ok = true;
+              }
+            } catch {
+              toast("Error al registrar cobro", "error");
+              ok = await persistDirectAmountPaid(id, amountPaid);
+            }
+          }
+        }
+        return ok;
+      } finally {
+        setAmountPaidDeltaPrompt(null);
+        setPaymentLoading(false);
       }
-      toast("Monto pagado actualizado", "success");
-      return true;
-    } catch {
-      setAllClientReservations(prevReservations);
-      setSelectedReservation(prevSelected);
-      toast("Error al actualizar monto pagado", "error");
-      return false;
-    }
-  }, [selectedReservation, allClientReservations, options, toast, store]);
+    },
+    [selectedReservation, allClientReservations, options, toast, store, persistDirectAmountPaid]
+  );
+
+  const handleUpdateAmountPaid = useCallback(
+    async (amountPaid: number, reservationId?: string) => {
+      const id = reservationId ?? selectedReservation?.id;
+      if (!id) return false;
+
+      const resSnapshot =
+        selectedReservation?.id === id
+          ? selectedReservation
+          : allClientReservations.find((r) => r.id === id) ?? selectedReservation;
+      const prevPaid = resSnapshot?.amount_paid ?? 0;
+      const delta = amountPaid - prevPaid;
+
+      if (delta > 0.005) {
+        setAmountPaidDeltaPrompt({ reservationId: id, amountPaid, delta });
+        return false;
+      }
+
+      return persistDirectAmountPaid(id, amountPaid);
+    },
+    [selectedReservation, allClientReservations, persistDirectAmountPaid]
+  );
 
   const handleUpdatePrice = useCallback(async (totalPrice: number, reservationId?: string) => {
     const id = reservationId ?? selectedReservation?.id;
@@ -707,6 +812,10 @@ export function usePaymentSidebar(options?: UsePaymentSidebarOptions) {
     handleRevokeManualPayment,
     handleRegisterPayment,
     handleUpdateAmountPaid,
+    amountPaidDeltaPrompt,
+    resolveAmountPaidDeltaPrompt,
+    pendingEmitFromAmountEdit,
+    clearPendingEmitFromAmountEdit,
     handleUpdatePrice,
     handleToggleApplied,
   };

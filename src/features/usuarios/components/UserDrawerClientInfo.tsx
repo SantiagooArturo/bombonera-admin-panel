@@ -6,6 +6,7 @@ import { useToastContext } from "@/components/ClientLayout";
 import type { User, ClientType } from "@/lib/types";
 import { CLIENT_TYPE_LABELS } from "@/lib/types";
 import { formatDisplayPhone, wspLink, userWhatsAppPhone, normalizePeruPhone } from "@/features/operaciones/utils";
+import { anchorPropsForHref } from "@/lib/internal-href";
 import { WHATSAPP_ICON_PATH as WSP_ICON_PATH } from "@/features/operaciones/whatsappIconPath";
 
 type UserDrawerClientInfoProps = {
@@ -32,6 +33,7 @@ export function UserDrawerClientInfo({ user, onUserUpdated }: UserDrawerClientIn
   const [phoneInput, setPhoneInput] = useState("");
 
   const resolvedWa = userWhatsAppPhone(user);
+  const drawerClientWspHref = resolvedWa ? wspLink(resolvedWa) : null;
   const initialNameForEdit = user.custom_name ?? (user.contact_name || user.last_representative_name || "");
 
   useEffect(() => {
@@ -195,11 +197,10 @@ export function UserDrawerClientInfo({ user, onUserUpdated }: UserDrawerClientIn
             </>
           ) : (
             <>
-              {resolvedWa ? (
+              {drawerClientWspHref ? (
                 <a
-                  href={wspLink(resolvedWa)}
-                  target="_blank"
-                  rel="noopener noreferrer"
+                  href={drawerClientWspHref}
+                  {...anchorPropsForHref(drawerClientWspHref)}
                   className="inline-flex items-center gap-2 hover:bg-green-50 px-2 py-1 rounded-lg transition-colors group"
                   title="Abrir chat de WhatsApp"
                 >
@@ -207,7 +208,7 @@ export function UserDrawerClientInfo({ user, onUserUpdated }: UserDrawerClientIn
                     <path d={WSP_ICON_PATH} />
                   </svg>
                   <span className="text-gray-500 text-base font-mono group-hover:text-green-700 group-hover:underline">
-                    {formatDisplayPhone(resolvedWa)}
+                    {formatDisplayPhone(resolvedWa!)}
                   </span>
                 </a>
               ) : (

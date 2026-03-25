@@ -18,7 +18,9 @@ import {
   wspLink,
 } from "@/features/operaciones/utils";
 import { WHATSAPP_ICON_PATH as WSP_ICON_PATH } from "@/features/operaciones/whatsappIconPath";
+import { anchorPropsForHref } from "@/lib/internal-href";
 import { RegisterPaymentFormCobros } from "./RegisterPaymentFormCobros";
+import type { AmountPaidDeltaPrompt } from "./usePaymentSidebar";
 
 // ─── Props ───────────────────────────────────────────────────────────────────
 
@@ -31,7 +33,7 @@ interface PaymentSidebarProps {
   attachingInvoiceId: string | null;
   paymentLoading: boolean;
   onVerifyTransfer: (transferId: string, currentStatus: boolean) => void;
-  onEmitInvoice: (transfer: Transfer, params: EmitComprobanteParams) => void;
+  onEmitInvoice: (transfer: Transfer, params: EmitComprobanteParams) => Promise<Invoice | null>;
   onAttachInvoice: (transfer: Transfer, file: File) => void;
   onDetachInvoice: (invoiceId: string) => Promise<boolean>;
   /** Anular boleta/factura emitida ante SUNAT (apisunat). */
@@ -69,6 +71,12 @@ interface PaymentSidebarProps {
   allClientReservations?: Reservation[];
   /** Al hacer click en una reserva de la lista: navegar a ella (ej. cambiar día en operaciones). */
   onSelectReservationFromList?: (reservation: Reservation) => void;
+  /** Tras «Pagado» + registrar cobro: abrir emisor vinculado al transfer creado. */
+  pendingEmitFromAmountEdit?: Transfer | null;
+  onClearPendingEmitFromAmountEdit?: () => void;
+  /** Subida de «Pagado» con delta &gt; 0: modal en app (no confirm del navegador). */
+  amountPaidDeltaPrompt?: AmountPaidDeltaPrompt | null;
+  onResolveAmountPaidDeltaPrompt?: (choice: "direct" | "emit") => Promise<boolean>;
 }
 
 // ─── Sub-components ──────────────────────────────────────────────────────────
@@ -180,6 +188,8 @@ interface ReservationDetailContentProps {
   reservation: Reservation;
   courtConfigs?: CourtFieldConfig[] | null;
   clientData: SimplifiedPaymentClientData;
+  /** Incrementar tras guardar «Pagado»/deuda desde el modal de delta para cerrar modo edición. */
+  amountPaidEditCloseSignal?: number;
   onUpdatePrice?: (totalPrice: number, reservationId?: string) => Promise<boolean>;
   onUpdateAmountPaid?: (amountPaid: number, reservationId?: string) => Promise<boolean>;
   onUpdateStatus?: (status: "pending" | "confirmed") => Promise<boolean>;
@@ -194,6 +204,7 @@ function ReservationDetailContent({
   reservation,
   courtConfigs,
   clientData,
+  amountPaidEditCloseSignal = 0,
   onUpdatePrice,
   onUpdateAmountPaid,
   onUpdateStatus,
@@ -261,6 +272,12 @@ function ReservationDetailContent({
     setDebtInput(remaining.toFixed(2));
   }, [reservation.id, reservation.total_price, reservation.amount_paid, remaining, editingDebt]);
 
+  useEffect(() => {
+    if (amountPaidEditCloseSignal <= 0) return;
+    setEditingAmountPaid(false);
+    setEditingDebt(false);
+  }, [amountPaidEditCloseSignal]);
+
   async function handleSavePrice() {
     if (!onUpdatePrice) return;
     const parsed = parseFloat(priceInput.replace(",", "."));
@@ -311,6 +328,8 @@ function ReservationDetailContent({
     [reservation.id, onSelectReservationFromChips]
   );
   useEffect(() => () => { if (chipTimeoutRef.current) clearTimeout(chipTimeoutRef.current); }, []);
+
+  const reservationWspHref = reservation.phone_number ? wspLink(reservation.phone_number) : null;
 
   return (
     <div className="flex flex-col h-full">
@@ -370,11 +389,10 @@ function ReservationDetailContent({
                 )}
               </div>
             )}
-            {reservation.phone_number && (
+            {reservationWspHref ? (
               <a
-                href={wspLink(reservation.phone_number)}
-                target="_blank"
-                rel="noopener noreferrer"
+                href={reservationWspHref}
+                {...anchorPropsForHref(reservationWspHref)}
                 className="inline-flex items-center gap-2 hover:bg-green-50 px-2 py-1 rounded-lg transition-colors group"
                 title="Abrir chat de WhatsApp"
               >
@@ -385,7 +403,7 @@ function ReservationDetailContent({
                   {formatDisplayPhone(reservation.phone_number)}
                 </span>
               </a>
-            )}
+            ) : null}
             <div className="flex items-center gap-2">
               <span className="text-sm text-gray-500">DNI:</span>
               {editingDni ? (
@@ -921,8 +939,7 @@ const CobrosNearbyPaymentRow = memo(function CobrosNearbyPaymentRow({
                 {pdfHref ? (
                   <a
                     href={pdfHref}
-                    target="_blank"
-                    rel="noopener noreferrer"
+                    {...anchorPropsForHref(pdfHref)}
                     className="mt-1 inline-block text-xs font-semibold text-blue-600 hover:underline"
                   >
                     Abrir PDF
@@ -1403,6 +1420,10 @@ const PaymentSidebar = memo(function PaymentSidebar({
   allReservationsThisWeek = [],
   allClientReservations = [],
   onSelectReservationFromList,
+  pendingEmitFromAmountEdit = null,
+  onClearPendingEmitFromAmountEdit,
+  amountPaidDeltaPrompt = null,
+  onResolveAmountPaidDeltaPrompt,
 }: PaymentSidebarProps) {
   /** DNI para boleta: reserva con 8 dígitos válidos, si no perfil usuario (last_dni). */
   const clientDniForEmit = useMemo(() => {
@@ -1416,6 +1437,7 @@ const PaymentSidebar = memo(function PaymentSidebar({
   const [activeTab, setActiveTab] = useState<"detalles" | "cobros">("detalles");
   const [viewingImage, setViewingImage] = useState<string | null>(null);
   const [emitModalTransfer, setEmitModalTransfer] = useState<Transfer | null>(null);
+  const [amountPaidEditCloseSignal, setAmountPaidEditCloseSignal] = useState(0);
   const fieldConfig = useMemo(
     () => (reservation.field && courtConfigs?.length ? courtConfigs.find((c) => c.field === reservation.field) : null),
     [reservation.field, courtConfigs]
@@ -1502,6 +1524,13 @@ const PaymentSidebar = memo(function PaymentSidebar({
     setNameValue(userCustomName ?? displayName ?? reservation.representative_name ?? "");
     setEditingName(false);
   }, [reservation.id, userCustomName, displayName, reservation.representative_name]);
+
+  useEffect(() => {
+    if (!pendingEmitFromAmountEdit?.id) return;
+    setEmitModalTransfer(pendingEmitFromAmountEdit);
+    setActiveTab("cobros");
+    onClearPendingEmitFromAmountEdit?.();
+  }, [pendingEmitFromAmountEdit, onClearPendingEmitFromAmountEdit]);
 
   const hasMultipleReservations = allReservationsThisWeek.length > 1;
 
@@ -1609,6 +1638,7 @@ const PaymentSidebar = memo(function PaymentSidebar({
           <ReservationDetailContent
             reservation={reservation}
             courtConfigs={courtConfigs}
+            amountPaidEditCloseSignal={amountPaidEditCloseSignal}
             clientData={{
               userCustomName,
               effectiveDisplayName,
@@ -1683,6 +1713,55 @@ const PaymentSidebar = memo(function PaymentSidebar({
           emitting={emittingInvoiceId === emitModalTransfer.id}
           attaching={attachingInvoiceId === emitModalTransfer.id}
         />
+      ) : null}
+
+      {amountPaidDeltaPrompt &&
+      amountPaidDeltaPrompt.reservationId === reservation.id &&
+      onResolveAmountPaidDeltaPrompt ? (
+        <div
+          className="fixed inset-0 z-[10065] flex items-center justify-center bg-black/50 px-4"
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="amount-paid-delta-title"
+        >
+          <div className="w-full max-w-md rounded-2xl border border-gray-200 bg-white p-6 shadow-2xl">
+            <h2 id="amount-paid-delta-title" className="text-lg font-bold text-gray-900">
+              Emitir boleta/factura por {" "} 
+              <span className="tabular-nums">S/ {amountPaidDeltaPrompt.delta.toFixed(2)}</span>
+            </h2>
+            <p className="mt-2 text-sm text-gray-600 leading-relaxed">
+              Registrar cobro automaticamente y emitir boleta?
+            </p>
+            <div className="mt-5 flex flex-col gap-2 sm:flex-row-reverse sm:justify-end sm:gap-3">
+              <button
+                type="button"
+                disabled={paymentLoading}
+                onClick={() => {
+                  void (async () => {
+                    const ok = await onResolveAmountPaidDeltaPrompt("emit");
+                    if (ok) setAmountPaidEditCloseSignal((s) => s + 1);
+                  })();
+                }}
+                className="rounded-xl bg-field-dark px-4 py-3 text-sm font-bold text-white hover:opacity-95 disabled:opacity-50 sm:min-w-[140px]"
+              >
+                {paymentLoading ? "…" : "Abrir emisor de boleta"}
+              </button>
+              <button
+                type="button"
+                disabled={paymentLoading}
+                onClick={() => {
+                  void (async () => {
+                    const ok = await onResolveAmountPaidDeltaPrompt("direct");
+                    if (ok) setAmountPaidEditCloseSignal((s) => s + 1);
+                  })();
+                }}
+                className="rounded-xl border border-gray-300 px-4 py-3 text-sm font-semibold text-gray-800 hover:bg-gray-50 disabled:opacity-50 sm:min-w-[140px]"
+              >
+                Cancelar
+              </button>
+            </div>
+          </div>
+        </div>
       ) : null}
 
       {viewingImage && <ImageViewer src={viewingImage} onClose={() => setViewingImage(null)} />}

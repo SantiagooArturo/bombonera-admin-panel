@@ -16,6 +16,7 @@ import { voidSunatInvoice } from "@/features/boletas/services/voidSunatInvoice";
 import { mergeInvoiceVoided } from "@/features/boletas/utils/mergeInvoiceVoided";
 import { invoicePlantillaPdfHref } from "@/features/boletas/utils/invoicePdfLinks";
 import { invoiceComprobantePdfDownloadFilename } from "@/features/boletas/utils/comprobantePdfFilename";
+import { anchorPropsForHref } from "@/lib/internal-href";
 
 function formatDate(d: string | null): string {
   if (!d) return "—";
@@ -284,7 +285,7 @@ export default function UserPaymentsDrawer({ user, onClose, onUserUpdated }: Use
   }, [store, toast, loadData]);
 
   const handleEmitInvoice = useCallback(
-    async (transfer: Transfer & { id: string }, params: EmitComprobanteParams) => {
+    async (transfer: Transfer & { id: string }, params: EmitComprobanteParams): Promise<Invoice | null> => {
       if (transfer.id === "manual") {
         setEmittingId("manual");
         try {
@@ -302,7 +303,7 @@ export default function UserPaymentsDrawer({ user, onClose, onUserUpdated }: Use
         } finally {
           setEmittingId(null);
         }
-        return;
+        return null;
       }
 
       const resId = transfer.reservation_id;
@@ -311,7 +312,7 @@ export default function UserPaymentsDrawer({ user, onClose, onUserUpdated }: Use
         setManualPrefill({ amount: params.amount ?? transfer.amount ?? 0, descripcion: params.descripcion });
         setShowManualModal(true);
         toast("Este pago no tiene reserva. Emite como boleta manual.", "info");
-        return;
+        return null;
       }
 
       setEmittingId(transfer.id);
@@ -331,20 +332,16 @@ export default function UserPaymentsDrawer({ user, onClose, onUserUpdated }: Use
           total_price: params.amount ?? transfer.amount ?? 0,
           representative_name: params.cliente_denominacion || displayName,
         };
-        const result = await store.emitInvoice(
+        const invoice = await store.emitInvoice(
           synthRes,
           { id: transfer.id, amount: params.amount ?? transfer.amount ?? 0 },
           params
         );
-        if (result) {
-          toast("Comprobante emitido", "success");
-          setEmitTransferTarget(null);
-          loadData();
-        } else {
-          toast("Error al emitir", "error");
-        }
+        loadData();
+        return invoice;
       } catch (e) {
         toast(e instanceof Error ? e.message : "Error al emitir", "error");
+        return null;
       } finally {
         setEmittingId(null);
       }
@@ -622,9 +619,8 @@ export default function UserPaymentsDrawer({ user, onClose, onUserUpdated }: Use
                                         {plantillaHref ? (
                                           <a
                                             href={plantillaHref}
+                                            {...anchorPropsForHref(plantillaHref)}
                                             download={invoiceComprobantePdfDownloadFilename(inv)}
-                                            target="_blank"
-                                            rel="noopener noreferrer"
                                             title={isFactura ? "Abrir factura" : "Abrir boleta"}
                                             className="flex flex-1 items-center justify-center gap-2 rounded-xl border-2 border-blue-100 bg-blue-50 py-2.5 px-3 text-sm font-bold text-blue-700 transition-colors hover:bg-blue-100"
                                           >

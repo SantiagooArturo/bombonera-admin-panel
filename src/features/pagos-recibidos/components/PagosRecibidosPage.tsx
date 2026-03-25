@@ -8,6 +8,7 @@ import { useToastContext } from "@/components/ClientLayout";
 import { formatSolesAmountDisplay } from "@/features/boletas/utils/formatSolesAmountDisplay";
 import { IconOpenInNewTab } from "@/features/boletas/components/boletasSharedUi";
 import { formatDisplayPhone, wspLink } from "@/features/operaciones/utils";
+import { anchorPropsForHref } from "@/lib/internal-href";
 import { fetchAllTransfers } from "../services/fetchAllTransfers";
 import { transferMatchesSearch } from "../utils/transferMatchesSearch";
 import { transferClientDisplayName } from "../utils/transferDisplay";
@@ -216,6 +217,7 @@ export function PagosRecibidosPage() {
                 rows.map((t, idx) => {
                   const name = transferClientDisplayName(t);
                   const phone = t.phone_number?.trim();
+                  const transferWspHref = phone ? wspLink(phone) : null;
                   const media = t.media_url?.trim();
                   const proxy = media ? `/api/proxy-file?url=${encodeURIComponent(media)}` : null;
                   const methodLabel =
@@ -242,11 +244,10 @@ export function PagosRecibidosPage() {
                         {t.client_last_dni?.trim() || "—"}
                       </td>
                       <td className="border-t border-gray-100 px-1.5 py-3 align-middle font-mono text-xs tabular-nums text-gray-800">
-                        {phone ? (
+                        {transferWspHref ? (
                           <a
-                            href={wspLink(phone)}
-                            target="_blank"
-                            rel="noopener noreferrer"
+                            href={transferWspHref}
+                            {...anchorPropsForHref(transferWspHref)}
                             className="block truncate text-green-700 underline decoration-green-600/50 underline-offset-2 hover:text-green-900"
                             title={formatDisplayPhone(phone)}
                           >
@@ -279,10 +280,9 @@ export function PagosRecibidosPage() {
                           {proxy ? (
                             <a
                               href={proxy}
-                              target="_blank"
-                              rel="noopener noreferrer"
+                              {...anchorPropsForHref(proxy)}
                               title="Ver imagen del comprobante"
-                              aria-label="Ver comprobante en una pestaña nueva"
+                              aria-label="Ver comprobante"
                               className="inline-flex shrink-0 items-center justify-center gap-1.5 whitespace-nowrap rounded-lg border border-blue-200 bg-blue-50 px-2.5 py-2 text-xs font-bold text-blue-800 hover:bg-blue-100"
                             >
                               <IconOpenInNewTab className="h-3.5 w-3.5 shrink-0 opacity-90" />

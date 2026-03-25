@@ -21,6 +21,7 @@ import {
 import AddUserModal from "@/features/usuarios/components/AddUserModal";
 import ActivateChatbotConfirmModal from "@/features/usuarios/components/ActivateChatbotConfirmModal";
 import { formatDisplayPhone, userWhatsAppPhone, wspLink } from "@/features/operaciones/utils";
+import { anchorPropsForHref } from "@/lib/internal-href";
 
 // ─── Helpers ────────────────────────────────────────────────────────────────
 
@@ -47,7 +48,7 @@ function usuarioPagosBoletasSearchParam(wa: string): string {
   return encodeURIComponent(formatDisplayPhone(wa));
 }
 
-/** Mínimo entre aperturas en nueva pestaña (anti ráfaga si el navegador tarda). */
+/** Mínimo entre navegaciones consecutivas al mismo destino (anti ráfaga si el navegador tarda). */
 const NEW_TAB_CLICK_COOLDOWN_MS = 2500;
 
 function CooldownNewTabLink({
@@ -65,8 +66,7 @@ function CooldownNewTabLink({
   return (
     <Link
       href={href}
-      target="_blank"
-      rel="noopener noreferrer"
+      {...anchorPropsForHref(href)}
       className={className}
       onClick={(e: MouseEvent<HTMLAnchorElement>) => {
         const now = Date.now();
@@ -546,6 +546,7 @@ function UsuariosContent() {
                       const attention = needsAttention(user);
                       const wa = userWhatsAppPhone(user);
                       const phoneDisplay = wa ? formatDisplayPhone(wa) : "—";
+                      const userWaHref = wa ? wspLink(wa) : null;
                       return (
                           <tr
                             key={user.id}
@@ -598,11 +599,10 @@ function UsuariosContent() {
                               })()}
 
                               {/* WhatsApp: solo si hay móvil peruano válido */}
-                              {wa ? (
+                              {userWaHref ? (
                                 <a
-                                  href={wspLink(wa)}
-                                  target="_blank"
-                                  rel="noopener noreferrer"
+                                  href={userWaHref}
+                                  {...anchorPropsForHref(userWaHref)}
                                   className="flex items-center gap-2 hover:bg-green-50 px-2 py-1 rounded-lg transition-colors group w-fit"
                                   title="Abrir chat de WhatsApp"
                                 >

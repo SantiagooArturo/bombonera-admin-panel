@@ -531,6 +531,10 @@ export default function OperacionesPage() {
           onToggleApplied={sidebar.handleToggleApplied}
           onUpdatePrice={sidebar.handleUpdatePrice}
           onUpdateAmountPaid={sidebar.handleUpdateAmountPaid}
+          amountPaidDeltaPrompt={sidebar.amountPaidDeltaPrompt}
+          onResolveAmountPaidDeltaPrompt={sidebar.resolveAmountPaidDeltaPrompt}
+          pendingEmitFromAmountEdit={sidebar.pendingEmitFromAmountEdit}
+          onClearPendingEmitFromAmountEdit={sidebar.clearPendingEmitFromAmountEdit}
           clientType={sidebar.clientType}
           clientTypeLoading={sidebar.clientTypeLoading}
           clientTypeUpdating={sidebar.clientTypeUpdating}

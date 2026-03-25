@@ -5,6 +5,7 @@ import { PAYMENT_METHOD_LABELS, PAYMENT_SOURCE_LABELS } from "@/lib/types";
 import { formatSolesAmountDisplay } from "@/features/boletas/utils/formatSolesAmountDisplay";
 import { IconOpenInNewTab } from "@/features/boletas/components/boletasSharedUi";
 import { formatDisplayPhone, wspLink } from "@/features/operaciones/utils";
+import { anchorPropsForHref } from "@/lib/internal-href";
 import { transferClientDisplayName } from "../utils/transferDisplay";
 import { formatTransferPaymentDisplay } from "../utils/formatTransferPaymentDisplay";
 import { TransferVerifiedSelect } from "./TransferVerifiedSelect";
@@ -45,6 +46,7 @@ export function PagosRecibidosMobileList({
       {rows.map((t) => {
         const name = transferClientDisplayName(t);
         const phone = t.phone_number?.trim();
+        const mobileTransferWspHref = phone ? wspLink(phone) : null;
         const media = t.media_url?.trim();
         const proxy = media ? `/api/proxy-file?url=${encodeURIComponent(media)}` : null;
         const methodLabel =
@@ -73,11 +75,10 @@ export function PagosRecibidosMobileList({
               </div>
             </div>
 
-            {phone ? (
+            {mobileTransferWspHref ? (
               <a
-                href={wspLink(phone)}
-                target="_blank"
-                rel="noopener noreferrer"
+                href={mobileTransferWspHref}
+                {...anchorPropsForHref(mobileTransferWspHref)}
                 className="mt-2 inline-block font-mono text-sm text-green-700 underline decoration-green-600/50"
               >
                 {formatDisplayPhone(phone)}
@@ -99,8 +100,7 @@ export function PagosRecibidosMobileList({
             {proxy ? (
               <a
                 href={proxy}
-                target="_blank"
-                rel="noopener noreferrer"
+                {...anchorPropsForHref(proxy)}
                 className="mt-3 inline-flex items-center gap-1.5 rounded-lg border border-blue-200 bg-blue-50 px-3 py-2 text-xs font-bold text-blue-800 hover:bg-blue-100"
               >
                 <IconOpenInNewTab className="h-3.5 w-3.5 shrink-0 opacity-90" />

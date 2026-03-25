@@ -1,7 +1,7 @@
 "use client";
 
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
-import type { EmitComprobanteParams, Transfer, User } from "@/lib/types";
+import type { EmitComprobanteParams, Invoice, Transfer, User } from "@/lib/types";
 import { useStore } from "@/lib/hooks";
 import {
   getUserName,
@@ -10,6 +10,9 @@ import {
   normalizePeruPhone,
   sanitizeDirectoryClientLabel,
 } from "@/features/operaciones/utils";
+import { WHATSAPP_ICON_PATH } from "@/features/operaciones/whatsappIconPath";
+import { invoicePlantillaPdfHref } from "@/features/boletas/utils/invoicePdfLinks";
+import { invoiceComprobantePdfDownloadFilename } from "@/features/boletas/utils/comprobantePdfFilename";
 import { EmitClienteDirectoryField } from "./EmitClienteDirectoryField";
 import { stripEmojis } from "../utils/stripEmojis";
 import {
@@ -20,6 +23,17 @@ import {
 import { BOLETA_SIN_DOCUMENTO_CLIENTE_MAX_SOLES } from "../constants/sunat";
 import { emitMiscInvoice } from "../services/emitMiscInvoice";
 import { getLimaNowTimeHm, getLimaTodayYmd } from "../utils/limaEmissionDatetime";
+import { PdfPreviewThumbnail } from "@/components/PdfPreviewThumbnail";
+import { navigateToHref } from "@/lib/internal-href";
+
+function canSendComprobanteWsp(inv: Invoice, transfer: Transfer): boolean {
+  const pdfOk = Boolean(invoicePlantillaPdfHref(inv) || String(inv.file_url || "").trim());
+  if (!pdfOk) return false;
+  const raw = String(inv.phone_number || transfer.phone_number || "").trim();
+  const digits = raw.replace(/\D/g, "");
+  const chatId = digits.length >= 9 ? normalizePeruPhone(digits) : "";
+  return Boolean(chatId && isValidPeruPhone(chatId));
+}
 
 function cleanClienteInitial(value: string): string {
   return value
@@ -45,7 +59,7 @@ export type EmitComprobanteModalTransferProps = {
   initialDescripcion?: string;
   initialCliente?: string;
   onClose: () => void;
-  onEmitInvoice: (t: Transfer, p: EmitComprobanteParams) => void;
+  onEmitInvoice: (t: Transfer, p: EmitComprobanteParams) => Promise<Invoice | null>;
   emitting?: boolean;
   attaching?: boolean;
 };
@@ -105,6 +119,12 @@ export const EmitComprobanteModal = memo(function EmitComprobanteModal(props: Em
   const [miscEmitting, setMiscEmitting] = useState(false);
   const [miscError, setMiscError] = useState<string | null>(null);
 
+  const [transferSubmitting, setTransferSubmitting] = useState(false);
+  const [transferSuccessInvoice, setTransferSuccessInvoice] = useState<Invoice | null>(null);
+  const [wspSendStatus, setWspSendStatus] = useState<"idle" | "sending" | "sent" | "error">("idle");
+  const [wspSendError, setWspSendError] = useState<string | null>(null);
+  const wspSendInFlightRef = useRef(false);
+
   const [emisorContext, setEmisorContext] = useState<"" | EmitComprobanteEmisorContext>("");
 
   /** Si el usuario editó el nombre en el CPE, no lo pisan autocompletados (perfil / SUNAT). */
@@ -124,6 +144,15 @@ export const EmitComprobanteModal = memo(function EmitComprobanteModal(props: Em
     if (misc) return;
     setDocNumberTransfer(docType === "boleta" ? (clientDni || "") : (clientRuc || ""));
   }, [misc, docType, clientDni, clientRuc]);
+
+  const transferIdForReset = misc ? null : props.transfer.id;
+  useEffect(() => {
+    if (transferIdForReset == null) return;
+    setTransferSuccessInvoice(null);
+    setTransferSubmitting(false);
+    setWspSendStatus("idle");
+    setWspSendError(null);
+  }, [transferIdForReset]);
 
   useEffect(() => {
     if (!misc) return;
@@ -373,6 +402,59 @@ export const EmitComprobanteModal = memo(function EmitComprobanteModal(props: Em
   const emitting = misc ? miscEmitting : !!props.emitting;
   const attaching = misc ? false : !!props.attaching;
 
+  const showTransferSuccess = !misc && transferSuccessInvoice !== null;
+  const showEmittingOverlay = !misc && !showTransferSuccess && (transferSubmitting || emitting);
+
+  const transferForWsp = !misc ? props.transfer : null;
+  const showWspOnSuccess =
+    showTransferSuccess &&
+    transferSuccessInvoice &&
+    transferForWsp &&
+    canSendComprobanteWsp(transferSuccessInvoice, transferForWsp);
+
+  const successPdfHref = transferSuccessInvoice ? invoicePlantillaPdfHref(transferSuccessInvoice) : null;
+
+  const sendSuccessInvoiceWsp = useCallback(async () => {
+    const inv = transferSuccessInvoice;
+    const t = transferForWsp;
+    if (!inv || !t || wspSendInFlightRef.current || !canSendComprobanteWsp(inv, t)) return;
+    const raw = String(inv.phone_number || t.phone_number || "").trim();
+    const digits = raw.replace(/\D/g, "");
+    const chatId = digits.length >= 9 ? normalizePeruPhone(digits) : "";
+    if (!chatId) return;
+    wspSendInFlightRef.current = true;
+    setWspSendStatus("sending");
+    setWspSendError(null);
+    try {
+      const res = await fetch("/api/invoices/send", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          chat_id: chatId,
+          invoice_id: inv.id,
+          filename: invoiceComprobantePdfDownloadFilename(inv),
+        }),
+        signal: AbortSignal.timeout(200_000),
+      });
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        throw new Error(typeof data?.error === "string" ? data.error : "No se pudo enviar.");
+      }
+      setWspSendStatus("sent");
+    } catch (err) {
+      const msg =
+        err instanceof Error
+          ? err.name === "TimeoutError" || err.message.includes("aborted")
+            ? "Tiempo de espera agotado al enviar."
+            : err.message
+          : "No se pudo enviar.";
+      setWspSendStatus("error");
+      setWspSendError(msg);
+    } finally {
+      wspSendInFlightRef.current = false;
+    }
+  }, [transferSuccessInvoice, transferForWsp]);
+
   const depositBancoTrim = formaPagoBanco.trim();
   const depositCuentaTrim = formaPagoCuenta.trim();
   const depositDetalleOk =
@@ -388,7 +470,8 @@ export const EmitComprobanteModal = memo(function EmitComprobanteModal(props: Em
     !boletaDocIncomplete &&
     docValid &&
     depositDetalleOk &&
-    !emitting;
+    !emitting &&
+    !transferSubmitting;
 
   const depositFieldsForApi =
     condicionVenta === CONDICION_VENTA_DEPOSITO_CUENTA && depositBancoTrim && depositCuentaTrim
@@ -431,24 +514,29 @@ export const EmitComprobanteModal = memo(function EmitComprobanteModal(props: Em
     }
   }
 
-  function handleTransferSubmit() {
+  async function handleTransferSubmit() {
     if (misc || !canSubmit) return;
-    props.onEmitInvoice(props.transfer, {
-      tipo_comprobante: docType,
-      doc_num: digitsDoc,
-      cliente_denominacion: clienteEdit.trim() || undefined,
-      descripcion: descripcionEdit.trim() || undefined,
-      amount: parsedAmount,
-      fecha_de_emision: fechaEmision.trim() || undefined,
-      hora_de_emision: horaEmision.trim() || undefined,
-      condicion_venta: condicionVenta,
-      cliente_direccion: docType === "factura" ? facturaDireccion.trim() || undefined : undefined,
-      ...depositFieldsForApi,
-    });
-    props.onClose();
+    setTransferSubmitting(true);
+    try {
+      const inv = await props.onEmitInvoice(props.transfer, {
+        tipo_comprobante: docType,
+        doc_num: digitsDoc,
+        cliente_denominacion: clienteEdit.trim() || undefined,
+        descripcion: descripcionEdit.trim() || undefined,
+        amount: parsedAmount,
+        fecha_de_emision: fechaEmision.trim() || undefined,
+        hora_de_emision: horaEmision.trim() || undefined,
+        condicion_venta: condicionVenta,
+        cliente_direccion: docType === "factura" ? facturaDireccion.trim() || undefined : undefined,
+        ...depositFieldsForApi,
+      });
+      if (inv) setTransferSuccessInvoice(inv);
+    } finally {
+      setTransferSubmitting(false);
+    }
   }
 
-  const onPrimaryClick = misc ? () => void handleMiscSubmit() : handleTransferSubmit;
+  const onPrimaryClick = misc ? () => void handleMiscSubmit() : () => void handleTransferSubmit();
 
   const serieLabel =
     fetchingSerie ? "…" : serieNum ? `${serieNum.serie}-${String(serieNum.next_correlativo).padStart(5, "0")}` : "—";
@@ -482,7 +570,23 @@ export const EmitComprobanteModal = memo(function EmitComprobanteModal(props: Em
       aria-modal="true"
       aria-labelledby="emit-comprobante-title"
     >
-      <div className="mb-10 w-full max-w-md rounded-2xl border border-gray-200 bg-white p-5 shadow-2xl">
+      <div className="relative mb-10 w-full max-w-md rounded-2xl border border-gray-200 bg-white p-5 shadow-2xl">
+        {showEmittingOverlay ? (
+          <div
+            className="absolute inset-0 z-20 flex flex-col items-center justify-center gap-3 rounded-2xl bg-white/85 px-6 backdrop-blur-[2px]"
+            aria-live="polite"
+            aria-busy="true"
+          >
+            <div
+              className="h-11 w-11 animate-spin rounded-full border-[3px] border-field-dark border-t-transparent"
+              aria-hidden
+            />
+            <p className="text-center text-sm font-semibold text-gray-800">Emitiendo comprobante…</p>
+          </div>
+        ) : null}
+
+        {!showTransferSuccess ? (
+          <>
         <div className="flex items-center justify-between gap-3 border-b border-gray-100 pb-3">
           <h2 id="emit-comprobante-title" className="text-base font-bold text-gray-900">
             Emitir comprobante
@@ -490,7 +594,8 @@ export const EmitComprobanteModal = memo(function EmitComprobanteModal(props: Em
           <button
             type="button"
             onClick={props.onClose}
-            className="shrink-0 rounded-lg p-1.5 text-gray-400 hover:bg-gray-100 hover:text-gray-700"
+            disabled={!misc && transferSubmitting}
+            className="shrink-0 rounded-lg p-1.5 text-gray-400 hover:bg-gray-100 hover:text-gray-700 disabled:opacity-40"
             aria-label="Cerrar"
           >
             <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -798,6 +903,7 @@ export const EmitComprobanteModal = memo(function EmitComprobanteModal(props: Em
               disabled={
                 attaching ||
                 emitting ||
+                transferSubmitting ||
                 !docValid ||
                 !amountValid ||
                 boletaDocIncomplete ||
@@ -808,10 +914,91 @@ export const EmitComprobanteModal = memo(function EmitComprobanteModal(props: Em
               }
               className={`flex ${controlH} flex-1 items-center justify-center rounded-lg border border-field-dark bg-field-dark text-sm font-semibold text-white hover:opacity-95 disabled:opacity-50`}
             >
-              {emitting ? "Emitiendo…" : "Emitir comprobante"}
+              {emitting || transferSubmitting ? "Emitiendo…" : "Emitir comprobante"}
             </button>
           )}
         </div>
+          </>
+        ) : (
+          <div className="space-y-5 pt-1">
+            <div className="flex items-center justify-between gap-3 border-b border-gray-100 pb-3">
+              <h2 id="emit-comprobante-title" className="text-base font-bold text-gray-900">
+                ¡Emitido con éxito!
+              </h2>
+              <button
+                type="button"
+                onClick={props.onClose}
+                className="shrink-0 rounded-lg p-1.5 text-gray-400 hover:bg-gray-100 hover:text-gray-700"
+                aria-label="Cerrar"
+              >
+                <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                </svg>
+              </button>
+            </div>
+            {successPdfHref ? (
+              <div className="mx-auto w-full max-w-[240px]">
+                <PdfPreviewThumbnail
+                  url={successPdfHref}
+                  onClickPreview={() => navigateToHref(successPdfHref)}
+                  variant="full"
+                />
+              </div>
+            ) : null}
+            {transferSuccessInvoice?.serie_correlativo ? (
+              <p className="text-center font-mono text-xs font-semibold text-gray-500">
+                {transferSuccessInvoice.serie_correlativo}
+              </p>
+            ) : null}
+            {!successPdfHref && !transferSuccessInvoice?.serie_correlativo ? (
+              <p className="text-center text-sm text-gray-600">Comprobante registrado.</p>
+            ) : null}
+            {showWspOnSuccess ? (
+              <button
+                type="button"
+                onClick={() => void sendSuccessInvoiceWsp()}
+                disabled={wspSendStatus === "sending" || wspSendStatus === "sent"}
+                className={`flex h-11 w-full items-center justify-center gap-2 rounded-xl border px-4 text-sm font-bold transition-colors ${
+                  wspSendStatus === "sent"
+                    ? "border-green-200 bg-green-50 text-green-800"
+                    : wspSendStatus === "error"
+                      ? "border-red-200 bg-red-50 text-red-800"
+                      : "border-green-600 bg-green-600 text-white hover:bg-green-700"
+                } disabled:opacity-70`}
+              >
+                {wspSendStatus === "sending" ? (
+                  "Enviando…"
+                ) : wspSendStatus === "sent" ? (
+                  "Enviado por WhatsApp"
+                ) : wspSendStatus === "error" ? (
+                  <>
+                    <svg className="h-4 w-4 shrink-0" fill="currentColor" viewBox="0 0 24 24" aria-hidden>
+                      <path d={WHATSAPP_ICON_PATH} />
+                    </svg>
+                    Reintentar envío
+                  </>
+                ) : (
+                  <>
+                    <svg className="h-4 w-4 shrink-0" fill="currentColor" viewBox="0 0 24 24" aria-hidden>
+                      <path d={WHATSAPP_ICON_PATH} />
+                    </svg>
+                    Enviar por WhatsApp
+                  </>
+                )}
+              </button>
+            ) : null}
+            {wspSendError ? (
+              <p className="text-center text-xs leading-snug text-red-600">{wspSendError}</p>
+            ) : null}
+            <button
+              type="button"
+              onClick={props.onClose}
+              className="flex h-11 w-full items-center justify-center rounded-xl border border-gray-300 text-sm font-semibold text-gray-800 hover:bg-gray-50"
+            >
+              Cerrar
+            </button>
+          </div>
+        )}
       </div>
     </div>
   );

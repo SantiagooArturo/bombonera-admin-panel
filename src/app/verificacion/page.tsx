@@ -9,6 +9,8 @@ import { getCourtSizeLabel } from "@/lib/court-config";
 import type { CourtFieldConfig } from "@/lib/court-config";
 import PaymentSidebar from "@/components/verificacion/PaymentSidebar";
 import { usePaymentSidebar } from "@/components/verificacion/usePaymentSidebar";
+import { anchorPropsForHref } from "@/lib/internal-href";
+import { wspLink } from "@/features/operaciones/utils";
 
 export default function VerificacionPage() {
     return (
@@ -99,7 +101,7 @@ function VerificacionContent() {
             <div className="p-6 md:p-10 max-w-7xl mx-auto">
                 <div className="mb-8">
                     <h1 className="text-3xl font-bold text-gray-900">
-                        Verificación de Pagos
+                        Reservas
                     </h1>
                     <p className="text-lg text-gray-500 mt-2">
                         Revisa los comprobantes y valida las reservas para evitar fraudes.
@@ -158,7 +160,9 @@ function VerificacionContent() {
                                 </tr>
                             </thead>
                             <tbody>
-                                {filteredReservations.map((res) => (
+                                {filteredReservations.map((res) => {
+                                    const rowWaHref = res.phone_number ? wspLink(res.phone_number) : null;
+                                    return (
                                     <tr key={res.id} className="border-b border-gray-100 hover:bg-gray-50 transition-colors">
                                         <td className="p-6">
                                             <div className="font-bold text-xl text-gray-900">
@@ -193,10 +197,10 @@ function VerificacionContent() {
                                                 {res.representative_name || "Sin nombre"}
                                             </div>
                                             <div className="flex items-center gap-2">
+                                                {rowWaHref ? (
                                                 <a
-                                                    href={`https://wa.me/${res.phone_number?.startsWith("51") ? res.phone_number : `51${res.phone_number}`}?text=.`}
-                                                    target="_blank"
-                                                    rel="noopener noreferrer"
+                                                    href={rowWaHref}
+                                                    {...anchorPropsForHref(rowWaHref)}
                                                     className="flex items-center gap-2 hover:bg-green-50 px-2 py-1 rounded-lg transition-colors group"
                                                     title="Abrir chat de WhatsApp"
                                                 >
@@ -207,6 +211,9 @@ function VerificacionContent() {
                                                         {res.phone_number?.startsWith("51") ? res.phone_number.substring(2) : res.phone_number}
                                                     </span>
                                                 </a>
+                                                ) : (
+                                                    <span className="text-sm text-gray-400">—</span>
+                                                )}
                                             </div>
                                         </td>
                                         <td className="p-6">
@@ -238,7 +245,8 @@ function VerificacionContent() {
                                             </span>
                                         </td>
                                     </tr>
-                                ))}
+                                );
+                                })}
                             </tbody>
                         </table>
                         {filteredReservations.length === 0 && (
@@ -278,6 +286,10 @@ function VerificacionContent() {
                     onToggleApplied={sidebar.handleToggleApplied}
                     onUpdatePrice={sidebar.handleUpdatePrice}
                     onUpdateAmountPaid={sidebar.handleUpdateAmountPaid}
+                    amountPaidDeltaPrompt={sidebar.amountPaidDeltaPrompt}
+                    onResolveAmountPaidDeltaPrompt={sidebar.resolveAmountPaidDeltaPrompt}
+                    pendingEmitFromAmountEdit={sidebar.pendingEmitFromAmountEdit}
+                    onClearPendingEmitFromAmountEdit={sidebar.clearPendingEmitFromAmountEdit}
                     clientType={sidebar.clientType}
                     clientTypeLoading={sidebar.clientTypeLoading}
                     clientTypeUpdating={sidebar.clientTypeUpdating}

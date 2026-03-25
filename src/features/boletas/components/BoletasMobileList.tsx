@@ -3,6 +3,7 @@
 import type { Invoice } from "@/lib/types";
 import { WHATSAPP_ICON_PATH } from "@/features/operaciones/whatsappIconPath";
 import { wspLink } from "@/features/operaciones/utils";
+import { anchorPropsForHref } from "@/lib/internal-href";
 import { formatInvoiceEmissionDate } from "../utils/formatInvoiceEmissionDate";
 import { formatSolesAmountDisplay } from "../utils/formatSolesAmountDisplay";
 import {
@@ -78,6 +79,7 @@ export function BoletasMobileList({
         const descText = invoiceDescripcionOnly(inv) || "—";
         const canSend = Boolean(invoicePlantillaPdfHref(inv) || inv.file_url?.trim());
         const hasPhone = Boolean(inv.phone_number?.trim());
+        const mobInvWspHref = hasPhone ? wspLink(inv.phone_number!) : null;
         const cancha = canchaSummary(inv);
 
         return (
@@ -117,11 +119,10 @@ export function BoletasMobileList({
               <p className="mt-1 text-xs text-gray-500">{cancha}</p>
             ) : null}
 
-            {hasPhone ? (
+            {mobInvWspHref ? (
               <a
-                href={wspLink(inv.phone_number!)}
-                target="_blank"
-                rel="noopener noreferrer"
+                href={mobInvWspHref}
+                {...anchorPropsForHref(mobInvWspHref)}
                 className="mt-2 inline-flex text-sm font-medium text-green-700 underline decoration-green-600/40 underline-offset-2"
               >
                 WhatsApp: {invoiceTelefonoDisplay(inv) || inv.phone_number}
@@ -172,10 +173,9 @@ export function BoletasMobileList({
               {plantillaHref ? (
                 <a
                   href={plantillaHref}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  title="Ver comprobante (nueva pestaña)"
-                  aria-label="Ver comprobante en una pestaña nueva"
+                  {...anchorPropsForHref(plantillaHref)}
+                  title="Ver comprobante"
+                  aria-label="Ver comprobante"
                   className="inline-flex flex-1 min-w-[8rem] items-center justify-center gap-1.5 rounded-xl border border-blue-200 bg-blue-50 px-4 py-3 text-sm font-bold text-blue-800 hover:bg-blue-100"
                 >
                   <IconOpenInNewTab className="h-4 w-4 shrink-0 opacity-90" />
