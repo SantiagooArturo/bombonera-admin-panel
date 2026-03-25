@@ -1,8 +1,9 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { formatDisplayPhone, isValidPeruPhone, normalizePeruPhone } from "@/features/operaciones/utils";
 import { CLIENT_TYPE_LABELS, type ClientType } from "@/lib/types";
+import ActivateChatbotConfirmModal from "@/features/usuarios/components/ActivateChatbotConfirmModal";
 
 type AddUserModalProps = {
   open: boolean;
@@ -16,6 +17,11 @@ export default function AddUserModal({ open, onClose, onSubmit }: AddUserModalPr
   const [dni, setDni] = useState("");
   const [clientType, setClientType] = useState<ClientType>("casual");
   const [loading, setLoading] = useState(false);
+  const [confirmChatbotOpen, setConfirmChatbotOpen] = useState(false);
+
+  useEffect(() => {
+    if (!open) setConfirmChatbotOpen(false);
+  }, [open]);
 
   const phoneNormalized = normalizePeruPhone(phoneInput);
   const phoneValid = isValidPeruPhone(phoneNormalized);
@@ -29,8 +35,9 @@ export default function AddUserModal({ open, onClose, onSubmit }: AddUserModalPr
     return formatDisplayPhone(normalizePeruPhone(phoneInput));
   })();
 
-  async function handleSubmit() {
+  async function runCreateAfterConfirm() {
     if (!canSubmit) return;
+    setConfirmChatbotOpen(false);
     setLoading(true);
     try {
       const success = await onSubmit({
@@ -49,6 +56,11 @@ export default function AddUserModal({ open, onClose, onSubmit }: AddUserModalPr
     } finally {
       setLoading(false);
     }
+  }
+
+  function handleSubmitClick() {
+    if (!canSubmit || loading) return;
+    setConfirmChatbotOpen(true);
   }
 
   if (!open) return null;
@@ -133,7 +145,8 @@ export default function AddUserModal({ open, onClose, onSubmit }: AddUserModalPr
               Cancelar
             </button>
             <button
-              onClick={handleSubmit}
+              type="button"
+              onClick={handleSubmitClick}
               disabled={!canSubmit}
               className="flex-1 py-3 px-4 font-semibold rounded-xl bg-bombonera-600 text-white hover:bg-bombonera-700 transition-colors text-sm disabled:opacity-50 disabled:cursor-not-allowed"
             >
@@ -142,6 +155,28 @@ export default function AddUserModal({ open, onClose, onSubmit }: AddUserModalPr
           </div>
         </div>
       </div>
+
+      <ActivateChatbotConfirmModal
+        open={confirmChatbotOpen}
+        title="¿Crear usuario con el chatbot activo?"
+        confirmLabel="Sí, crear y activar chatbot"
+        onCancel={() => setConfirmChatbotOpen(false)}
+        onConfirm={() => void runCreateAfterConfirm()}
+        loading={loading}
+      >
+        <p className="text-lg sm:text-xl font-bold text-red-900 leading-snug">
+          Los usuarios nuevos se crean con el <span className="underline decoration-red-600 decoration-4">chatbot encendido</span> por defecto.
+        </p>
+        <ul className="list-disc pl-5 space-y-2 text-base font-semibold text-red-900">
+          <li>El bot podrá responder automáticamente por WhatsApp en cuanto exista el registro.</li>
+          <li>Si no quieres eso, pulsa <strong>No, cancelar</strong> y no se creará el usuario.</li>
+        </ul>
+        {phoneValid && (
+          <p className="rounded-xl border-2 border-red-300 bg-white px-4 py-3 text-base font-bold text-red-950">
+            Teléfono: <span className="font-mono">{formatDisplayPhone(phoneNormalized)}</span>
+          </p>
+        )}
+      </ActivateChatbotConfirmModal>
     </>
   );
 }

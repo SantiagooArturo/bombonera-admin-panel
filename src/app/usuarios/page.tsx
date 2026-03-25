@@ -19,6 +19,7 @@ import {
   type User,
 } from "@/lib/types";
 import AddUserModal from "@/features/usuarios/components/AddUserModal";
+import ActivateChatbotConfirmModal from "@/features/usuarios/components/ActivateChatbotConfirmModal";
 import { formatDisplayPhone, userWhatsAppPhone, wspLink } from "@/features/operaciones/utils";
 
 // ─── Helpers ────────────────────────────────────────────────────────────────
@@ -155,6 +156,11 @@ function UsuariosContent() {
   const [recurrentReminderEnabled, setRecurrentReminderEnabled] = useState<boolean | null>(null);
   const [recurrentReminderLoading, setRecurrentReminderLoading] = useState(false);
   const [bulkBotDeactivating, setBulkBotDeactivating] = useState(false);
+  /** Confirmación antes de activar el chatbot (evita clics accidentales). */
+  const [activateBotPending, setActivateBotPending] = useState<{
+    userId: string;
+    label: string;
+  } | null>(null);
   useEffect(() => {
     store.fetchUsers();
   }, [store]);
@@ -220,6 +226,7 @@ function UsuariosContent() {
       toast("Error al cambiar estado", "error");
     }
     setTogglingId(null);
+    setActivateBotPending(null);
   }
 
   async function handleDeactivateAllBots() {
@@ -657,12 +664,26 @@ function UsuariosContent() {
                           <td className="p-6 text-center">
                               <button
                               onClick={() => {
-                                  const currentlyOff = !(user.is_automated ?? true);
-                                  if (currentlyOff && user.client_type === "sospechoso_fraude") {
+                                  const botOn = user.is_automated ?? true;
+                                  if (botOn) {
+                                    void handleToggleAutomation(user.id, true);
+                                    return;
+                                  }
+                                  if (user.client_type === "sospechoso_fraude") {
                                     toast("Cambia el tipo de cliente antes de activar el bot", "error");
                                     return;
                                   }
-                                  handleToggleAutomation(user.id, user.is_automated ?? true);
+                                  const display = getDisplayName(user);
+                                  const waPhone = userWhatsAppPhone(user);
+                                  setActivateBotPending({
+                                    userId: user.id,
+                                    label:
+                                      display.name !== "Sin nombre"
+                                        ? display.name
+                                        : waPhone
+                                          ? formatDisplayPhone(waPhone)
+                                          : user.id,
+                                  });
                                 }}
                                 disabled={togglingId === user.id}
                               className={`relative inline-flex h-7 w-12 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none disabled:opacity-50 ${
@@ -764,6 +785,30 @@ function UsuariosContent() {
           </>
         )}
       </div>
+
+      <ActivateChatbotConfirmModal
+        open={!!activateBotPending}
+        title="¿Estás seguro de activar el chatbot?"
+        onCancel={() => setActivateBotPending(null)}
+        onConfirm={() => {
+          if (!activateBotPending) return;
+          void handleToggleAutomation(activateBotPending.userId, false);
+        }}
+        loading={togglingId === activateBotPending?.userId}
+      >
+        <p className="text-lg sm:text-xl font-bold text-red-900 leading-snug">
+          Vas a permitir que el <span className="underline decoration-red-600 decoration-4">bot responda automáticamente</span> por WhatsApp a este cliente.
+        </p>
+        <ul className="list-disc pl-5 space-y-2 text-base font-semibold text-red-900">
+          <li>Un clic por error puede generar respuestas automáticas y confusión para el cliente.</li>
+          <li>Solo confirma si es <strong>deliberado</strong>.</li>
+        </ul>
+        {activateBotPending && (
+          <p className="rounded-xl border-2 border-red-300 bg-white px-4 py-3 text-base font-bold text-red-950">
+            Cliente: <span className="font-mono">{activateBotPending.label}</span>
+          </p>
+        )}
+      </ActivateChatbotConfirmModal>
 
       {/* Modal de confirmación: eliminar usuario */}
       {resetConfirmId && (
