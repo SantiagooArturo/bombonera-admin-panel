@@ -4,6 +4,7 @@ import { useState, useRef, useEffect, useCallback, useMemo, memo } from "react";
 import Link from "next/link";
 import { PdfPreviewThumbnail } from "@/components/PdfPreviewThumbnail";
 import { invoicePlantillaPdfHref } from "@/features/boletas/utils/invoicePdfLinks";
+import { invoiceComprobantePdfDownloadFilename } from "@/features/boletas/utils/comprobantePdfFilename";
 import { EmitInvoiceModal } from "./EmitInvoiceModal";
 import { Transfer, Invoice, Reservation, PaymentMethod, ClientType, CLIENT_TYPE_LABELS, STATUS_LABELS, getPendingExpiryTimeFormatted, type ReservationStatus, type EmitComprobanteParams } from "@/lib/types";
 import type { CourtFieldConfig } from "@/lib/court-config";
@@ -768,6 +769,64 @@ const CobrosNearbyPaymentRow = memo(function CobrosNearbyPaymentRow({
   const emitting = emittingInvoiceId === transfer.id;
   const attaching = attachingInvoiceId === transfer.id;
 
+  const [wspStatus, setWspStatus] = useState<"idle" | "sending" | "sent" | "error">("idle");
+  const [wspError, setWspError] = useState<string | null>(null);
+  const wspInFlightRef = useRef(false);
+
+  useEffect(() => {
+    setWspStatus("idle");
+    setWspError(null);
+  }, [invoice?.id]);
+
+  const hasWspPdf = Boolean(
+    invoice && (pdfHref || String(invoice.file_url || "").trim())
+  );
+  const wspChatId = invoice
+    ? String(invoice.phone_number || transfer.phone_number || "").trim()
+    : "";
+
+  const sendInvoiceWsp = useCallback(async () => {
+    if (!invoice || !hasWspPdf) return;
+    const chatId = wspChatId;
+    if (!chatId) {
+      setWspStatus("error");
+      setWspError("Falta teléfono para WhatsApp.");
+      return;
+    }
+    if (wspInFlightRef.current) return;
+    wspInFlightRef.current = true;
+    setWspStatus("sending");
+    setWspError(null);
+    try {
+      const res = await fetch("/api/invoices/send", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          chat_id: chatId,
+          invoice_id: invoice.id,
+          filename: invoiceComprobantePdfDownloadFilename(invoice),
+        }),
+        signal: AbortSignal.timeout(200_000),
+      });
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        throw new Error(typeof data?.error === "string" ? data.error : "No se pudo enviar.");
+      }
+      setWspStatus("sent");
+    } catch (err) {
+      const msg =
+        err instanceof Error
+          ? err.name === "TimeoutError" || err.message.includes("aborted")
+            ? "Tiempo de espera agotado al enviar."
+            : err.message
+          : "No se pudo enviar.";
+      setWspStatus("error");
+      setWspError(msg);
+    } finally {
+      wspInFlightRef.current = false;
+    }
+  }, [invoice, hasWspPdf, wspChatId]);
+
   return (
     <div className="overflow-hidden rounded-2xl border-2 border-gray-200 bg-white">
       <div className="grid grid-cols-2 border-b-2 border-gray-200 bg-gray-50/50">
@@ -870,6 +929,44 @@ const CobrosNearbyPaymentRow = memo(function CobrosNearbyPaymentRow({
                   </a>
                 ) : null}
               </div>
+              {hasWspPdf ? (
+                <div className="flex flex-col items-stretch gap-1">
+                  <button
+                    type="button"
+                    title={!wspChatId ? "Falta teléfono" : "Enviar por WhatsApp"}
+                    disabled={!wspChatId || wspStatus === "sending" || wspStatus === "sent"}
+                    onClick={() => void sendInvoiceWsp()}
+                    className={`inline-flex items-center justify-center gap-1.5 rounded-xl border px-4 py-2.5 text-sm font-bold transition-colors ${
+                      wspStatus === "sent"
+                        ? "border-green-200 bg-green-50 text-green-800"
+                        : wspStatus === "error"
+                          ? "border-red-200 bg-red-50 text-red-800"
+                          : "border-green-600 bg-green-600 text-white hover:bg-green-700"
+                    } disabled:opacity-70`}
+                  >
+                    {wspStatus === "sending" ? (
+                      "Enviando…"
+                    ) : wspStatus === "sent" ? (
+                      "Enviado"
+                    ) : wspStatus === "error" ? (
+                      <>
+                        <svg className="h-4 w-4 shrink-0" fill="currentColor" viewBox="0 0 24 24" aria-hidden>
+                          <path d={WSP_ICON_PATH} />
+                        </svg>
+                        Reintentar
+                      </>
+                    ) : (
+                      <>
+                        <svg className="h-4 w-4 shrink-0" fill="currentColor" viewBox="0 0 24 24" aria-hidden>
+                          <path d={WSP_ICON_PATH} />
+                        </svg>
+                        Enviar
+                      </>
+                    )}
+                  </button>
+                  {wspError ? <p className="text-center text-[10px] leading-tight text-red-600">{wspError}</p> : null}
+                </div>
+              ) : null}
               <button
                 type="button"
                 onClick={async () => {
