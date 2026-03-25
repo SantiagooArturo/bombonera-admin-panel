@@ -191,6 +191,10 @@ export interface Invoice {
   sunat_pdf_ticket?: string | null;
   /** Condición de venta mostrada en el PDF del panel. */
   condicion_venta?: string;
+  /** Depósito: banco donde la empresa emisora recibe el pago (PDF formal). */
+  forma_pago_banco?: string;
+  /** Depósito: cuenta o CCI de la empresa emisora (PDF formal). */
+  forma_pago_cuenta?: string;
   /** Fecha de emisión del CPE (AAAA-MM-DD), misma que SUNAT. */
   fecha_emision_ymd?: string;
   /** Hora de emisión del CPE (HH:mm:ss), misma que SUNAT. */
@@ -251,6 +255,10 @@ export type EmitComprobanteParams = {
   condicion_venta?: string;
   /** Factura: dirección del receptor en SUNAT y en el PDF formal. */
   cliente_direccion?: string;
+  /** Depósito: banco emisor (cuenta de cobro de la empresa, no del cliente). */
+  forma_pago_banco?: string;
+  /** Depósito: cuenta o CCI emisor. */
+  forma_pago_cuenta?: string;
 };
 
 // Transferencias: colección transfers. Registro de todos los pagos procesados.

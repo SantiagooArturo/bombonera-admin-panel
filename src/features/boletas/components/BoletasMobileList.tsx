@@ -10,7 +10,7 @@ import {
   invoiceReceptorOnly,
   invoiceTelefonoDisplay,
 } from "../utils/invoiceTableColumns";
-import { invoicePlantillaPdfHref, invoiceXmlHref } from "../utils/invoicePdfLinks";
+import { invoicePlantillaPdfHref } from "../utils/invoicePdfLinks";
 import { IconOpenInNewTab, SerieCorrelativoCell } from "./boletasSharedUi";
 
 type BoletasMobileListProps = {
@@ -65,7 +65,6 @@ export function BoletasMobileList({
     <ul className="flex flex-col gap-3" aria-busy={loading}>
       {rows.map((inv) => {
         const plantillaHref = invoicePlantillaPdfHref(inv);
-        const xmlHref = invoiceXmlHref(inv);
         const st = wspStatus[inv.id] ?? "idle";
         const wErr = wspError[inv.id];
         const isFactura = inv.tipo_comprobante === "factura";
@@ -181,17 +180,6 @@ export function BoletasMobileList({
                 >
                   <IconOpenInNewTab className="h-4 w-4 shrink-0 opacity-90" />
                   Ver
-                </a>
-              ) : null}
-              {xmlHref ? (
-                <a
-                  href={xmlHref}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  title="XML SUNAT"
-                  className="inline-flex min-w-[5rem] flex-1 items-center justify-center rounded-xl border border-violet-200 bg-violet-50 px-3 py-3 text-sm font-bold text-violet-800 hover:bg-violet-100"
-                >
-                  XML
                 </a>
               ) : null}
               {isVoidedRow ? (

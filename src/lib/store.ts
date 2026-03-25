@@ -704,6 +704,8 @@ class Store {
       if (params.hora_de_emision?.trim()) body.hora_de_emision = params.hora_de_emision.trim();
       if (params.condicion_venta?.trim()) body.condicion_venta = params.condicion_venta.trim();
       if (params.cliente_direccion?.trim()) body.cliente_direccion = params.cliente_direccion.trim();
+      if (params.forma_pago_banco?.trim()) body.forma_pago_banco = params.forma_pago_banco.trim();
+      if (params.forma_pago_cuenta?.trim()) body.forma_pago_cuenta = params.forma_pago_cuenta.trim();
 
       const res = await fetch("/api/invoices", {
         method: "POST",
@@ -756,6 +758,14 @@ class Store {
           typeof result.serie_correlativo === "string" ? result.serie_correlativo : undefined,
         condicion_venta:
           typeof result.condicion_venta === "string" ? result.condicion_venta : params.condicion_venta?.trim(),
+        forma_pago_banco:
+          typeof result.forma_pago_banco === "string" && result.forma_pago_banco.trim()
+            ? result.forma_pago_banco.trim()
+            : params.forma_pago_banco?.trim(),
+        forma_pago_cuenta:
+          typeof result.forma_pago_cuenta === "string" && result.forma_pago_cuenta.trim()
+            ? result.forma_pago_cuenta.trim()
+            : params.forma_pago_cuenta?.trim(),
         cliente_direccion:
           typeof result.cliente_direccion === "string" && result.cliente_direccion.trim()
             ? result.cliente_direccion.trim()
@@ -798,6 +808,8 @@ class Store {
       if (params.hora_de_emision?.trim()) body.hora_de_emision = params.hora_de_emision.trim();
       if (params.condicion_venta?.trim()) body.condicion_venta = params.condicion_venta.trim();
       if (params.cliente_direccion?.trim()) body.cliente_direccion = params.cliente_direccion.trim();
+      if (params.forma_pago_banco?.trim()) body.forma_pago_banco = params.forma_pago_banco.trim();
+      if (params.forma_pago_cuenta?.trim()) body.forma_pago_cuenta = params.forma_pago_cuenta.trim();
 
       const res = await fetch("/api/invoices", {
         method: "POST",

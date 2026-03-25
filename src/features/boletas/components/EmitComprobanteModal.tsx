@@ -12,7 +12,11 @@ import {
 } from "@/features/operaciones/utils";
 import { EmitClienteDirectoryField } from "./EmitClienteDirectoryField";
 import { stripEmojis } from "../utils/stripEmojis";
-import { CONDICION_VENTA_OPTIONS, FORMA_PAGO_EMISION_LABEL } from "../constants/condicionVenta";
+import {
+  CONDICION_VENTA_DEPOSITO_CUENTA,
+  CONDICION_VENTA_OPTIONS,
+  FORMA_PAGO_EMISION_LABEL,
+} from "../constants/condicionVenta";
 import { BOLETA_SIN_DOCUMENTO_CLIENTE_MAX_SOLES } from "../constants/sunat";
 import { emitMiscInvoice } from "../services/emitMiscInvoice";
 import { getLimaNowTimeHm, getLimaTodayYmd } from "../utils/limaEmissionDatetime";
@@ -90,6 +94,8 @@ export const EmitComprobanteModal = memo(function EmitComprobanteModal(props: Em
   const [fechaEmision, setFechaEmision] = useState(getLimaTodayYmd);
   const [horaEmision, setHoraEmision] = useState(getLimaNowTimeHm);
   const [condicionVenta, setCondicionVenta] = useState<string>("Transferencia");
+  const [formaPagoBanco, setFormaPagoBanco] = useState("");
+  const [formaPagoCuenta, setFormaPagoCuenta] = useState("");
   const [miscEmitting, setMiscEmitting] = useState(false);
   const [miscError, setMiscError] = useState<string | null>(null);
 
@@ -197,6 +203,13 @@ export const EmitComprobanteModal = memo(function EmitComprobanteModal(props: Em
     prevCompleteRucRef.current = "";
     if (docType === "boleta") setFacturaDireccion("");
   }, [docType]);
+
+  useEffect(() => {
+    if (condicionVenta !== CONDICION_VENTA_DEPOSITO_CUENTA) {
+      setFormaPagoBanco("");
+      setFormaPagoCuenta("");
+    }
+  }, [condicionVenta]);
 
   useEffect(() => {
     if (docType !== "factura") return;
@@ -311,6 +324,13 @@ export const EmitComprobanteModal = memo(function EmitComprobanteModal(props: Em
   const emitting = misc ? miscEmitting : !!props.emitting;
   const attaching = misc ? false : !!props.attaching;
 
+  const depositBancoTrim = formaPagoBanco.trim();
+  const depositCuentaTrim = formaPagoCuenta.trim();
+  const depositDetalleOk =
+    condicionVenta !== CONDICION_VENTA_DEPOSITO_CUENTA ||
+    (depositBancoTrim.length > 0 && depositCuentaTrim.length > 0) ||
+    (depositBancoTrim.length === 0 && depositCuentaTrim.length === 0);
+
   const canSubmit =
     receptorOk &&
     descripcionOk &&
@@ -318,7 +338,13 @@ export const EmitComprobanteModal = memo(function EmitComprobanteModal(props: Em
     fechaHoraOk &&
     !boletaDocIncomplete &&
     docValid &&
+    depositDetalleOk &&
     !emitting;
+
+  const depositFieldsForApi =
+    condicionVenta === CONDICION_VENTA_DEPOSITO_CUENTA && depositBancoTrim && depositCuentaTrim
+      ? { forma_pago_banco: depositBancoTrim, forma_pago_cuenta: depositCuentaTrim }
+      : {};
 
   async function handleMiscSubmit() {
     if (!misc || !canSubmit) return;
@@ -343,6 +369,7 @@ export const EmitComprobanteModal = memo(function EmitComprobanteModal(props: Em
         panel_link_user_id: hasPanelLink ? linkedUser!.id : undefined,
         panel_link_phone: hasPanelLink ? panelLinkPhoneNorm : undefined,
         cliente_direccion: docType === "factura" ? facturaDireccion.trim() || undefined : undefined,
+        ...depositFieldsForApi,
       });
       if (!result.success) {
         setMiscError(result.error ?? "Error al emitir");
@@ -367,6 +394,7 @@ export const EmitComprobanteModal = memo(function EmitComprobanteModal(props: Em
       hora_de_emision: horaEmision.trim() || undefined,
       condicion_venta: condicionVenta,
       cliente_direccion: docType === "factura" ? facturaDireccion.trim() || undefined : undefined,
+      ...depositFieldsForApi,
     });
     props.onClose();
   }
@@ -532,6 +560,50 @@ export const EmitComprobanteModal = memo(function EmitComprobanteModal(props: Em
             </div>
           </div>
 
+          {condicionVenta === CONDICION_VENTA_DEPOSITO_CUENTA ? (
+            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+              <p className="sm:col-span-2 rounded-lg border border-gray-200 bg-gray-50 px-3 py-2 text-xs text-gray-700">
+                Cuenta de la <span className="font-semibold">empresa emisora</span> del comprobante (donde el cliente
+                abona). No es el banco ni la cuenta del cliente.
+              </p>
+              <div>
+                <label htmlFor="emit-forma-pago-banco" className={labelClass}>
+                  Banco emisor
+                </label>
+                <input
+                  id="emit-forma-pago-banco"
+                  type="text"
+                  value={formaPagoBanco}
+                  onChange={(e) => setFormaPagoBanco(e.target.value)}
+                  placeholder="Entidad donde la empresa recibe el depósito"
+                  className={inputClass}
+                  autoComplete="off"
+                  maxLength={120}
+                />
+              </div>
+              <div>
+                <label htmlFor="emit-forma-pago-cuenta" className={labelClass}>
+                  Cuenta o CCI emisor
+                </label>
+                <input
+                  id="emit-forma-pago-cuenta"
+                  type="text"
+                  value={formaPagoCuenta}
+                  onChange={(e) => setFormaPagoCuenta(e.target.value)}
+                  placeholder="Nº de cuenta o CCI de la empresa emisora"
+                  className={`${inputClass} font-mono`}
+                  autoComplete="off"
+                  maxLength={100}
+                />
+              </div>
+              {!depositDetalleOk ? (
+                <p className="sm:col-span-2 text-xs text-amber-800">
+                  Completa banco emisor y cuenta emisor, o déjalos vacíos si no van en el PDF.
+                </p>
+              ) : null}
+            </div>
+          ) : null}
+
           <div>
             <label htmlFor="emit-nombre-cpe" className={labelClass}>
               Nombre en el comprobante
@@ -631,7 +703,8 @@ export const EmitComprobanteModal = memo(function EmitComprobanteModal(props: Em
               boletaDocIncomplete ||
               !fechaHoraOk ||
               !receptorOk ||
-              !descripcionOk
+              !descripcionOk ||
+              !depositDetalleOk
             }
             className={`flex ${controlH} flex-1 items-center justify-center rounded-lg border border-field-dark bg-field-dark text-sm font-semibold text-white hover:opacity-95 disabled:opacity-50`}
           >

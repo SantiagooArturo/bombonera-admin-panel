@@ -3,7 +3,10 @@ import { getDb, getStorageBucket } from "@/lib/firebase-admin";
 import { randomUUID } from "crypto";
 import { getCourtLabelForReservation } from "@/lib/court-config-server";
 import { BOLETA_SIN_DOCUMENTO_CLIENTE_MAX_SOLES } from "@/features/boletas/constants/sunat";
-import { normalizeCondicionVentaInput } from "@/features/boletas/constants/condicionVenta";
+import {
+  normalizeCondicionVentaInput,
+  normalizeFormaPagoDepositoFields,
+} from "@/features/boletas/constants/condicionVenta";
 import { buildFormalComprobanteInput } from "@/features/boletas/pdf/buildFormalComprobanteInput";
 import { generateSunatQrDataUrl } from "@/features/boletas/pdf/generateSunatQrDataUrl";
 import { getEmisorSunatFromEnv } from "@/features/boletas/pdf/emisorSunatEnv";
@@ -202,9 +205,16 @@ export async function POST(request: NextRequest) {
       panel_link_user_id: panelLinkUserIdRaw,
       panel_link_phone: panelLinkPhoneRaw,
       cliente_direccion: clienteDireccionRaw,
+      forma_pago_banco: formaPagoBancoRaw,
+      forma_pago_cuenta: formaPagoCuentaRaw,
     } = body;
 
     const condicionVenta = normalizeCondicionVentaInput(condicionVentaRaw);
+    const { banco: formaPagoBancoPersist, cuenta: formaPagoCuentaPersist } = normalizeFormaPagoDepositoFields(
+      condicionVenta,
+      formaPagoBancoRaw,
+      formaPagoCuentaRaw
+    );
     const clienteDireccionCliente =
       typeof clienteDireccionRaw === "string" ? clienteDireccionRaw.trim() : "";
 
@@ -576,6 +586,8 @@ export async function POST(request: NextRequest) {
         fechaEmisionYmd: fechaEmision,
         fechaEmisionMostrada,
         condicionVenta,
+        formaPagoBanco: formaPagoBancoPersist || undefined,
+        formaPagoCuenta: formaPagoCuentaPersist || undefined,
         qrImageDataUrl: qrDataUrl,
         receptorNombre: clienteName,
         clienteTipoDocumento: clienteTipoDocSunat,
@@ -652,6 +664,8 @@ export async function POST(request: NextRequest) {
       file_url_sunat: fileUrlSunat,
       file_url_xml: fileUrlXmlStored || "",
       condicion_venta: condicionVenta,
+      ...(formaPagoBancoPersist ? { forma_pago_banco: formaPagoBancoPersist } : {}),
+      ...(formaPagoCuentaPersist ? { forma_pago_cuenta: formaPagoCuentaPersist } : {}),
       amount: totalAmount,
       descripcion,
       court_type: court_type || "",
@@ -722,6 +736,8 @@ export async function POST(request: NextRequest) {
       amount: totalAmount,
       tipo_comprobante: tipoComprobante,
       condicion_venta: condicionVenta,
+      forma_pago_banco: formaPagoBancoPersist || undefined,
+      forma_pago_cuenta: formaPagoCuentaPersist || undefined,
       cliente_direccion: tipoComprobante === "factura" ? clienteDireccionSunat : undefined,
     });
   } catch (error) {

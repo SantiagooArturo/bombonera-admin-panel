@@ -1,4 +1,7 @@
-import { normalizeCondicionVentaInput } from "@/features/boletas/constants/condicionVenta";
+import {
+  normalizeCondicionVentaInput,
+  normalizeFormaPagoDepositoFields,
+} from "@/features/boletas/constants/condicionVenta";
 import { buildComprobantePdfFilenameFromFirestoreDoc } from "@/features/boletas/utils/comprobantePdfFilename";
 import { fechaYmdToDdMmYyyy, formatEmision12hPe } from "@/features/boletas/utils/fechaEmisionMostrada12h";
 import { buildSunatCpeQrPayload } from "@/features/boletas/utils/sunatQrPayload";
@@ -70,6 +73,11 @@ export async function renderFormalPlantillaPdfFromInvoiceDoc(
 
   const { ymd, hms } = emissionYmdHmsFromDoc(doc);
   const condicionVenta = normalizeCondicionVentaInput(doc.condicion_venta);
+  const { banco: formaPagoBancoRegen, cuenta: formaPagoCuentaRegen } = normalizeFormaPagoDepositoFields(
+    condicionVenta,
+    doc.forma_pago_banco,
+    doc.forma_pago_cuenta
+  );
   const clienteDirRaw = typeof doc.cliente_direccion === "string" ? doc.cliente_direccion.trim() : "";
 
   const emisorCfg = getEmisorSunatFromEnv();
@@ -111,6 +119,8 @@ export async function renderFormalPlantillaPdfFromInvoiceDoc(
     fechaEmisionYmd: ymd,
     fechaEmisionMostrada,
     condicionVenta,
+    formaPagoBanco: formaPagoBancoRegen || undefined,
+    formaPagoCuenta: formaPagoCuentaRegen || undefined,
     qrImageDataUrl: qrDataUrl,
     receptorNombre: clienteName,
     clienteTipoDocumento: tipoDoc,

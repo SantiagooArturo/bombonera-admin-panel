@@ -15,6 +15,8 @@ export type EmitMiscInvoiceParams = {
   panel_link_phone?: string;
   /** Factura: dirección fiscal del receptor (SUNAT / PDF). */
   cliente_direccion?: string;
+  forma_pago_banco?: string;
+  forma_pago_cuenta?: string;
 };
 
 export type EmitMiscInvoiceResult = {
@@ -62,6 +64,8 @@ export async function emitMiscInvoice(params: EmitMiscInvoiceParams): Promise<Em
   if (params.tipo_comprobante === "factura" && params.cliente_direccion?.trim()) {
     body.cliente_direccion = params.cliente_direccion.trim();
   }
+  if (params.forma_pago_banco?.trim()) body.forma_pago_banco = params.forma_pago_banco.trim();
+  if (params.forma_pago_cuenta?.trim()) body.forma_pago_cuenta = params.forma_pago_cuenta.trim();
 
   const res = await fetch("/api/invoices", {
     method: "POST",

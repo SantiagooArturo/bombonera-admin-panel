@@ -14,6 +14,10 @@ export type FormalComprobantePdfInput = {
   /** Texto ya formateado para el PDF (12 h, es-PE). */
   fechaEmisionMostrada: string;
   condicionVenta: string;
+  /** Depósito: banco de la empresa emisora (donde abona el cliente). */
+  formaPagoBanco?: string;
+  /** Depósito: cuenta o CCI de la empresa emisora. */
+  formaPagoCuenta?: string;
   /** PNG data URL para QR CPE (mismo contenido que valida SUNAT). */
   qrImageDataUrl?: string | null;
   receptorNombre: string;

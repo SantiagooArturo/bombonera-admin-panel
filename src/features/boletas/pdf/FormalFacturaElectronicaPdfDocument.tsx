@@ -62,6 +62,7 @@ const styles = StyleSheet.create({
   metaValueNormal: { flex: 1, fontSize: 8 },
   formaPagoLabel: { fontSize: 8, fontFamily: "Helvetica-Bold", marginBottom: 2 },
   formaPagoValue: { fontSize: 8, textAlign: "right" },
+  formaPagoExtra: { fontSize: 7.5, textAlign: "right", marginTop: 1 },
   table: { marginTop: 6, borderWidth: 1, borderColor: "#000" },
   thRow: {
     flexDirection: "row",
@@ -240,6 +241,12 @@ export function FormalFacturaElectronicaPdfDocument({ data }: { data: FormalComp
             <View style={styles.metaRight}>
               <Text style={styles.formaPagoLabel}>Forma de pago</Text>
               <Text style={styles.formaPagoValue}>{data.condicionVenta}</Text>
+              {data.formaPagoBanco?.trim() ? (
+                <Text style={styles.formaPagoExtra}>Banco emisor: {data.formaPagoBanco.trim()}</Text>
+              ) : null}
+              {data.formaPagoCuenta?.trim() ? (
+                <Text style={styles.formaPagoExtra}>Cuenta / CCI emisor: {data.formaPagoCuenta.trim()}</Text>
+              ) : null}
             </View>
           </View>
 

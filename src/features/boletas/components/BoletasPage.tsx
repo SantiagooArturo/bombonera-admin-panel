@@ -17,9 +17,10 @@ import {
 import { fetchAllInvoices } from "../services/fetchInvoices";
 import { voidSunatInvoice } from "../services/voidSunatInvoice";
 import { EmitComprobanteModal } from "./EmitComprobanteModal";
-import { invoicePlantillaPdfHref, invoiceXmlHref } from "../utils/invoicePdfLinks";
+import { invoicePlantillaPdfHref } from "../utils/invoicePdfLinks";
 import { invoiceComprobantePdfDownloadFilename } from "../utils/comprobantePdfFilename";
 import { invoiceMatchesSearch } from "../utils/invoiceMatchesSearch";
+import { BoletasDevCounterPanel } from "./BoletasDevCounterPanel";
 import { BoletasMobileList } from "./BoletasMobileList";
 import { IconOpenInNewTab, SerieCorrelativoCell } from "./boletasSharedUi";
 
@@ -199,6 +200,8 @@ export function BoletasPage() {
         </button>
       </div>
 
+      <BoletasDevCounterPanel />
+
       {miscModalOpen ? (
         <EmitComprobanteModal
           mode="misc"
@@ -314,7 +317,6 @@ export function BoletasPage() {
               ) : (
                 rows.map((inv, idx) => {
                   const plantillaHref = invoicePlantillaPdfHref(inv);
-                  const xmlHref = invoiceXmlHref(inv);
                   const st = wspStatus[inv.id] ?? "idle";
                   const wErr = wspError[inv.id];
                   const isFactura = inv.tipo_comprobante === "factura";
@@ -394,17 +396,6 @@ export function BoletasPage() {
                           ) : (
                             <span className="shrink-0 text-xs text-gray-400">—</span>
                           )}
-                          {xmlHref ? (
-                            <a
-                              href={xmlHref}
-                              target="_blank"
-                              rel="noopener noreferrer"
-                              title="Descargar o ver XML SUNAT"
-                              className="inline-flex shrink-0 items-center justify-center whitespace-nowrap rounded-lg border border-violet-200 bg-violet-50 px-2.5 py-2 text-[10px] font-bold text-violet-800 hover:bg-violet-100 xl:text-xs"
-                            >
-                              XML
-                            </a>
-                          ) : null}
                           {/*
                             PDF oficial apisunat (revivir):
                             import { invoiceSunatPdfHref } from "../utils/invoicePdfLinks";

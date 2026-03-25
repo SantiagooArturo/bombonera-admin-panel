@@ -195,6 +195,18 @@ export function FormalComprobantePdfDocument({ data }: { data: FormalComprobante
             <Text style={styles.metaLabel}>Cond. Venta :</Text>
             <Text style={styles.metaValue}>{data.condicionVenta}</Text>
           </View>
+          {data.formaPagoBanco?.trim() ? (
+            <View style={styles.metaRow}>
+              <Text style={styles.metaLabel}>Banco emisor :</Text>
+              <Text style={styles.metaValueNormal}>{data.formaPagoBanco.trim()}</Text>
+            </View>
+          ) : null}
+          {data.formaPagoCuenta?.trim() ? (
+            <View style={styles.metaRow}>
+              <Text style={styles.metaLabel}>Cuenta / CCI emisor :</Text>
+              <Text style={styles.metaValueNormal}>{data.formaPagoCuenta.trim()}</Text>
+            </View>
+          ) : null}
           <View style={styles.metaRow}>
             <Text style={styles.metaLabel}>Señor(es) :</Text>
             <Text style={styles.metaValue}>{data.receptorNombre}</Text>

@@ -21,6 +21,8 @@ export function buildFormalComprobanteInput(params: {
   observacion?: string;
   /** Factura: enviada a SUNAT y al PDF formal. */
   clienteDireccion?: string;
+  formaPagoBanco?: string;
+  formaPagoCuenta?: string;
 }): FormalComprobantePdfInput {
   const t = round2(params.totalConIgv);
   const opGravada = round2(t / 1.18);
@@ -39,6 +41,9 @@ export function buildFormalComprobanteInput(params: {
   const direccionSunatPdf =
     params.tipo === "factura" && dirFactura ? dirFactura : undefined;
 
+  const fpBanco = (params.formaPagoBanco || "").trim();
+  const fpCuenta = (params.formaPagoCuenta || "").trim();
+
   return {
     tipo: params.tipo,
     emisor: {
@@ -52,6 +57,8 @@ export function buildFormalComprobanteInput(params: {
     fechaEmisionYmd: params.fechaEmisionYmd,
     fechaEmisionMostrada: params.fechaEmisionMostrada,
     condicionVenta: params.condicionVenta,
+    formaPagoBanco: fpBanco || undefined,
+    formaPagoCuenta: fpCuenta || undefined,
     qrImageDataUrl: params.qrImageDataUrl ?? null,
     receptorNombre: params.receptorNombre,
     receptorDocLabel,
