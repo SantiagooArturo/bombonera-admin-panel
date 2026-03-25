@@ -24,7 +24,35 @@ import { BOLETA_SIN_DOCUMENTO_CLIENTE_MAX_SOLES } from "../constants/sunat";
 import { emitMiscInvoice } from "../services/emitMiscInvoice";
 import { getLimaNowTimeHm, getLimaTodayYmd } from "../utils/limaEmissionDatetime";
 import { PdfPreviewThumbnail } from "@/components/PdfPreviewThumbnail";
-import { navigateToHref } from "@/lib/internal-href";
+
+/** Misma UX que Cobros: clic en miniatura → ampliar render de la 1.ª página (no abrir el PDF entero). */
+function EmitPreviewLightbox({ src, onClose }: { src: string; onClose: () => void }) {
+  return (
+    <div
+      className="fixed inset-0 z-[10090] flex items-center justify-center bg-black/90 p-4"
+      onClick={onClose}
+      role="presentation"
+    >
+      <button
+        type="button"
+        onClick={onClose}
+        className="absolute right-4 top-4 z-10 rounded-full bg-white/10 p-2 text-white transition-colors hover:bg-white/20"
+        aria-label="Cerrar vista previa"
+      >
+        <svg className="h-8 w-8" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+        </svg>
+      </button>
+      {/* eslint-disable-next-line @next/next/no-img-element */}
+      <img
+        src={src}
+        alt="Vista previa del comprobante"
+        className="max-h-[90vh] max-w-full rounded-lg object-contain shadow-2xl"
+        onClick={(e) => e.stopPropagation()}
+      />
+    </div>
+  );
+}
 
 function canSendComprobanteWsp(inv: Invoice, transfer: Transfer): boolean {
   const pdfOk = Boolean(invoicePlantillaPdfHref(inv) || String(inv.file_url || "").trim());
@@ -124,6 +152,7 @@ export const EmitComprobanteModal = memo(function EmitComprobanteModal(props: Em
   const [wspSendStatus, setWspSendStatus] = useState<"idle" | "sending" | "sent" | "error">("idle");
   const [wspSendError, setWspSendError] = useState<string | null>(null);
   const wspSendInFlightRef = useRef(false);
+  const [emitPreviewLightboxSrc, setEmitPreviewLightboxSrc] = useState<string | null>(null);
 
   const [emisorContext, setEmisorContext] = useState<"" | EmitComprobanteEmisorContext>("");
 
@@ -152,6 +181,7 @@ export const EmitComprobanteModal = memo(function EmitComprobanteModal(props: Em
     setTransferSubmitting(false);
     setWspSendStatus("idle");
     setWspSendError(null);
+    setEmitPreviewLightboxSrc(null);
   }, [transferIdForReset]);
 
   useEffect(() => {
@@ -940,7 +970,7 @@ export const EmitComprobanteModal = memo(function EmitComprobanteModal(props: Em
               <div className="mx-auto w-full max-w-[240px]">
                 <PdfPreviewThumbnail
                   url={successPdfHref}
-                  onClickPreview={() => navigateToHref(successPdfHref)}
+                  onClickPreview={setEmitPreviewLightboxSrc}
                   variant="full"
                 />
               </div>
@@ -1000,6 +1030,9 @@ export const EmitComprobanteModal = memo(function EmitComprobanteModal(props: Em
           </div>
         )}
       </div>
+      {emitPreviewLightboxSrc ? (
+        <EmitPreviewLightbox src={emitPreviewLightboxSrc} onClose={() => setEmitPreviewLightboxSrc(null)} />
+      ) : null}
     </div>
   );
 });
