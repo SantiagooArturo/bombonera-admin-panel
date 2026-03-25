@@ -1233,23 +1233,21 @@ const CobrosTabContent = memo(function CobrosTabContent({
       */}
 
       <div className="flex-1 space-y-6 overflow-y-auto bg-gray-50 p-6">
-        {reservation.status !== "cancelled" && (
-          <section className="rounded-xl border-2 border-blue-100 bg-white p-4 shadow-sm">
-            <p className="mb-3 text-xs font-bold uppercase tracking-wide text-gray-500">Registrar pago</p>
-            <RegisterPaymentFormCobros
-              reservationsForPayment={[reservation]}
-              totalRemaining={registerPaymentRemaining}
-              loading={paymentLoading}
-              onSubmit={onRegisterPayment}
-              buttonLabel="Registrar pago"
-              presentation="viewportModal"
-              assumeClientFromContext
-              clientSummaryLine={registerPaymentClientSummary || undefined}
-              amountHelperText={`Pendiente en esta reserva: S/ ${registerPaymentRemaining.toFixed(2)}`}
-              allowWithoutReservation={false}
-            />
-          </section>
-        )}
+        <section className="rounded-xl border-2 border-blue-100 bg-white p-4 shadow-sm">
+          <p className="mb-3 text-xs font-bold uppercase tracking-wide text-gray-500">Registrar pago</p>
+          <RegisterPaymentFormCobros
+            reservationsForPayment={[reservation]}
+            totalRemaining={registerPaymentRemaining}
+            loading={paymentLoading}
+            onSubmit={onRegisterPayment}
+            buttonLabel="Registrar pago"
+            presentation="viewportModal"
+            assumeClientFromContext
+            clientSummaryLine={registerPaymentClientSummary || undefined}
+            amountHelperText={`Pendiente en esta reserva: S/ ${registerPaymentRemaining.toFixed(2)}`}
+            allowWithoutReservation={false}
+          />
+        </section>
 
         <section className="space-y-2">
           <div className="flex flex-wrap items-center justify-between gap-2">
