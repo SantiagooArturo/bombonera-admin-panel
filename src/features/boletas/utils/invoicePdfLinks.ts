@@ -46,6 +46,13 @@ export function invoicePersonalizedPdfAbsoluteUrlForSend(inv: Invoice): string |
  *
  * Para reactivar: descomentar bloques en `BoletasPage.tsx` y `UserPaymentsDrawer.tsx`.
  */
+/** XML UBL guardado en Storage (misma emisión que el PDF). */
+export function invoiceXmlHref(inv: Invoice): string | null {
+  const u = inv.file_url_xml?.trim();
+  if (!u) return null;
+  return invoiceFormalPdfProxyHref(u);
+}
+
 export function invoiceSunatPdfHref(inv: Invoice): string | null {
   if (inv.file_url_sunat?.trim()) {
     return invoiceFormalPdfProxyHref(inv.file_url_sunat.trim());

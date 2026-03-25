@@ -82,7 +82,6 @@ export default function SendAvailabilityModal({
             onChange={(v) => setAvailabilityPhone(v.replace(/\D/g, "").slice(0, 12))}
             options={phoneOptions}
             accent="emerald"
-            placeholder="Busca por nombre o escribe número (9 dígitos)"
           />
 
           <div className="flex gap-3 pt-1">

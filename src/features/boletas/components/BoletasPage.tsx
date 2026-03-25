@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { Invoice } from "@/lib/types";
+import { useStore } from "@/lib/hooks";
 import { useToastContext } from "@/components/ClientLayout";
 import { WHATSAPP_ICON_PATH } from "@/features/operaciones/whatsappIconPath";
 import { formatInvoiceEmissionDate } from "../utils/formatInvoiceEmissionDate";
@@ -15,7 +16,7 @@ import {
 import { fetchAllInvoices } from "../services/fetchInvoices";
 import { voidSunatInvoice } from "../services/voidSunatInvoice";
 import { EmitComprobanteModal } from "./EmitComprobanteModal";
-import { invoicePlantillaPdfHref } from "../utils/invoicePdfLinks";
+import { invoicePlantillaPdfHref, invoiceXmlHref } from "../utils/invoicePdfLinks";
 import { invoiceComprobantePdfDownloadFilename } from "../utils/comprobantePdfFilename";
 import { invoiceMatchesSearch } from "../utils/invoiceMatchesSearch";
 import { BoletasMobileList } from "./BoletasMobileList";
@@ -24,6 +25,7 @@ import { IconOpenInNewTab, SerieCorrelativoCell } from "./boletasSharedUi";
 type ComprobanteTab = "todos" | "boletas" | "facturas";
 
 export function BoletasPage() {
+  const store = useStore();
   const toast = useToastContext();
   const [tab, setTab] = useState<ComprobanteTab>("todos");
   const [invoices, setInvoices] = useState<Invoice[]>([]);
@@ -109,7 +111,7 @@ export function BoletasPage() {
           invoice_id: id,
           filename: invoiceComprobantePdfDownloadFilename(inv),
         }),
-        signal: AbortSignal.timeout(130_000),
+        signal: AbortSignal.timeout(200_000),
       });
       if (!res.ok) {
         const data = await res.json().catch(() => ({}));
@@ -199,7 +201,10 @@ export function BoletasPage() {
         <EmitComprobanteModal
           mode="misc"
           onClose={() => setMiscModalOpen(false)}
-          onSuccess={() => void load()}
+          onSuccess={() => {
+            void load();
+            void store.fetchUsers();
+          }}
         />
       ) : null}
 
@@ -307,6 +312,7 @@ export function BoletasPage() {
               ) : (
                 rows.map((inv, idx) => {
                   const plantillaHref = invoicePlantillaPdfHref(inv);
+                  const xmlHref = invoiceXmlHref(inv);
                   const st = wspStatus[inv.id] ?? "idle";
                   const wErr = wspError[inv.id];
                   const isFactura = inv.tipo_comprobante === "factura";
@@ -386,6 +392,17 @@ export function BoletasPage() {
                           ) : (
                             <span className="shrink-0 text-xs text-gray-400">—</span>
                           )}
+                          {xmlHref ? (
+                            <a
+                              href={xmlHref}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              title="Descargar o ver XML SUNAT"
+                              className="inline-flex shrink-0 items-center justify-center whitespace-nowrap rounded-lg border border-violet-200 bg-violet-50 px-2.5 py-2 text-[10px] font-bold text-violet-800 hover:bg-violet-100 xl:text-xs"
+                            >
+                              XML
+                            </a>
+                          ) : null}
                           {/*
                             PDF oficial apisunat (revivir):
                             import { invoiceSunatPdfHref } from "../utils/invoicePdfLinks";

@@ -521,6 +521,7 @@ export default function OperacionesPage() {
           onUpdateRuc={sidebar.handleUpdateRuc}
           onUpdateName={sidebar.handleUpdateName}
           clientRuc={sidebar.userNames?.last_ruc}
+          clientLastDni={sidebar.userNames?.last_dni}
           displayName={sidebar.displayName}
           userCustomName={sidebar.userNames?.custom_name}
           onCancelReservation={sidebar.handleCancelReservation}

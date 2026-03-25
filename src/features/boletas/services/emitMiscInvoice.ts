@@ -10,6 +10,11 @@ export type EmitMiscInvoiceParams = {
   /** HH:mm (Lima) */
   hora_de_emision?: string;
   condicion_venta?: string;
+  /** Si el comprobante va dirigido a un usuario del panel: id doc `users` y WhatsApp normalizado (validado en API). */
+  panel_link_user_id?: string;
+  panel_link_phone?: string;
+  /** Factura: dirección fiscal del receptor (SUNAT / PDF). */
+  cliente_direccion?: string;
 };
 
 export type EmitMiscInvoiceResult = {
@@ -17,6 +22,7 @@ export type EmitMiscInvoiceResult = {
   invoice_id?: string;
   file_url?: string;
   file_url_sunat?: string;
+  file_url_xml?: string;
   serie_correlativo?: string;
   error?: string;
 };
@@ -49,6 +55,13 @@ export async function emitMiscInvoice(params: EmitMiscInvoiceParams): Promise<Em
   if (params.fecha_de_emision?.trim()) body.fecha_de_emision = params.fecha_de_emision.trim();
   if (params.hora_de_emision?.trim()) body.hora_de_emision = params.hora_de_emision.trim();
   if (params.condicion_venta?.trim()) body.condicion_venta = params.condicion_venta.trim();
+  if (params.panel_link_user_id?.trim() && params.panel_link_phone?.trim()) {
+    body.panel_link_user_id = params.panel_link_user_id.trim();
+    body.panel_link_phone = params.panel_link_phone.trim();
+  }
+  if (params.tipo_comprobante === "factura" && params.cliente_direccion?.trim()) {
+    body.cliente_direccion = params.cliente_direccion.trim();
+  }
 
   const res = await fetch("/api/invoices", {
     method: "POST",
@@ -63,6 +76,7 @@ export async function emitMiscInvoice(params: EmitMiscInvoiceParams): Promise<Em
     success: true,
     invoice_id: typeof data.invoice_id === "string" ? data.invoice_id : undefined,
     file_url: typeof data.file_url === "string" ? data.file_url : undefined,
+    file_url_xml: typeof data.file_url_xml === "string" ? data.file_url_xml : undefined,
     serie_correlativo: typeof data.serie_correlativo === "string" ? data.serie_correlativo : undefined,
   };
 }

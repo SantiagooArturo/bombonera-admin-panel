@@ -70,6 +70,7 @@ export async function renderFormalPlantillaPdfFromInvoiceDoc(
 
   const { ymd, hms } = emissionYmdHmsFromDoc(doc);
   const condicionVenta = normalizeCondicionVentaInput(doc.condicion_venta);
+  const clienteDirRaw = typeof doc.cliente_direccion === "string" ? doc.cliente_direccion.trim() : "";
 
   const emisorCfg = getEmisorSunatFromEnv();
   const hashStr = String(doc.sunat_hash || "").trim();
@@ -116,6 +117,7 @@ export async function renderFormalPlantillaPdfFromInvoiceDoc(
     clienteNumeroDocumento: tipoRaw === "boleta" && tipoDoc === "0" ? undefined : persistNum || undefined,
     descripcion,
     totalConIgv: amount,
+    clienteDireccion: tipoRaw === "factura" && clienteDirRaw ? clienteDirRaw : undefined,
   });
 
   const suggestedFile = buildComprobantePdfFilenameFromFirestoreDoc(invoiceId.trim(), doc);

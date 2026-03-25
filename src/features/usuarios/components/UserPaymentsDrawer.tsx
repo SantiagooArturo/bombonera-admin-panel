@@ -126,6 +126,7 @@ export default function UserPaymentsDrawer({ user, onClose, onUserUpdated }: Use
           invoice_id: inv.id,
           filename: invoiceComprobantePdfDownloadFilename(inv),
         }),
+        signal: AbortSignal.timeout(200_000),
       });
       if (!res.ok) {
         const data = await res.json().catch(() => ({}));

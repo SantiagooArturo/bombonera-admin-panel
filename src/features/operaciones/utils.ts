@@ -129,6 +129,16 @@ export function getUserName(u: User): string {
   ).trim();
 }
 
+/** Etiqueta en listas / buscador de clientes (sin dígitos en el nombre mostrado; sin “Voley”). */
+export function sanitizeDirectoryClientLabel(raw: string): string {
+  const t = raw
+    .replace(/\d+/g, "")
+    .replace(/\bvoley\b/gi, "")
+    .replace(/\s+/g, " ")
+    .trim();
+  return t.length > 0 ? t : "Cliente";
+}
+
 export type CourtConfigMap = Record<
   number,
   {

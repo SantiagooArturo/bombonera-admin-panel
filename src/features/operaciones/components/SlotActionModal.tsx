@@ -162,7 +162,6 @@ export default function SlotActionModal({
                 onChange={onManualPhoneChange}
                 options={phoneOptions}
                 accent="blue"
-                placeholder="Busca por nombre o escribe número (9 dígitos)"
               />
               <div>
                 <label className="block text-sm font-semibold text-gray-700 mb-2">Nombre</label>

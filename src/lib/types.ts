@@ -153,6 +153,10 @@ export interface User {
   last_dni?: string;
   /** Último RUC usado al emitir factura. */
   last_ruc?: string;
+  /** Última dirección fiscal usada en factura (panel / SUNAT), para autocompletar. */
+  last_factura_direccion?: string;
+  /** Última razón social SUNAT guardada junto al RUC, para autocompletar. */
+  last_factura_razon_social?: string;
   /** Número de veces que ha reservado (denormalizado en users para query eficiente). */
   reservation_count: number;
   /** Saldo: negativo = debe dinero; positivo = canceló a tiempo (crédito). */
@@ -181,6 +185,8 @@ export interface Invoice {
   file_url: string;
   /** PDF ticket oficial apisunat en Storage (misma emisión que file_url plantilla). */
   file_url_sunat?: string | null;
+  /** XML UBL firmado en Storage (emisión SUNAT). */
+  file_url_xml?: string | null;
   /** URL temporal apisunat (p. ej. comprobantes antiguos). */
   sunat_pdf_ticket?: string | null;
   /** Condición de venta mostrada en el PDF del panel. */
@@ -217,6 +223,8 @@ export interface Invoice {
   cliente_numero_de_documento?: string;
   /** "1" boleta (DNI), "6" factura (RUC). */
   cliente_tipo_documento?: string;
+  /** Dirección fiscal del receptor (factura). */
+  cliente_direccion?: string;
   /**
    * Nombre del representante en la reserva al emitir (no confundir con WhatsApp).
    * Útil si faltaba cliente_denominacion en datos viejos o para auditoría.
@@ -241,6 +249,8 @@ export type EmitComprobanteParams = {
   hora_de_emision?: string;
   /** Texto en el PDF formal (Cond. Venta); apisunat puede seguir mostrando “Contado” si no expone el campo. */
   condicion_venta?: string;
+  /** Factura: dirección del receptor en SUNAT y en el PDF formal. */
+  cliente_direccion?: string;
 };
 
 // Transferencias: colección transfers. Registro de todos los pagos procesados.
@@ -258,6 +268,8 @@ export interface Transfer {
   recipient_name: string | null;
   amount: number | null;
   transaction_date: string | null;
+  /** Hora declarada del abono (HH:mm), si la cargó el admin al registrar. */
+  transaction_time?: string | null;
   operation_id: string | null;
   reservation_id: string | null;
   /** chat_id del cliente (de la reserva). Para consultar transfers por cliente. */
@@ -272,12 +284,29 @@ export interface Transfer {
   /** Marca manual: "ya usado para marcar una reserva" (evitar usarlo dos veces). */
   applied?: boolean;
   created_at: string;
+  /**
+   * Solo en respuestas de `GET /api/transfers?list=all`: enriquecimiento desde `users`
+   * para listados (búsqueda por nombre / DNI). No se persiste en Firestore.
+   */
+  client_display_name?: string;
+  client_last_dni?: string;
 }
 
 export const TRANSFER_STATUS_LABELS: Record<TransferStatus, string> = {
-  applied: "Aplicado",
-  rejected_duplicate: "Duplicado rechazado",
-  partial: "Pago parcial",
+  applied: "Íntegro (cierra el saldo de la reserva)",
+  rejected_duplicate: "Rechazado: comprobante duplicado",
+  partial: "Parcial (aún hay saldo en la reserva)",
+};
+
+export const PAYMENT_METHOD_LABELS: Record<PaymentMethod, string> = {
+  digital: "Digital",
+  efectivo: "Efectivo",
+};
+
+export const PAYMENT_SOURCE_LABELS: Record<PaymentSource, string> = {
+  chatbot: "Comprobante (chat)",
+  manual: "Caja",
+  manual_adjustment: "Ajuste manual",
 };
 
 export type BotHealthIndicator = "green" | "red";

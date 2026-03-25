@@ -1,7 +1,11 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getInvoicePdfBufferForSend } from "@/features/boletas/services/invoicePdfBufferForSend";
+import { getDb } from "@/lib/firebase-admin";
+import {
+  getInvoicePdfBufferForSend,
+  getInvoiceXmlBufferForSend,
+} from "@/features/boletas/services/invoicePdfBufferForSend";
 import { getChatbotApiUrl } from "@/lib/chatbot-api-url";
-import { resolveWhatsAppTarget } from "@/lib/waha";
+import { resolveWhatsAppTarget, sendWhatsAppMessage } from "@/lib/waha";
 
 /**
  * Panel genera el PDF en servidor y lo manda al bot en base64 (mismo patrón que disponibilidad:
@@ -17,7 +21,49 @@ function sanitizeSendPdfFilename(raw: unknown): string {
   return t.toLowerCase();
 }
 
+function xmlFilenameFromPdfFilename(pdfName: string): string {
+  const lower = pdfName.toLowerCase();
+  if (lower.endsWith(".pdf")) {
+    return `${pdfName.slice(0, -4)}.xml`;
+  }
+  return "comprobante.xml";
+}
+
 const BOT_TIMEOUT_MS = 120_000;
+
+async function postSendFileToBot(params: {
+  chatbotUrl: string;
+  chatId: string;
+  fileBase64: string;
+  filename: string;
+  caption: string;
+}): Promise<{ ok: boolean; message?: string; status: number }> {
+  const botRes = await fetch(`${params.chatbotUrl}/chatbot/send-file/`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      chat_id: params.chatId,
+      file_base64: params.fileBase64,
+      caption: params.caption,
+      filename: params.filename,
+    }),
+    signal: AbortSignal.timeout(BOT_TIMEOUT_MS),
+  });
+
+  const responseData = await botRes.json().catch(() => ({}));
+  const errMsg =
+    typeof (responseData as { message?: string })?.message === "string"
+      ? (responseData as { message: string }).message
+      : undefined;
+  if (!botRes.ok || (responseData as { status?: string })?.status === "error") {
+    return {
+      ok: false,
+      message: errMsg || "No se pudo enviar el archivo.",
+      status: botRes.ok ? 500 : botRes.status,
+    };
+  }
+  return { ok: true, status: botRes.status };
+}
 
 export async function POST(request: NextRequest) {
   try {
@@ -69,27 +115,78 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const botRes = await fetch(`${chatbotUrl}/chatbot/send-file/`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        chat_id: target.chatId,
-        file_base64: pdfBase64,
-        caption: "Muchas Gracias!",
-        filename: sanitizeSendPdfFilename(filenameOpt),
-      }),
-      signal: AbortSignal.timeout(BOT_TIMEOUT_MS),
+    const pdfFilename = sanitizeSendPdfFilename(filenameOpt);
+
+    /** Factura con `file_url_xml` en Firestore: PDF → XML → mensaje de texto (archivos sin caption). */
+    let facturaConXmlEnStorage = false;
+    if (invoice_id) {
+      const snap = await getDb().collection("invoices").doc(invoice_id).get();
+      const inv = snap.exists ? (snap.data() as Record<string, unknown>) : null;
+      facturaConXmlEnStorage =
+        inv?.tipo_comprobante === "factura" &&
+        typeof inv.file_url_xml === "string" &&
+        inv.file_url_xml.trim().length > 0;
+    }
+
+    if (facturaConXmlEnStorage && invoice_id) {
+      const xmlBuf = await getInvoiceXmlBufferForSend(invoice_id, { selfOrigin: origin });
+      if (xmlBuf?.length) {
+        const xmlFilename = xmlFilenameFromPdfFilename(pdfFilename);
+
+        const pdfSend = await postSendFileToBot({
+          chatbotUrl,
+          chatId: target.chatId,
+          fileBase64: pdfBase64,
+          filename: pdfFilename,
+          caption: "",
+        });
+        if (!pdfSend.ok) {
+          return NextResponse.json(
+            { error: pdfSend.message || "No se pudo enviar el PDF." },
+            { status: pdfSend.status }
+          );
+        }
+
+        const xmlSend = await postSendFileToBot({
+          chatbotUrl,
+          chatId: target.chatId,
+          fileBase64: xmlBuf.toString("base64"),
+          filename: xmlFilename,
+          caption: "",
+        });
+        if (!xmlSend.ok) {
+          return NextResponse.json(
+            { error: xmlSend.message || "Se envió el PDF pero no el XML." },
+            { status: xmlSend.status }
+          );
+        }
+
+        try {
+          await sendWhatsAppMessage(chat_id, "Muchas Gracias!");
+        } catch (textErr) {
+          const msg = textErr instanceof Error ? textErr.message : "Error al enviar el mensaje final.";
+          return NextResponse.json(
+            { error: `Se enviaron PDF y XML, pero falló el mensaje de texto: ${msg}` },
+            { status: 502 }
+          );
+        }
+
+        return NextResponse.json({ success: true });
+      }
+    }
+
+    const botRes = await postSendFileToBot({
+      chatbotUrl,
+      chatId: target.chatId,
+      fileBase64: pdfBase64,
+      filename: pdfFilename,
+      caption: "Muchas Gracias!",
     });
 
-    const responseData = await botRes.json().catch(() => ({}));
-    if (!botRes.ok || responseData?.status === "error") {
-      const message =
-        typeof responseData?.message === "string"
-          ? responseData.message
-          : "No se pudo enviar la boleta.";
+    if (!botRes.ok) {
       return NextResponse.json(
-        { error: message },
-        { status: botRes.ok ? 500 : botRes.status }
+        { error: botRes.message || "No se pudo enviar la boleta." },
+        { status: botRes.status }
       );
     }
 

@@ -11,6 +11,7 @@ import { fechaYmdToDdMmYyyy, formatEmision12hPe } from "@/features/boletas/utils
 import { validateEmissionDateTimeForApi } from "@/features/boletas/utils/limaEmissionDatetime";
 import { receptorNombreSnapshot } from "@/features/boletas/utils/sanitizeReceptorNombre";
 import { buildSunatCpeQrPayload } from "@/features/boletas/utils/sunatQrPayload";
+import { isValidPeruPhone, normalizePeruPhone } from "@/features/operaciones/utils";
 
 // ── Configuración apisunat.pe (Lucode) ──
 // Docs: https://docs.apisunat.pe/integracion/facturacion-electronica/configuracion-api
@@ -198,9 +199,14 @@ export async function POST(request: NextRequest) {
       fecha_de_emision: fechaEmisionClient,
       hora_de_emision: horaEmisionClient,
       condicion_venta: condicionVentaRaw,
+      panel_link_user_id: panelLinkUserIdRaw,
+      panel_link_phone: panelLinkPhoneRaw,
+      cliente_direccion: clienteDireccionRaw,
     } = body;
 
     const condicionVenta = normalizeCondicionVentaInput(condicionVentaRaw);
+    const clienteDireccionCliente =
+      typeof clienteDireccionRaw === "string" ? clienteDireccionRaw.trim() : "";
 
     const miscEmission = miscEmissionRaw === true;
     const isManual = manualEmission === true;
@@ -217,6 +223,24 @@ export async function POST(request: NextRequest) {
     if (miscEmission) {
       effectiveUserId = MISC_PANEL_USER_ID;
       effectivePhone = "";
+      const linkUid =
+        typeof panelLinkUserIdRaw === "string" ? panelLinkUserIdRaw.trim() : "";
+      const linkPhoneNorm = normalizePeruPhone(
+        String(panelLinkPhoneRaw ?? "").replace(/\D/g, "")
+      );
+      if (linkUid && isValidPeruPhone(linkPhoneNorm)) {
+        const uSnap = await db.collection("users").doc(linkUid).get();
+        if (uSnap.exists) {
+          const ud = uSnap.data() || {};
+          const profilePhone = normalizePeruPhone(
+            String(ud.phone_number || ud.chat_id || uSnap.id || "").replace(/\D/g, "")
+          );
+          if (profilePhone === linkPhoneNorm) {
+            effectiveUserId = uSnap.id;
+            effectivePhone = linkPhoneNorm;
+          }
+        }
+      }
     }
 
     if (!isManual && (!reservation_id || !user_id)) {
@@ -235,6 +259,9 @@ export async function POST(request: NextRequest) {
     // ── Validación de documento de identidad ──
     const tipoComprobante: "boleta" | "factura" =
       tipo_comprobante === "factura" ? "factura" : "boleta";
+
+    const clienteDireccionSunat =
+      tipoComprobante === "factura" ? clienteDireccionCliente || "LIMA" : "LIMA";
 
     const totalAmountEarly =
       typeof amount === "number" && amount > 0 ? amount : Number(amount) > 0 ? Number(amount) : 0;
@@ -267,10 +294,10 @@ export async function POST(request: NextRequest) {
         if (cleanDoc.length === 8) {
           clienteTipoDocSunat = "1";
         } else if (cleanDoc.length === 0) {
-          if (totalAmountEarly > BOLETA_SIN_DOCUMENTO_CLIENTE_MAX_SOLES) {
+          if (totalAmountEarly >= BOLETA_SIN_DOCUMENTO_CLIENTE_MAX_SOLES) {
             return NextResponse.json(
               {
-                error: `Si el total supera S/ ${BOLETA_SIN_DOCUMENTO_CLIENTE_MAX_SOLES} debe indicar DNI (8 dígitos) o emitir factura con RUC.`,
+                error: `Si el total es S/ ${BOLETA_SIN_DOCUMENTO_CLIENTE_MAX_SOLES} o más debe indicar DNI (8 dígitos) o emitir factura con RUC.`,
               },
               { status: 400 }
             );
@@ -280,7 +307,7 @@ export async function POST(request: NextRequest) {
         } else {
           return NextResponse.json(
             {
-              error: "DNI: 8 dígitos o déjelo vacío si el total no supera S/ 700 (norma SUNAT).",
+              error: `DNI: 8 dígitos, o vacío solo si el total es menor a S/ ${BOLETA_SIN_DOCUMENTO_CLIENTE_MAX_SOLES}.`,
             },
             { status: 400 }
           );
@@ -296,10 +323,10 @@ export async function POST(request: NextRequest) {
         if (cleanDoc.length === 8) {
           clienteTipoDocSunat = "1";
         } else if (cleanDoc.length === 0) {
-          if (totalAmountEarly > BOLETA_SIN_DOCUMENTO_CLIENTE_MAX_SOLES) {
+          if (totalAmountEarly >= BOLETA_SIN_DOCUMENTO_CLIENTE_MAX_SOLES) {
             return NextResponse.json(
               {
-                error: `Para boletas sobre S/ ${BOLETA_SIN_DOCUMENTO_CLIENTE_MAX_SOLES} debe indicar DNI (8 dígitos) o emitir factura.`,
+                error: `Para boletas de S/ ${BOLETA_SIN_DOCUMENTO_CLIENTE_MAX_SOLES} o más debe indicar DNI (8 dígitos) o emitir factura.`,
               },
               { status: 400 }
             );
@@ -309,7 +336,7 @@ export async function POST(request: NextRequest) {
         } else {
           return NextResponse.json(
             {
-              error: "DNI: 8 dígitos o vacío si el total es como máximo S/ 700.",
+              error: `DNI: 8 dígitos, o vacío solo si el total es menor a S/ ${BOLETA_SIN_DOCUMENTO_CLIENTE_MAX_SOLES}.`,
             },
             { status: 400 }
           );
@@ -408,7 +435,7 @@ export async function POST(request: NextRequest) {
       cliente_tipo_de_documento: clienteTipoDocSunat,
       cliente_numero_de_documento: cleanDoc,
       cliente_denominacion: clienteName,
-      cliente_direccion: "LIMA",
+      cliente_direccion: clienteDireccionSunat,
       items: [
         {
           unidad_de_medida: "ZZ",
@@ -478,7 +505,7 @@ export async function POST(request: NextRequest) {
     const pdfPayload = (payload.pdf || {}) as Record<string, string>;
 
     const serieCorrelativo = `${serieSunat}-${correlativo}`;
-    /** En panel no guardamos "0" cuando SUNAT va sin documento del cliente (boleta ≤ S/ 700). */
+    /** En panel no guardamos "0" cuando SUNAT va sin documento del cliente (boleta con total menor a S/ 700). */
     const persistClienteNum =
       tipoComprobante === "boleta" && clienteTipoDocSunat === "0" ? "" : cleanDoc;
 
@@ -486,8 +513,10 @@ export async function POST(request: NextRequest) {
     const pdfTicketUrl: string | null = pdfPayload.ticket || null;
     const pathFormal = `invoices/${serieCorrelativo}-formal.pdf`;
     const pathSunat = `invoices/${serieCorrelativo}-sunat.pdf`;
+    const pathXml = `invoices/${serieCorrelativo}.xml`;
     const tokenFormal = randomUUID();
     const tokenSunat = randomUUID();
+    const tokenXml = randomUUID();
     const bucketName = bucket.name;
 
     const firebaseMediaUrl = (path: string, token: string): string => {
@@ -553,6 +582,7 @@ export async function POST(request: NextRequest) {
         clienteNumeroDocumento: persistClienteNum || undefined,
         descripcion,
         totalConIgv: totalAmount,
+        clienteDireccion: tipoComprobante === "factura" ? clienteDireccionSunat : undefined,
       });
       const { renderFormalComprobanteBuffer } = await import(
         "@/features/boletas/pdf/renderFormalComprobanteBuffer"
@@ -591,10 +621,26 @@ export async function POST(request: NextRequest) {
       "";
     const fileUrlSunat = fileUrlSunatStored || "";
 
+    let fileUrlXmlStored: string | null = null;
+    const xmlStr = typeof payload.xml === "string" ? payload.xml.trim() : "";
+    if (xmlStr.length > 0) {
+      try {
+        await bucket.file(pathXml).save(Buffer.from(xmlStr, "utf8"), {
+          metadata: {
+            contentType: "application/xml",
+            metadata: { firebaseStorageDownloadTokens: tokenXml },
+          },
+        });
+        fileUrlXmlStored = firebaseMediaUrl(pathXml, tokenXml);
+      } catch (xmlErr) {
+        console.warn("No se pudo guardar XML SUNAT en Storage", xmlErr);
+      }
+    }
+
     // 8. Guardar metadata en Firestore (todo lo útil para reportes / panel)
     const repSnapRaw = String(representative_name || "").trim() || clienteName;
     const repSnap = receptorNombreSnapshot(repSnapRaw);
-    const invoiceData = {
+    const invoiceData: Record<string, unknown> = {
       reservation_id: isManual ? "manual" : reservation_id,
       user_id: effectiveUserId,
       phone_number: effectivePhone || "",
@@ -604,6 +650,7 @@ export async function POST(request: NextRequest) {
       representative_name_snapshot: repSnap,
       file_url: fileUrl || "",
       file_url_sunat: fileUrlSunat,
+      file_url_xml: fileUrlXmlStored || "",
       condicion_venta: condicionVenta,
       amount: totalAmount,
       descripcion,
@@ -629,13 +676,41 @@ export async function POST(request: NextRequest) {
       hora_emision_hms: horaEmision,
     };
 
+    if (tipoComprobante === "factura") {
+      invoiceData.cliente_direccion = clienteDireccionSunat;
+    }
+
     const docRef = await db.collection("invoices").add(invoiceData);
+
+    if (miscEmission && effectiveUserId !== MISC_PANEL_USER_ID) {
+      const userPatch: Record<string, unknown> = {};
+      if (tipoComprobante === "boleta") {
+        const d = String(persistClienteNum || "").replace(/\D/g, "");
+        if (d.length === 8) userPatch.last_dni = d;
+      }
+      if (tipoComprobante === "factura") {
+        const r = String(persistClienteNum || "").replace(/\D/g, "");
+        if (r.length === 11) {
+          userPatch.last_ruc = r;
+          userPatch.last_factura_razon_social = clienteName.slice(0, 400);
+          userPatch.last_factura_direccion = clienteDireccionSunat.slice(0, 500);
+        }
+      }
+      if (Object.keys(userPatch).length > 0) {
+        try {
+          await db.collection("users").doc(effectiveUserId).set(userPatch, { merge: true });
+        } catch (userSyncErr) {
+          console.warn("Emisión OK pero no se actualizó perfil de usuario vinculado:", userSyncErr);
+        }
+      }
+    }
 
     return NextResponse.json({
       success: true,
       invoice_id: docRef.id,
       file_url: fileUrl,
       file_url_sunat: fileUrlSunat,
+      file_url_xml: fileUrlXmlStored || "",
       serie_correlativo: serieCorrelativo,
       sunat_estado: payload.estado,
       cliente_denominacion: clienteName,
@@ -647,6 +722,7 @@ export async function POST(request: NextRequest) {
       amount: totalAmount,
       tipo_comprobante: tipoComprobante,
       condicion_venta: condicionVenta,
+      cliente_direccion: tipoComprobante === "factura" ? clienteDireccionSunat : undefined,
     });
   } catch (error) {
     const msg =

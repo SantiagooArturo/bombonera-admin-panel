@@ -34,6 +34,8 @@ interface PaymentSidebarProps {
   onUpdateName?: (name: string) => Promise<boolean>;
   /** RUC del cliente (desde user) para prellenar facturas. */
   clientRuc?: string | null;
+  /** DNI guardado en el perfil del usuario (mismo WhatsApp), si la reserva no trae DNI. */
+  clientLastDni?: string | null;
   onCancelReservation: () => Promise<boolean>;
   /** Nombre a mostrar: custom_name || contact_name || push_name || representative_name */
   displayName?: string;
@@ -1058,6 +1060,7 @@ const TransferCard = memo(function TransferCard({
                           invoice_id: invoice.id,
                           filename: invoiceComprobantePdfDownloadFilename(invoice),
                         }),
+                        signal: AbortSignal.timeout(200_000),
                       });
                       if (!res.ok) {
                         const data = await res.json().catch(() => ({}));
@@ -1429,13 +1432,13 @@ const CobrosTabContent = memo(function CobrosTabContent({
   const clientSearch = String(reservation.phone_number || reservation.chat_id || "").replace(/\D/g, "").slice(-9);
   const historicoUrl = `/verificacion?search=${encodeURIComponent(clientSearch)}`;
 
-  /** Ventana de fechas para pagos: 1 semana atrás y 1 semana adelante desde hoy (no la semana de la reserva). */
+  /** Rango amplio para listar transferencias aplicadas (evita ocultar pagos antiguos al emitir boleta). */
   const { transferWindowStart, transferWindowEnd } = useMemo(() => {
     const today = new Date();
     const start = new Date(today);
-    start.setDate(start.getDate() - 7);
+    start.setFullYear(start.getFullYear() - 10);
     const end = new Date(today);
-    end.setDate(end.getDate() + 7);
+    end.setFullYear(end.getFullYear() + 2);
     return {
       transferWindowStart: start.toISOString().slice(0, 10),
       transferWindowEnd: end.toISOString().slice(0, 10),
@@ -1615,6 +1618,7 @@ const PaymentSidebar = memo(function PaymentSidebar({
   onUpdateRuc,
   onUpdateName,
   clientRuc,
+  clientLastDni,
   onCancelReservation,
   displayName,
   userCustomName,
@@ -1636,6 +1640,15 @@ const PaymentSidebar = memo(function PaymentSidebar({
   allClientReservations = [],
   onSelectReservationFromList,
 }: PaymentSidebarProps) {
+  /** DNI para boleta: reserva con 8 dígitos válidos, si no perfil usuario (last_dni). */
+  const clientDniForEmit = useMemo(() => {
+    const r = String(reservation.dni ?? "").replace(/\D/g, "").slice(0, 8);
+    const p = String(clientLastDni ?? "").replace(/\D/g, "").slice(0, 8);
+    if (r.length === 8) return r;
+    if (p.length === 8) return p;
+    return r || p || "";
+  }, [reservation.dni, clientLastDni]);
+
   const [activeTab, setActiveTab] = useState<"detalles" | "cobros">("detalles");
   const [viewingImage, setViewingImage] = useState<string | null>(null);
   const fieldConfig = useMemo(
@@ -1691,9 +1704,13 @@ const PaymentSidebar = memo(function PaymentSidebar({
     return () => window.removeEventListener("paste", handlePaste);
   }, [transfers, invoices, hoveredTransferId, onAttachInvoice]);
   useEffect(() => {
-    setDniValue(reservation.dni || "");
+    const r = String(reservation.dni ?? "").replace(/\D/g, "").slice(0, 8);
+    const p = String(clientLastDni ?? "").replace(/\D/g, "").slice(0, 8);
+    if (r.length === 8) setDniValue(r);
+    else if (p.length === 8) setDniValue(p);
+    else setDniValue(String(reservation.dni ?? "").replace(/\D/g, "").slice(0, 8) || p || "");
     setEditingDni(false);
-  }, [reservation.id, reservation.dni]);
+  }, [reservation.id, reservation.dni, clientLastDni]);
   useEffect(() => {
     setRucValue(clientRuc || "");
     setEditingRuc(false);
@@ -1855,7 +1872,7 @@ const PaymentSidebar = memo(function PaymentSidebar({
               onViewImage: (url) => setViewingImage(url),
               onHoverTransferChanged: setHoveredTransferId,
               chatId: reservation.chat_id || reservation.phone_number || "",
-              clientDni: reservation.dni,
+              clientDni: clientDniForEmit || undefined,
               clientRuc: clientRuc ?? undefined,
             }}
             reservationsForChips={hasMultipleReservations ? allReservationsThisWeek : undefined}
@@ -1885,7 +1902,7 @@ const PaymentSidebar = memo(function PaymentSidebar({
             onUpdateAmountPaid={onUpdateAmountPaid}
             paymentLoading={paymentLoading}
             chatId={reservation.chat_id || reservation.phone_number || ""}
-            clientDni={reservation.dni}
+            clientDni={clientDniForEmit || undefined}
             clientRuc={clientRuc ?? undefined}
             setViewingImage={setViewingImage}
             setHoveredTransferId={setHoveredTransferId}

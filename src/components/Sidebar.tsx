@@ -1,5 +1,6 @@
 "use client";
 
+import { BanknotesIcon } from "@heroicons/react/24/solid";
 import Link from "next/link";
 import Image from "next/image";
 import { usePathname } from "next/navigation";
@@ -35,6 +36,11 @@ const NAV_ITEMS = [
     ),
   },
   {
+    href: "/pagos-recibidos",
+    label: "Pagos recibidos",
+    icon: <BanknotesIcon className="h-6 w-6 shrink-0" aria-hidden />,
+  },
+  {
     href: "/boletas",
     label: "Boletas Emitidas",
     icon: (
@@ -44,6 +50,7 @@ const NAV_ITEMS = [
       </svg>
     ),
   },
+
   {
     href: "/precios",
     label: "Precios",

@@ -34,6 +34,10 @@ export async function GET() {
         last_representative_name: typeof data.last_representative_name === "string" ? data.last_representative_name : undefined,
         last_dni: typeof data.last_dni === "string" ? data.last_dni : undefined,
         last_ruc: typeof data.last_ruc === "string" ? data.last_ruc : undefined,
+        last_factura_direccion:
+          typeof data.last_factura_direccion === "string" ? data.last_factura_direccion : undefined,
+        last_factura_razon_social:
+          typeof data.last_factura_razon_social === "string" ? data.last_factura_razon_social : undefined,
         reservation_count: typeof reservationCount === "number" ? reservationCount : 0,
         balance: typeof balance === "number" ? balance : 0,
         client_type: (clientType === "casual" || clientType === "recurrente" || clientType === "sospechoso_fraude"
@@ -145,7 +149,17 @@ export async function PATCH(request: NextRequest) {
   try {
     const db = getDb();
     const body = await request.json();
-    const { id, is_automated, client_type, custom_name, last_dni, last_ruc, phone_number } = body;
+    const {
+      id,
+      is_automated,
+      client_type,
+      custom_name,
+      last_dni,
+      last_ruc,
+      last_factura_direccion,
+      last_factura_razon_social,
+      phone_number,
+    } = body;
 
     if (!id) {
       return NextResponse.json(
@@ -186,6 +200,16 @@ export async function PATCH(request: NextRequest) {
     if (last_ruc !== undefined) {
       const clean = typeof last_ruc === "string" ? last_ruc.replace(/\D/g, "").slice(0, 11) : "";
       updateData.last_ruc = clean.length === 11 ? clean : null;
+    }
+
+    if (last_factura_direccion !== undefined) {
+      const t = typeof last_factura_direccion === "string" ? last_factura_direccion.trim().slice(0, 500) : "";
+      updateData.last_factura_direccion = t || null;
+    }
+    if (last_factura_razon_social !== undefined) {
+      const t =
+        typeof last_factura_razon_social === "string" ? last_factura_razon_social.trim().slice(0, 400) : "";
+      updateData.last_factura_razon_social = t || null;
     }
 
     if (phone_number !== undefined) {

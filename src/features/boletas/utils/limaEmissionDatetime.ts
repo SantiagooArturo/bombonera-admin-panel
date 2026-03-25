@@ -39,11 +39,10 @@ function timeToSec(t: string): number {
   return h * 3600 + m * 60 + s;
 }
 
-const MAX_DAYS_PAST = 730;
-
 /**
  * Valida fecha/hora de emisión para SUNAT (huso Lima).
  * Si no vienen, usa ahora en Lima.
+ * No limitamos cuán antigua puede ser la fecha: SUNAT/apisunat decidirán si la rechazan.
  */
 export function validateEmissionDateTimeForApi(
   fechaInput: string | undefined,
@@ -71,13 +70,6 @@ export function validateEmissionDateTimeForApi(
 
   if (fecha > todayLima) {
     return { error: "La fecha de emisión no puede ser después de hoy (hora de Lima)." };
-  }
-
-  const oldest = new Date();
-  oldest.setDate(oldest.getDate() - MAX_DAYS_PAST);
-  const oldestYmd = oldest.toLocaleDateString("en-CA", { timeZone: "America/Lima" });
-  if (fecha < oldestYmd) {
-    return { error: "La fecha es demasiado antigua; confirme con contaduría o SUNAT." };
   }
 
   let hora: string;

@@ -1,3 +1,6 @@
+/** Etiqueta en formularios (más clara que “condición de venta” contable SUNAT). */
+export const FORMA_PAGO_EMISION_LABEL = "Forma de pago";
+
 /** Opciones de “Cond. Venta” en el PDF del panel (y metadato en Firestore). apisunat puede ignorar campos no documentados. */
 export const CONDICION_VENTA_OPTIONS = [
   "Contado",

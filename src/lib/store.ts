@@ -390,7 +390,12 @@ class Store {
 
   async updateUserDoc(
     userId: string,
-    doc: { last_dni?: string; last_ruc?: string }
+    doc: {
+      last_dni?: string;
+      last_ruc?: string;
+      last_factura_direccion?: string;
+      last_factura_razon_social?: string;
+    }
   ): Promise<boolean> {
     try {
       const body: Record<string, unknown> = { id: userId, ...doc };
@@ -698,6 +703,7 @@ class Store {
       if (params.fecha_de_emision?.trim()) body.fecha_de_emision = params.fecha_de_emision.trim();
       if (params.hora_de_emision?.trim()) body.hora_de_emision = params.hora_de_emision.trim();
       if (params.condicion_venta?.trim()) body.condicion_venta = params.condicion_venta.trim();
+      if (params.cliente_direccion?.trim()) body.cliente_direccion = params.cliente_direccion.trim();
 
       const res = await fetch("/api/invoices", {
         method: "POST",
@@ -720,6 +726,10 @@ class Store {
         file_url_sunat:
           typeof result.file_url_sunat === "string" && result.file_url_sunat.trim()
             ? result.file_url_sunat.trim()
+            : undefined,
+        file_url_xml:
+          typeof result.file_url_xml === "string" && result.file_url_xml.trim()
+            ? result.file_url_xml.trim()
             : undefined,
         amount: amountToBill,
         court_type: reservation.court_type,
@@ -746,6 +756,10 @@ class Store {
           typeof result.serie_correlativo === "string" ? result.serie_correlativo : undefined,
         condicion_venta:
           typeof result.condicion_venta === "string" ? result.condicion_venta : params.condicion_venta?.trim(),
+        cliente_direccion:
+          typeof result.cliente_direccion === "string" && result.cliente_direccion.trim()
+            ? result.cliente_direccion.trim()
+            : params.cliente_direccion?.trim(),
       };
 
       this.invoices = [...this.invoices, newInvoice];
@@ -783,6 +797,7 @@ class Store {
       if (params.fecha_de_emision?.trim()) body.fecha_de_emision = params.fecha_de_emision.trim();
       if (params.hora_de_emision?.trim()) body.hora_de_emision = params.hora_de_emision.trim();
       if (params.condicion_venta?.trim()) body.condicion_venta = params.condicion_venta.trim();
+      if (params.cliente_direccion?.trim()) body.cliente_direccion = params.cliente_direccion.trim();
 
       const res = await fetch("/api/invoices", {
         method: "POST",

@@ -18,6 +18,10 @@ export type FormalComprobantePdfInput = {
   qrImageDataUrl?: string | null;
   receptorNombre: string;
   receptorDocLabel?: string;
+  /** Factura: dirección fiscal del receptor (líneas SUNAT en PDF). */
+  direccionReceptor?: string;
+  /** Factura: dirección del cliente (puede coincidir con la del receptor). */
+  direccionCliente?: string;
   moneda: string;
   observacion?: string;
   /** Una línea de detalle (mismo modelo que apisunat: cantidad 1). */

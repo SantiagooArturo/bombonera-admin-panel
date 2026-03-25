@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getDb } from "@/lib/firebase-admin";
 import { FieldValue } from "firebase-admin/firestore";
+import { normalizePeruPhone } from "@/features/operaciones/utils";
 
 /**
  * POST /api/payments/manual
@@ -11,7 +12,18 @@ export async function POST(request: NextRequest) {
   try {
     const db = getDb();
     const body = await request.json();
-    const { reservation_id, amount, phone_number, payment_method, media_url, chat_id } = body;
+    const {
+      reservation_id,
+      amount,
+      phone_number,
+      payment_method,
+      media_url,
+      chat_id,
+      recipient_name,
+      transaction_date: transactionDateIn,
+      transaction_time: transactionTimeIn,
+      client_dni,
+    } = body;
 
     if (!amount || !phone_number || !payment_method) {
       return NextResponse.json(
@@ -21,6 +33,22 @@ export async function POST(request: NextRequest) {
     }
 
     const now = new Date().toISOString();
+    const nameTrim =
+      typeof recipient_name === "string" && recipient_name.trim().length > 0
+        ? recipient_name.trim()
+        : null;
+    const dateTrim = typeof transactionDateIn === "string" ? transactionDateIn.trim() : "";
+    const ymdOk = /^\d{4}-\d{2}-\d{2}$/.test(dateTrim);
+    const transactionDateFinal = ymdOk ? dateTrim : now.split("T")[0];
+    const timeRaw = typeof transactionTimeIn === "string" ? transactionTimeIn.trim() : "";
+    const timeHm = /^([01]?\d|2[0-3]):[0-5]\d$/.test(timeRaw) ? timeRaw : null;
+    const dniClean =
+      typeof client_dni === "string" ? client_dni.replace(/\D/g, "").slice(0, 8) : "";
+    const dniOk = dniClean.length === 0 || dniClean.length === 8;
+
+    if (!dniOk) {
+      return NextResponse.json({ error: "El DNI debe tener 8 dígitos o dejarse vacío" }, { status: 400 });
+    }
 
     /** Cobro sin reserva: transferencia aplicada al cliente (mismo criterio de dígitos que GET /api/transfers). */
     if (!reservation_id || String(reservation_id).trim() === "") {
@@ -37,9 +65,9 @@ export async function POST(request: NextRequest) {
 
       const transferData: Record<string, unknown> = {
         phone_number,
-        recipient_name: null,
+        recipient_name: nameTrim,
         amount,
-        transaction_date: now.split("T")[0],
+        transaction_date: transactionDateFinal,
         operation_id: null,
         reservation_id: null,
         chat_id: effectiveChatId,
@@ -48,11 +76,30 @@ export async function POST(request: NextRequest) {
         payment_method: payment_method as string,
         created_at: FieldValue.serverTimestamp(),
       };
+      if (timeHm) {
+        transferData.transaction_time = timeHm;
+      }
       if (media_url) {
         transferData.media_url = media_url;
       }
 
       const transferRef = await db.collection("transfers").add(transferData);
+
+      const userDocId = normalizePeruPhone(effectiveChatId);
+      if (userDocId) {
+        const userRef = db.collection("users").doc(userDocId);
+        const userSnap = await userRef.get();
+        const userPatch: Record<string, unknown> = {};
+        if (nameTrim && nameTrim.length >= 2) {
+          userPatch.custom_name = nameTrim;
+        }
+        if (dniClean.length === 8) {
+          userPatch.last_dni = dniClean;
+        }
+        if (Object.keys(userPatch).length > 0 && userSnap.exists) {
+          await userRef.set(userPatch, { merge: true });
+        }
+      }
 
       return NextResponse.json({
         success: true,
@@ -90,9 +137,9 @@ export async function POST(request: NextRequest) {
     const chatId = resData.chat_id || resData.phone_number || phone_number;
     const transferData: Record<string, unknown> = {
       phone_number,
-      recipient_name: null,
+      recipient_name: nameTrim,
       amount,
-      transaction_date: now.split("T")[0],
+      transaction_date: transactionDateFinal,
       operation_id: null,
       reservation_id,
       chat_id: chatId,
@@ -101,11 +148,31 @@ export async function POST(request: NextRequest) {
       payment_method: payment_method as string,
       created_at: FieldValue.serverTimestamp(),
     };
+    if (timeHm) {
+      transferData.transaction_time = timeHm;
+    }
     if (media_url) {
       transferData.media_url = media_url;
     }
 
     const transferRef = await db.collection("transfers").add(transferData);
+
+    const rawForUser = String(chatId ?? "").replace(/\D/g, "");
+    const userDocId = rawForUser.length >= 9 ? normalizePeruPhone(rawForUser) : "";
+    if (userDocId) {
+      const userRef = db.collection("users").doc(userDocId);
+      const userSnap = await userRef.get();
+      const userPatch: Record<string, unknown> = {};
+      if (nameTrim && nameTrim.length >= 2) {
+        userPatch.custom_name = nameTrim;
+      }
+      if (dniClean.length === 8) {
+        userPatch.last_dni = dniClean;
+      }
+      if (Object.keys(userPatch).length > 0 && userSnap.exists) {
+        await userRef.set(userPatch, { merge: true });
+      }
+    }
 
     return NextResponse.json({
       success: true,

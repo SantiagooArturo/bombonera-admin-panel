@@ -19,6 +19,8 @@ export function buildFormalComprobanteInput(params: {
   descripcion: string;
   totalConIgv: number;
   observacion?: string;
+  /** Factura: enviada a SUNAT y al PDF formal. */
+  clienteDireccion?: string;
 }): FormalComprobantePdfInput {
   const t = round2(params.totalConIgv);
   const opGravada = round2(t / 1.18);
@@ -32,6 +34,10 @@ export function buildFormalComprobanteInput(params: {
     else if (tipo === "1") receptorDocLabel = `DNI ${num}`;
     else receptorDocLabel = num;
   }
+
+  const dirFactura = (params.clienteDireccion || "").trim();
+  const direccionSunatPdf =
+    params.tipo === "factura" && dirFactura ? dirFactura : undefined;
 
   return {
     tipo: params.tipo,
@@ -49,6 +55,8 @@ export function buildFormalComprobanteInput(params: {
     qrImageDataUrl: params.qrImageDataUrl ?? null,
     receptorNombre: params.receptorNombre,
     receptorDocLabel,
+    direccionReceptor: direccionSunatPdf,
+    direccionCliente: direccionSunatPdf,
     moneda: "SOLES",
     observacion: params.observacion,
     descripcion: params.descripcion,

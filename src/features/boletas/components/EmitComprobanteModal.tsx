@@ -1,8 +1,18 @@
 "use client";
 
-import { memo, useEffect, useState } from "react";
-import type { EmitComprobanteParams, Transfer } from "@/lib/types";
-import { CONDICION_VENTA_OPTIONS } from "../constants/condicionVenta";
+import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import type { EmitComprobanteParams, Transfer, User } from "@/lib/types";
+import { useStore } from "@/lib/hooks";
+import {
+  getUserName,
+  getUserPhone,
+  isValidPeruPhone,
+  normalizePeruPhone,
+  sanitizeDirectoryClientLabel,
+} from "@/features/operaciones/utils";
+import { EmitClienteDirectoryField } from "./EmitClienteDirectoryField";
+import { stripEmojis } from "../utils/stripEmojis";
+import { CONDICION_VENTA_OPTIONS, FORMA_PAGO_EMISION_LABEL } from "../constants/condicionVenta";
 import { BOLETA_SIN_DOCUMENTO_CLIENTE_MAX_SOLES } from "../constants/sunat";
 import { emitMiscInvoice } from "../services/emitMiscInvoice";
 import { getLimaNowTimeHm, getLimaTodayYmd } from "../utils/limaEmissionDatetime";
@@ -13,6 +23,14 @@ function cleanClienteInitial(value: string): string {
     .replace(/\bVoley\b/gi, "")
     .replace(/\s+/g, " ")
     .trim();
+}
+
+function mensajeErrorConsultaRuc(msg: string): string {
+  const m = msg.trim().toLowerCase();
+  if (!m) return "No se pudo completar el nombre.";
+  if (m.includes("no existe")) return "No encontramos ese RUC.";
+  if (m.includes("token") || m.includes("autenticación")) return "No se pudo consultar. Intente más tarde.";
+  return "No se pudo completar el nombre.";
 }
 
 export type EmitComprobanteModalTransferProps = {
@@ -42,8 +60,14 @@ function isMiscProps(p: EmitComprobanteModalProps): p is EmitComprobanteModalMis
 
 export const EmitComprobanteModal = memo(function EmitComprobanteModal(props: EmitComprobanteModalProps) {
   const misc = isMiscProps(props);
+  const store = useStore();
   const clientDni = !misc ? props.clientDni : undefined;
   const clientRuc = !misc ? props.clientRuc : undefined;
+
+  /** Vincular factura/boleta misc en Firestore a un usuario del panel (opcional). */
+  const [panelLinkPhoneNorm, setPanelLinkPhoneNorm] = useState("");
+  /** Texto del buscador de cliente (independiente del número vinculado). */
+  const [clienteDirectoryInput, setClienteDirectoryInput] = useState("");
 
   const [docType, setDocType] = useState<"boleta" | "factura">("boleta");
   /** Modo transferencia: un solo campo sincronizado con perfil al cambiar tipo. */
@@ -69,10 +93,85 @@ export const EmitComprobanteModal = memo(function EmitComprobanteModal(props: Em
   const [miscEmitting, setMiscEmitting] = useState(false);
   const [miscError, setMiscError] = useState<string | null>(null);
 
+  /** Si el usuario editó el nombre en el CPE, no lo pisan autocompletados (perfil / SUNAT). */
+  const nombreComprobanteTouchedRef = useRef(false);
+  const prevCompleteRucRef = useRef("");
+  const [rucLookup, setRucLookup] = useState<"idle" | "loading" | "error">("idle");
+  const [rucLookupMsg, setRucLookupMsg] = useState<string | null>(null);
+  /** Factura: dirección fiscal (PDF / apisunat); se puede autocompletar con consulta RUC. */
+  const [facturaDireccion, setFacturaDireccion] = useState("");
+
+  const handleNombreComprobanteChange = useCallback((value: string) => {
+    nombreComprobanteTouchedRef.current = true;
+    setClienteEdit(value);
+  }, []);
+
   useEffect(() => {
     if (misc) return;
     setDocNumberTransfer(docType === "boleta" ? (clientDni || "") : (clientRuc || ""));
   }, [misc, docType, clientDni, clientRuc]);
+
+  useEffect(() => {
+    if (!misc) return;
+    if (!store.isLoaded("users")) void store.fetchUsers();
+  }, [misc, store]);
+
+  const userCount = misc ? store.getUsers().length : 0;
+
+  const emitClienteDirectoryOptions = useMemo(() => {
+    if (!misc) return [];
+    return store
+      .getUsers()
+      .map((u) => {
+        const raw = getUserPhone(u);
+        const names = [u.custom_name, u.contact_name, u.push_name].filter(Boolean) as string[];
+        const normalized = normalizePeruPhone(raw) || raw;
+        const rawLabel = (names.length > 0 ? names.join(" ") : getUserName(u)).trim();
+        const name = stripEmojis(rawLabel).replace(/\s+/g, " ").trim() || "Cliente";
+        const searchText = name.toLowerCase();
+        return { phone: normalized, name, searchText };
+      })
+      .filter((o) => o.phone.replace(/\D/g, "").length >= 9);
+  }, [misc, store, userCount]);
+
+  const prevPanelLinkPhoneRef = useRef("");
+  useEffect(() => {
+    if (!misc) return;
+    if (panelLinkPhoneNorm !== prevPanelLinkPhoneRef.current) {
+      prevPanelLinkPhoneRef.current = panelLinkPhoneNorm;
+      nombreComprobanteTouchedRef.current = false;
+    }
+  }, [misc, panelLinkPhoneNorm]);
+
+  useEffect(() => {
+    if (!misc) return;
+    if (!panelLinkPhoneNorm || !isValidPeruPhone(panelLinkPhoneNorm)) return;
+    const u = store.getUsers().find(
+      (x) => normalizePeruPhone(getUserPhone(x) || x.chat_id || "") === panelLinkPhoneNorm
+    );
+    if (!u) return;
+    if (docType === "boleta") {
+      if (!nombreComprobanteTouchedRef.current) {
+        setClienteEdit(sanitizeDirectoryClientLabel(getUserName(u)));
+      }
+      const ld = (u.last_dni || "").replace(/\D/g, "").slice(0, 8);
+      if (ld.length === 8) setDniMisc(ld);
+    } else {
+      const uProf = u as User;
+      const lr = (u.last_ruc || "").replace(/\D/g, "").slice(0, 11);
+      if (lr.length === 11) {
+        setRucMisc(lr);
+        prevCompleteRucRef.current = "";
+      }
+      const savedDir = (uProf.last_factura_direccion || "").trim();
+      if (savedDir) setFacturaDireccion(savedDir);
+      const rs = (uProf.last_factura_razon_social || "").trim();
+      if (!nombreComprobanteTouchedRef.current) {
+        if (rs) setClienteEdit(rs);
+        else setClienteEdit(sanitizeDirectoryClientLabel(getUserName(u)));
+      }
+    }
+  }, [misc, panelLinkPhoneNorm, docType, store, userCount]);
 
   const transferInitialCliente = !isMiscProps(props) ? props.initialCliente : undefined;
   const transferInitialDescripcion = !isMiscProps(props) ? props.initialDescripcion : undefined;
@@ -94,20 +193,95 @@ export const EmitComprobanteModal = memo(function EmitComprobanteModal(props: Em
     ? (docType === "factura" ? rucMisc : dniMisc).replace(/\D/g, "")
     : docNumberTransfer.replace(/\D/g, "");
 
+  useEffect(() => {
+    prevCompleteRucRef.current = "";
+    if (docType === "boleta") setFacturaDireccion("");
+  }, [docType]);
+
+  useEffect(() => {
+    if (docType !== "factura") return;
+    const r = digitsDoc.replace(/\D/g, "");
+    if (r.length === 11 && r !== prevCompleteRucRef.current) {
+      prevCompleteRucRef.current = r;
+    }
+  }, [docType, digitsDoc]);
+
+  useEffect(() => {
+    if (docType !== "factura") return;
+    if (digitsDoc.replace(/\D/g, "").length !== 11) setFacturaDireccion("");
+  }, [docType, digitsDoc]);
+
   const parsedAmount = parseFloat(amountEdit.replace(",", "."));
   const amountValid = !Number.isNaN(parsedAmount) && parsedAmount > 0;
 
   const docValidFactura = digitsDoc.length === 11;
+  const boletaRequiereDniPorMonto =
+    docType === "boleta" && amountValid && parsedAmount >= BOLETA_SIN_DOCUMENTO_CLIENTE_MAX_SOLES;
   const boletaSinDocOk =
     docType === "boleta" &&
     digitsDoc.length === 0 &&
     amountValid &&
-    parsedAmount <= BOLETA_SIN_DOCUMENTO_CLIENTE_MAX_SOLES;
+    parsedAmount < BOLETA_SIN_DOCUMENTO_CLIENTE_MAX_SOLES;
   const boletaConDniOk = docType === "boleta" && digitsDoc.length === 8;
   const docValidBoleta = boletaSinDocOk || boletaConDniOk;
   const docValid = docType === "factura" ? docValidFactura : docValidBoleta;
   const boletaDocIncomplete =
     docType === "boleta" && digitsDoc.length > 0 && digitsDoc.length < 8;
+
+  useEffect(() => {
+    if (docType !== "factura") {
+      setRucLookup("idle");
+      setRucLookupMsg(null);
+      return;
+    }
+    const ruc = digitsDoc.replace(/\D/g, "");
+    if (ruc.length !== 11) {
+      setRucLookup("idle");
+      setRucLookupMsg(null);
+      return;
+    }
+
+    const ac = new AbortController();
+    const timer = window.setTimeout(() => {
+      void (async () => {
+        setRucLookup("loading");
+        setRucLookupMsg(null);
+        try {
+          const res = await fetch(`/api/invoices/consulta-ruc?ruc=${encodeURIComponent(ruc)}`, {
+            signal: ac.signal,
+          });
+          const data = (await res.json().catch(() => ({}))) as {
+            error?: string;
+            razon_social?: string;
+            direccion_fiscal?: string;
+          };
+          if (ac.signal.aborted) return;
+          if (!res.ok) {
+            setRucLookup("error");
+            setRucLookupMsg(typeof data.error === "string" ? data.error : "No se pudo consultar el RUC");
+            return;
+          }
+          const nombre = typeof data.razon_social === "string" ? data.razon_social.trim() : "";
+          if (nombre && !nombreComprobanteTouchedRef.current) {
+            setClienteEdit(nombre);
+          }
+          const dirF = typeof data.direccion_fiscal === "string" ? data.direccion_fiscal.trim() : "";
+          if (dirF) setFacturaDireccion(dirF);
+          setRucLookup("idle");
+          setRucLookupMsg(null);
+        } catch {
+          if (ac.signal.aborted) return;
+          setRucLookup("error");
+          setRucLookupMsg("No se pudo consultar el RUC");
+        }
+      })();
+    }, 450);
+
+    return () => {
+      ac.abort();
+      window.clearTimeout(timer);
+    };
+  }, [docType, digitsDoc]);
 
   useEffect(() => {
     let cancelled = false;
@@ -151,6 +325,11 @@ export const EmitComprobanteModal = memo(function EmitComprobanteModal(props: Em
     setMiscError(null);
     setMiscEmitting(true);
     try {
+      const linkedUser = store.getUsers().find(
+        (u) => normalizePeruPhone(getUserPhone(u) || u.chat_id || "") === panelLinkPhoneNorm
+      );
+      const hasPanelLink =
+        Boolean(linkedUser) && isValidPeruPhone(panelLinkPhoneNorm);
       const result = await emitMiscInvoice({
         tipo_comprobante: docType,
         cliente_denominacion: clienteEdit.trim(),
@@ -161,6 +340,9 @@ export const EmitComprobanteModal = memo(function EmitComprobanteModal(props: Em
         fecha_de_emision: fechaEmision.trim(),
         hora_de_emision: horaEmision.trim(),
         condicion_venta: condicionVenta,
+        panel_link_user_id: hasPanelLink ? linkedUser!.id : undefined,
+        panel_link_phone: hasPanelLink ? panelLinkPhoneNorm : undefined,
+        cliente_direccion: docType === "factura" ? facturaDireccion.trim() || undefined : undefined,
       });
       if (!result.success) {
         setMiscError(result.error ?? "Error al emitir");
@@ -184,6 +366,7 @@ export const EmitComprobanteModal = memo(function EmitComprobanteModal(props: Em
       fecha_de_emision: fechaEmision.trim() || undefined,
       hora_de_emision: horaEmision.trim() || undefined,
       condicion_venta: condicionVenta,
+      cliente_direccion: docType === "factura" ? facturaDireccion.trim() || undefined : undefined,
     });
     props.onClose();
   }
@@ -264,6 +447,16 @@ export const EmitComprobanteModal = memo(function EmitComprobanteModal(props: Em
             <span className="font-mono text-sm font-semibold text-gray-900">{serieLabel}</span>
           </div>
 
+          {misc ? (
+            <EmitClienteDirectoryField
+              linkedPhoneNorm={panelLinkPhoneNorm}
+              onLinkedPhoneChange={setPanelLinkPhoneNorm}
+              inputText={clienteDirectoryInput}
+              onInputTextChange={setClienteDirectoryInput}
+              options={emitClienteDirectoryOptions}
+            />
+          ) : null}
+
           <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
             <div>
               <label htmlFor="emit-fecha" className={labelClass}>
@@ -291,59 +484,93 @@ export const EmitComprobanteModal = memo(function EmitComprobanteModal(props: Em
             </div>
           </div>
 
-          <div>
-            <label htmlFor="emit-cond-venta" className={labelClass}>
-              Condición de venta
-            </label>
-            <select
-              id="emit-cond-venta"
-              value={condicionVenta}
-              onChange={(e) => setCondicionVenta(e.target.value)}
-              className={inputClass}
-            >
-              {CONDICION_VENTA_OPTIONS.map((opt) => (
-                <option key={opt} value={opt}>
-                  {opt}
-                </option>
-              ))}
-            </select>
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 sm:items-start">
+            <div>
+              <label htmlFor="emit-cond-venta" className={labelClass}>
+                {FORMA_PAGO_EMISION_LABEL}
+              </label>
+              <select
+                id="emit-cond-venta"
+                value={condicionVenta}
+                onChange={(e) => setCondicionVenta(e.target.value)}
+                className={inputClass}
+              >
+                {CONDICION_VENTA_OPTIONS.map((opt) => (
+                  <option key={opt} value={opt}>
+                    {opt}
+                  </option>
+                ))}
+              </select>
+            </div>
+            <div>
+              <label htmlFor="emit-doc" className={labelClass}>
+                {docType === "factura" ? "RUC" : "DNI"}
+              </label>
+              <input
+                id="emit-doc"
+                type="text"
+                inputMode="numeric"
+                value={docInputValue}
+                onChange={(e) => onDocInputChange(e.target.value)}
+                placeholder={docType === "factura" ? "11 dígitos" : "Opcional"}
+                className={`${inputClass} font-mono`}
+              />
+              {docType === "boleta" && boletaRequiereDniPorMonto && digitsDoc.length === 0 ? (
+                <p className="mt-1 text-xs text-amber-800">
+                  DNI obligatorio para montos desde S/ {BOLETA_SIN_DOCUMENTO_CLIENTE_MAX_SOLES}.
+                </p>
+              ) : null}
+              {docType === "factura" && rucLookup === "loading" ? (
+                <p className="mt-1 text-xs text-gray-500">Buscando razón social…</p>
+              ) : null}
+              {docType === "factura" && rucLookup === "error" && rucLookupMsg ? (
+                <p className="mt-1 text-xs text-amber-800">{mensajeErrorConsultaRuc(rucLookupMsg)}</p>
+              ) : null}
+              {boletaDocIncomplete ? (
+                <p className="mt-1 text-xs text-red-600">El DNI debe tener 8 dígitos.</p>
+              ) : null}
+            </div>
           </div>
 
           <div>
-            <label htmlFor="emit-cliente" className={labelClass}>
-              Cliente o razón social
+            <label htmlFor="emit-nombre-cpe" className={labelClass}>
+              Nombre en el comprobante
             </label>
             <input
-              id="emit-cliente"
+              id="emit-nombre-cpe"
               type="text"
               value={clienteEdit}
-              onChange={(e) => setClienteEdit(e.target.value)}
-              placeholder={misc ? "Ej: VENTAS DEL DIA" : "Opcional"}
+              onChange={(e) => handleNombreComprobanteChange(e.target.value)}
+              placeholder={
+                misc
+                  ? docType === "factura"
+                    ? "Razón social en el CPE"
+                    : "Ej. VENTAS DEL DIA"
+                  : "Opcional"
+              }
               className={inputClass}
               autoComplete="off"
             />
           </div>
 
-          <div>
-            <label htmlFor="emit-doc" className={labelClass}>
-              {docType === "factura" ? "RUC" : "DNI"}
-            </label>
-            <input
-              id="emit-doc"
-              type="text"
-              inputMode="numeric"
-              value={docInputValue}
-              onChange={(e) => onDocInputChange(e.target.value)}
-              placeholder={docType === "factura" ? "11 dígitos" : "Opcional"}
-              className={`${inputClass} font-mono`}
-            />
-            {docType === "boleta" ? (
+          {docType === "factura" ? (
+            <div>
+              <label htmlFor="emit-dir-factura" className={labelClass}>
+                Dirección fiscal (receptor)
+              </label>
+              <textarea
+                id="emit-dir-factura"
+                value={facturaDireccion}
+                onChange={(e) => setFacturaDireccion(e.target.value)}
+                rows={3}
+                placeholder="Se completa al validar el RUC si SUNAT la devuelve; puedes editarla."
+                className="w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm text-gray-900 shadow-sm focus:border-field-dark focus:outline-none focus:ring-1 focus:ring-field-dark/30"
+              />
               <p className="mt-1 text-xs text-gray-500">
-                Vacío solo si el total ≤ S/ {BOLETA_SIN_DOCUMENTO_CLIENTE_MAX_SOLES}.
+                En SUNAT y en el PDF formal. Si la dejas vacía se usará «LIMA».
               </p>
-            ) : null}
-            {boletaDocIncomplete ? <p className="mt-1 text-xs text-red-600">8 dígitos o vacío.</p> : null}
-          </div>
+            </div>
+          ) : null}
 
           <div>
             <label htmlFor="emit-concepto" className={labelClass}>
@@ -375,12 +602,6 @@ export const EmitComprobanteModal = memo(function EmitComprobanteModal(props: Em
             />
             {!amountValid && amountEdit !== "" ? (
               <p className="mt-1 text-xs text-red-600">Monto inválido.</p>
-            ) : null}
-            {docType === "boleta" &&
-            amountValid &&
-            parsedAmount > BOLETA_SIN_DOCUMENTO_CLIENTE_MAX_SOLES &&
-            digitsDoc.length === 0 ? (
-              <p className="mt-1 text-xs text-amber-800">Indique DNI o cambie a Factura.</p>
             ) : null}
           </div>
         </div>
