@@ -54,13 +54,18 @@ export const PdfPreviewThumbnail = memo(function PdfPreviewThumbnail({
   if (!imgSrc) {
     return (
       <div
-        className={`relative group cursor-pointer overflow-hidden ${frame} bg-gray-50 flex flex-col items-center justify-center`}
+        className={`relative group cursor-pointer overflow-hidden ${frame} flex flex-col items-center justify-center bg-gray-50`}
         onClick={() => window.open(url, "_blank")}
       >
-        <svg className="w-10 h-10 text-gray-300 mb-2" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+        <svg className="mb-2 h-10 w-10 text-gray-300" fill="none" viewBox="0 0 24 24" stroke="currentColor">
           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
         </svg>
         <span className="text-sm font-semibold text-gray-400">Sin vista previa</span>
+        <div className="pointer-events-none absolute inset-0 flex items-center justify-center bg-black/0 transition-colors duration-200 group-hover:bg-black/45">
+          <span className="mx-2 rounded-lg bg-black/75 px-2.5 py-1.5 text-center text-xs font-bold text-white opacity-0 shadow-lg backdrop-blur-sm transition-opacity duration-200 group-hover:opacity-100">
+            Clic para abrir el PDF
+          </span>
+        </div>
       </div>
     );
   }
@@ -77,13 +82,9 @@ export const PdfPreviewThumbnail = memo(function PdfPreviewThumbnail({
     >
       {/* eslint-disable-next-line @next/next/no-img-element */}
       <img src={imgSrc} alt="Vista previa del comprobante" className={imgClass} />
-      <div className="absolute inset-0 bg-black/0 group-hover:bg-black/25 flex items-center justify-center transition-colors">
-        <span
-          className={`text-sm font-bold text-white shadow-md opacity-0 group-hover:opacity-100 transition-opacity px-3 py-1.5 rounded-lg ${
-            variant === "compact" ? "bg-emerald-700/90" : "bg-black/60 backdrop-blur-sm"
-          }`}
-        >
-          {variant === "compact" ? "Ampliar" : "Ver boleta"}
+      <div className="pointer-events-none absolute inset-0 flex flex-col items-center justify-center gap-1 bg-black/0 transition-colors duration-200 group-hover:bg-black/50">
+        <span className="mx-2 max-w-[92%] rounded-lg bg-black/75 px-3 py-2 text-center text-xs font-bold leading-snug text-white opacity-0 shadow-lg backdrop-blur-sm transition-opacity duration-200 group-hover:opacity-100 sm:text-sm">
+          Clic para ampliar la boleta
         </span>
       </div>
     </div>

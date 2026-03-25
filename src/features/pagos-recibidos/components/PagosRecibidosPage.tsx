@@ -24,8 +24,13 @@ export function PagosRecibidosPage() {
   const [transfers, setTransfers] = useState<Transfer[]>([]);
   const [initialLoading, setInitialLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [searchQuery, setSearchQuery] = useState(() => searchParams.get("search")?.trim() ?? "");
+  const urlSearch = searchParams.get("search")?.trim() ?? "";
+  const [searchQuery, setSearchQuery] = useState(() => urlSearch);
   const [registerOpen, setRegisterOpen] = useState(false);
+
+  useEffect(() => {
+    setSearchQuery(urlSearch);
+  }, [urlSearch]);
 
   const load = useCallback(
     async (opts?: { silent?: boolean }) => {

@@ -1,17 +1,22 @@
 "use client";
 
 import { useState, useRef, useEffect, useCallback, useMemo, memo } from "react";
-import ReactDOM from "react-dom";
-import { Transfer, Invoice, Reservation, PaymentMethod, ClientType, CLIENT_TYPE_LABELS, STATUS_LABELS, getPendingExpiryTimeFormatted, type ReservationStatus, type EmitComprobanteParams } from "@/lib/types";
+import Link from "next/link";
 import { PdfPreviewThumbnail } from "@/components/PdfPreviewThumbnail";
+import { invoicePlantillaPdfHref } from "@/features/boletas/utils/invoicePdfLinks";
+import { EmitInvoiceModal } from "./EmitInvoiceModal";
+import { Transfer, Invoice, Reservation, PaymentMethod, ClientType, CLIENT_TYPE_LABELS, STATUS_LABELS, getPendingExpiryTimeFormatted, type ReservationStatus, type EmitComprobanteParams } from "@/lib/types";
 import type { CourtFieldConfig } from "@/lib/court-config";
 import { getCourtSizeLabel } from "@/lib/court-config";
-import { calculateReservationPrice, courtConfigsToMap, formatDisplayPhone, wspLink } from "@/features/operaciones/utils";
+import {
+  calculateReservationPrice,
+  courtConfigsToMap,
+  formatDisplayPhone,
+  normalizePeruPhone,
+  wspLink,
+} from "@/features/operaciones/utils";
 import { WHATSAPP_ICON_PATH as WSP_ICON_PATH } from "@/features/operaciones/whatsappIconPath";
-import { EmitInvoiceModal } from "./EmitInvoiceModal";
 import { RegisterPaymentFormCobros } from "./RegisterPaymentFormCobros";
-import { invoicePlantillaPdfHref } from "@/features/boletas/utils/invoicePdfLinks";
-import { invoiceComprobantePdfDownloadFilename } from "@/features/boletas/utils/comprobantePdfFilename";
 
 // ─── Props ───────────────────────────────────────────────────────────────────
 
@@ -116,6 +121,29 @@ function formatReservationTime(reservation: Reservation) {
   const start = reservation.time_slots[0];
   const lastHour = parseInt(reservation.time_slots[reservation.time_slots.length - 1].split(":")[0]) + 1;
   return `${formatHour12(start)} – ${formatHour12(`${lastHour}:00`)}`;
+}
+
+function addDaysYmd(ymd: string, days: number): string {
+  const d = new Date(ymd + "T12:00:00");
+  d.setDate(d.getDate() + days);
+  return d.toISOString().slice(0, 10);
+}
+
+/** Lunes–domingo (ISO local) de la semana calendario que contiene la fecha de la reserva. */
+function reservationWeekMonSun(reservationDateYmd: string): { weekStart: string; weekEnd: string } {
+  const resDate = new Date(reservationDateYmd + "T12:00:00");
+  const day = resDate.getDay();
+  const diffToMon = day === 0 ? -6 : 1 - day;
+  const mon = new Date(resDate);
+  mon.setDate(mon.getDate() + diffToMon);
+  const sun = new Date(mon);
+  sun.setDate(sun.getDate() + 6);
+  return { weekStart: mon.toISOString().slice(0, 10), weekEnd: sun.toISOString().slice(0, 10) };
+}
+
+function transferDateYmd(t: Transfer): string {
+  const iso = typeof t.created_at === "string" ? t.created_at.split("T")[0] : "";
+  return iso.length >= 10 ? iso.slice(0, 10) : "";
 }
 
 // ─── Vista simplificada (1 reserva) ───────────────────────────────────────────
@@ -223,37 +251,17 @@ function ReservationDetailContent({
     statusUpdating,
     cancellingReservation,
   } = clientData;
-  const {
-    transfers,
-    invoices,
-    loading,
-    emittingInvoiceId,
-    attachingInvoiceId,
-    paymentLoading,
-    onVerifyTransfer,
-    onEmitInvoice,
-    onAttachInvoice,
-    onDetachInvoice,
-    onVoidSunatInvoice,
-    onRevokeManualPayment,
-    onRegisterPayment,
-    onViewImage,
-    onHoverTransferChanged,
-    chatId,
-    clientDni,
-    clientRuc,
-  } = transferHandlers;
+  const { paymentLoading, onRegisterPayment } = transferHandlers;
   const configMap = useMemo(() => courtConfigsToMap(courtConfigs), [courtConfigs]);
-  const transfersForRes = useMemo(
-    () => transfers.filter((t) => t.reservation_id === reservation.id),
-    [transfers, reservation.id]
-  );
   const [editingPrice, setEditingPrice] = useState(false);
   const [priceInput, setPriceInput] = useState(String(reservation.total_price ?? 0));
   const [priceUpdating, setPriceUpdating] = useState(false);
   const [editingAmountPaid, setEditingAmountPaid] = useState(false);
   const [amountPaidInput, setAmountPaidInput] = useState(String(reservation.amount_paid ?? 0));
   const [amountPaidUpdating, setAmountPaidUpdating] = useState(false);
+  const [editingDebt, setEditingDebt] = useState(false);
+  const [debtInput, setDebtInput] = useState("");
+  const [debtUpdating, setDebtUpdating] = useState(false);
 
   const calculatedPrice = reservation.field && reservation.time_slots
     ? calculateReservationPrice(reservation.field, reservation.date, reservation.time_slots, configMap)
@@ -274,6 +282,11 @@ function ReservationDetailContent({
     setAmountPaidInput(String(reservation.amount_paid ?? 0));
   }, [reservation.id, reservation.amount_paid]);
 
+  useEffect(() => {
+    if (editingDebt) return;
+    setDebtInput(remaining.toFixed(2));
+  }, [reservation.id, reservation.total_price, reservation.amount_paid, remaining, editingDebt]);
+
   async function handleSavePrice() {
     if (!onUpdatePrice) return;
     const parsed = parseFloat(priceInput.replace(",", "."));
@@ -292,6 +305,17 @@ function ReservationDetailContent({
     const ok = await onUpdateAmountPaid(parsed);
     setAmountPaidUpdating(false);
     if (ok) setEditingAmountPaid(false);
+  }
+
+  async function handleSaveDebt() {
+    if (!onUpdateAmountPaid) return;
+    const parsedDebt = parseFloat(debtInput.replace(",", "."));
+    if (isNaN(parsedDebt) || parsedDebt < 0) return;
+    const newPaid = Math.max(0, totalPrice - parsedDebt);
+    setDebtUpdating(true);
+    const ok = await onUpdateAmountPaid(newPaid);
+    setDebtUpdating(false);
+    if (ok) setEditingDebt(false);
   }
 
   const showChips = reservationsForChips && reservationsForChips.length > 1 && onSelectReservationFromChips;
@@ -316,41 +340,6 @@ function ReservationDetailContent({
 
   return (
     <div className="flex flex-col h-full">
-      {showChips && (
-        <div className="px-6 py-3 border-b border-gray-100 bg-gray-50 shrink-0">
-          <p className="text-xs font-semibold text-amber-700 uppercase tracking-wide mb-2">
-            {reservationsForChips!.length} reservas esta semana
-          </p>
-          <div className="flex flex-wrap gap-1.5">
-            {reservationsForChips!.map((r) => {
-              const dateObj = new Date(r.date + "T12:00:00");
-              const dayName = dateObj.toLocaleDateString("es-PE", { weekday: "long" });
-              const dayNum = dateObj.getDate();
-              const start = r.time_slots?.[0] || "";
-              const lastH = r.time_slots?.length ? parseInt(r.time_slots[r.time_slots.length - 1].split(":")[0]) + 1 : 0;
-              const end = `${lastH}:00`;
-              const timeShort = `${formatHour12(start).replace(/:00\s?/g, "").replace(/\s/g, "")}-${formatHour12(end).replace(/:00\s?/g, "").replace(/\s/g, "")}`;
-              const fieldShort = r.field ? `C${r.field}` : "—";
-              const isCurrent = r.id === reservation.id;
-              const label = `${dayName} ${dayNum} · ${timeShort} · ${fieldShort}`;
-              return (
-                <button
-                  key={r.id}
-                  type="button"
-                  onClick={() => handleChipClick(r)}
-                  className={`min-w-[10rem] px-2.5 py-1.5 rounded-lg text-xs font-medium transition-all duration-200 ${
-                    isCurrent
-                      ? "bg-amber-500 text-white shadow-sm"
-                      : "bg-white text-amber-800 hover:bg-amber-100 border border-amber-200"
-                  }`}
-                >
-                  {label}
-                </button>
-              );
-            })}
-          </div>
-        </div>
-      )}
       {/* Datos del cliente */}
       <div className="px-6 py-4 border-b border-gray-200 bg-white shrink-0 space-y-4">
         <div className="flex flex-col space-y-1">
@@ -632,7 +621,9 @@ function ReservationDetailContent({
                     <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg>
                   </button>
                 </div>
-                <p className="text-xs text-blue-400">La deuda se recalcula automáticamente</p>
+                <p className="text-xs text-blue-600/90">
+                  Valor manual: no se infiere desde cobros ni crea pagos nuevos.
+                </p>
               </div>
             ) : (
               <div className="flex items-center justify-center gap-1">
@@ -649,13 +640,112 @@ function ReservationDetailContent({
           </div>
           <div className={`rounded-xl px-4 py-3 text-center ${fullyPaid ? "bg-green-50" : "bg-red-50"}`}>
             <p className={`text-xs font-medium uppercase ${fullyPaid ? "text-green-400" : "text-red-400"}`}>Deuda</p>
-            <p className={`text-lg font-bold ${fullyPaid ? "text-green-700" : "text-red-600"}`}>S/ {remaining.toFixed(2)}</p>
+            {onUpdateAmountPaid && !isCancelled && editingDebt ? (
+              <div className="flex flex-col items-center gap-1">
+                <div className="flex items-center justify-center gap-1">
+                  <span className={`text-lg font-bold ${fullyPaid ? "text-green-700" : "text-red-600"}`}>S/</span>
+                  <input
+                    type="text"
+                    inputMode="decimal"
+                    value={debtInput}
+                    onChange={(e) => setDebtInput(e.target.value.replace(/[^\d.,]/g, ""))}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter") void handleSaveDebt();
+                      if (e.key === "Escape") {
+                        setEditingDebt(false);
+                        setDebtInput(remaining.toFixed(2));
+                      }
+                    }}
+                    className={`w-20 text-lg font-bold border-b-2 bg-transparent focus:outline-none text-center ${
+                      fullyPaid ? "text-green-700 border-green-500" : "text-red-600 border-red-500"
+                    }`}
+                    autoFocus
+                  />
+                  <button
+                    onClick={() => void handleSaveDebt()}
+                    disabled={debtUpdating}
+                    className="text-xs px-2 py-1 rounded-md bg-red-600 text-white hover:bg-red-700 disabled:opacity-50"
+                  >
+                    {debtUpdating ? "..." : "Guardar"}
+                  </button>
+                  <button
+                    onClick={() => {
+                      setEditingDebt(false);
+                      setDebtInput(remaining.toFixed(2));
+                    }}
+                    disabled={debtUpdating}
+                    className="p-1 rounded-md hover:bg-gray-200 text-gray-500 hover:text-gray-700 disabled:opacity-50"
+                    title="Cancelar"
+                  >
+                    <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                    </svg>
+                  </button>
+                </div>
+                <p className="text-xs text-gray-500">
+                  Al guardar, Pagado = Total − Deuda (ej. deuda 0 → pagado completo).
+                </p>
+              </div>
+            ) : (
+              <div className="flex items-center justify-center gap-1">
+                <p className={`text-lg font-bold ${fullyPaid ? "text-green-700" : "text-red-600"}`}>
+                  S/ {remaining.toFixed(2)}
+                </p>
+                {onUpdateAmountPaid && !isCancelled && (
+                  <button
+                    onClick={() => setEditingDebt(true)}
+                    className={`p-1 rounded-md hover:opacity-90 ${fullyPaid ? "text-green-600 hover:bg-green-100" : "text-red-600 hover:bg-red-100"}`}
+                    title="Editar deuda"
+                  >
+                    <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
+                    </svg>
+                  </button>
+                )}
+              </div>
+            )}
           </div>
         </div>
+
+        {showChips && (
+          <div className="mt-4 pt-4 border-t border-gray-100">
+            <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-amber-700">
+              {reservationsForChips!.length} reservas esta semana
+            </p>
+            <div className="flex flex-wrap gap-1.5">
+              {reservationsForChips!.map((r) => {
+                const dateObj = new Date(r.date + "T12:00:00");
+                const dayName = dateObj.toLocaleDateString("es-PE", { weekday: "long" });
+                const dayNum = dateObj.getDate();
+                const start = r.time_slots?.[0] || "";
+                const lastH = r.time_slots?.length ? parseInt(r.time_slots[r.time_slots.length - 1].split(":")[0]) + 1 : 0;
+                const end = `${lastH}:00`;
+                const timeShort = `${formatHour12(start).replace(/:00\s?/g, "").replace(/\s/g, "")}-${formatHour12(end).replace(/:00\s?/g, "").replace(/\s/g, "")}`;
+                const fieldShort = r.field ? `C${r.field}` : "—";
+                const isCurrent = r.id === reservation.id;
+                const label = `${dayName} ${dayNum} · ${timeShort} · ${fieldShort}`;
+                return (
+                  <button
+                    key={r.id}
+                    type="button"
+                    onClick={() => handleChipClick(r)}
+                    className={`min-w-[10rem] rounded-lg px-2.5 py-1.5 text-xs font-medium transition-all duration-200 ${
+                      isCurrent
+                        ? "bg-amber-500 text-white shadow-sm"
+                        : "border border-amber-200 bg-white text-amber-800 hover:bg-amber-100"
+                    }`}
+                  >
+                    {label}
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+        )}
       </div>
 
-      {/* Content: RegisterPaymentForm + TransferCard (ocultado cuando hidePaymentsSection) */}
-      <div className="flex-1 overflow-y-auto p-6 space-y-5 bg-gray-50">
+      {/* Cobros viven en el tab «Cobros»; aquí solo formulario legacy si hidePaymentsSection es false */}
+      <div className="min-h-0 flex-1 overflow-y-auto bg-gray-50 p-6">
         {!hidePaymentsSection && !isCancelled && (
           <RegisterPaymentFormCobros
             reservationsForPayment={[reservation]}
@@ -666,812 +756,398 @@ function ReservationDetailContent({
             buttonSubtext={null}
           />
         )}
-        {!hidePaymentsSection && (loading && transfersForRes.length === 0 ? (
-          <><SkeletonCard /><SkeletonCard /></>
-        ) : transfersForRes.length > 0 ? (
-          <div className="space-y-4">
-            {transfersForRes.map((transfer) => {
-              const invoice = invoices.find((inv) => inv.transfer_id === transfer.id);
-              return (
-                <TransferCard
-                  key={transfer.id}
-                  transfer={transfer}
-                  invoice={invoice}
-                  reservation={reservation}
-                  courtConfigs={courtConfigs}
-                  emittingInvoiceId={emittingInvoiceId}
-                  attachingInvoiceId={attachingInvoiceId}
-                  onVerify={onVerifyTransfer}
-                  onEmitInvoice={onEmitInvoice}
-                  onAttachInvoice={onAttachInvoice}
-                  onDetachInvoice={onDetachInvoice}
-                  onVoidSunatInvoice={onVoidSunatInvoice}
-                  onRevoke={onRevokeManualPayment}
-                  onViewImage={onViewImage}
-                  onHover={(hovering) => onHoverTransferChanged(hovering ? transfer.id : null)}
-                  chatId={chatId}
-                  clientDni={clientDni}
-                  clientRuc={clientRuc}
-                />
-              );
-            })}
-          </div>
-        ) : null)}
       </div>
     </div>
   );
 }
 
-// ─── PENCIL_ICON (usado en varios lugares) ────────────────────────────────────
+function cobrosTransferVerifiedLike(t: Transfer): boolean {
+  return !!(t.verified || t.source === "manual" || t.source === "manual_adjustment");
+}
 
-const PENCIL_ICON = (
-  <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" />
-  </svg>
-);
+function cobrosCanEmitOrAttachComprobante(t: Transfer, invoice?: Invoice): boolean {
+  if (invoice) return false;
+  return cobrosTransferVerifiedLike(t) && (t.amount ?? 0) > 0;
+}
 
-// ─── Payment Accordion (compacto → expande TransferCard completo) ─────────────
+// ─── Fila Cobros: preview pago + columna boleta (misma rejilla que el skeleton) ─
 
-const PaymentAccordionList = memo(function PaymentAccordionList({
-  transfers,
-  invoices,
-  allClientReservations,
-  courtConfigs,
+const CobrosNearbyPaymentRow = memo(function CobrosNearbyPaymentRow({
+  transfer,
+  invoice,
   emittingInvoiceId,
   attachingInvoiceId,
-  onVerifyTransfer,
-  onEmitInvoice,
+  onVerify,
+  onToggleApplied,
+  onRevoke,
+  onViewImage,
+  onRequestEmit,
   onAttachInvoice,
   onDetachInvoice,
-  onVoidSunatInvoice,
-  onRevokeManualPayment,
-  onToggleApplied,
-  onViewImage,
-  onHover,
-  chatId,
-  clientDni,
-  clientRuc,
-}: {
-  transfers: Transfer[];
-  invoices: Invoice[];
-  allClientReservations: Reservation[];
-  courtConfigs: CourtFieldConfig[] | null | undefined;
-  emittingInvoiceId: string | null;
-  attachingInvoiceId: string | null;
-  onVerifyTransfer: (id: string, verified: boolean) => void;
-  onEmitInvoice: (t: Transfer, p: EmitComprobanteParams) => void;
-  onAttachInvoice: (t: Transfer, f: File) => void;
-  onDetachInvoice: (id: string) => Promise<boolean>;
-  onVoidSunatInvoice?: (invoiceId: string) => Promise<boolean>;
-  onRevokeManualPayment: (id: string) => void;
-  onToggleApplied: (transferId: string, applied: boolean) => void;
-  onViewImage: (url: string) => void;
-  onHover: (id: string | null) => void;
-  chatId: string;
-  clientDni?: string | null;
-  clientRuc?: string | null;
-}) {
-  const [expandedId, setExpandedId] = useState<string | null>(null);
-
-  return (
-    <div className="space-y-2">
-      {transfers.map((t) => {
-        const dateStr = formatTransferDate(t.created_at);
-        const isApplied = t.applied ?? (t.status === "applied" || t.status === "partial");
-        const inv = invoices.find((i) => i.transfer_id === t.id);
-        const isExpanded = expandedId === t.id;
-
-        return (
-          <div
-            key={t.id}
-            className={`rounded-xl border-2 overflow-hidden transition-all ${isExpanded ? "border-blue-300" : "border-gray-200 bg-white"}`}
-          >
-            <button
-              type="button"
-              onClick={() => setExpandedId(isExpanded ? null : t.id)}
-              className="w-full flex items-center justify-between gap-3 py-2.5 px-4 hover:bg-gray-50 transition-colors text-left"
-              onMouseEnter={() => onHover(t.id)}
-              onMouseLeave={() => onHover(null)}
-            >
-              <div className="flex items-center gap-3 min-w-0">
-                {t.media_url ? (
-                  <div className="w-10 h-10 rounded-lg overflow-hidden shrink-0 bg-gray-100">
-                    {/* eslint-disable-next-line @next/next/no-img-element */}
-                    <img src={t.media_url} alt="" className="w-full h-full object-cover" />
-                  </div>
-                ) : (
-                  <div className="w-10 h-10 rounded-lg bg-gray-100 shrink-0 flex items-center justify-center">
-                    <svg className="w-5 h-5 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M17 9V7a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2m2 4h10a2 2 0 002-2v-6a2 2 0 00-2-2H9a2 2 0 00-2 2v6a2 2 0 002 2zm7-5a2 2 0 11-4 0 2 2 0 014 0z" />
-                    </svg>
-                  </div>
-                )}
-                <span className="text-sm font-medium text-gray-700">{dateStr}</span>
-                <span className="text-sm font-bold text-gray-900">S/ {(t.amount ?? 0).toFixed(2)}</span>
-              </div>
-              <label
-                onClick={(e) => e.stopPropagation()}
-                className="flex items-center gap-2 cursor-pointer shrink-0"
-              >
-                <input
-                  type="checkbox"
-                  checked={!!isApplied}
-                  onChange={(e) => onToggleApplied(t.id, e.target.checked)}
-                  className="rounded border-gray-300 text-blue-600 focus:ring-blue-500 w-5 h-5 cursor-pointer"
-                />
-                <span className="text-xs font-medium text-gray-600">Aplicado</span>
-              </label>
-              <svg
-                className={`w-5 h-5 text-gray-400 shrink-0 transition-transform ${isExpanded ? "rotate-180" : ""}`}
-                fill="none"
-                viewBox="0 0 24 24"
-                stroke="currentColor"
-              >
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
-              </svg>
-            </button>
-            {isExpanded && (
-              <div className="p-2 border-t border-gray-200 bg-gray-50/50">
-                <TransferCard
-                  transfer={t}
-                  invoice={inv}
-                  reservation={allClientReservations.find((r) => r.id === t.reservation_id)}
-                  courtConfigs={courtConfigs}
-                  emittingInvoiceId={emittingInvoiceId}
-                  attachingInvoiceId={attachingInvoiceId}
-                  onVerify={onVerifyTransfer}
-                  onEmitInvoice={onEmitInvoice}
-                  onAttachInvoice={onAttachInvoice}
-                  onDetachInvoice={onDetachInvoice}
-                  onVoidSunatInvoice={onVoidSunatInvoice}
-                  onRevoke={onRevokeManualPayment}
-                  onViewImage={onViewImage}
-                  onHover={(h) => onHover(h ? t.id : null)}
-                  chatId={chatId}
-                  clientDni={clientDni}
-                  clientRuc={clientRuc}
-                />
-              </div>
-            )}
-          </div>
-        );
-      })}
-    </div>
-  );
-});
-
-// ─── Transfer Card ───────────────────────────────────────────────────────────
-
-/** Construye la descripción que usará SUNAT (formato 12h: 10am-12pm). Prioriza número de cancha, no el tipo (6vs6). */
-function buildInvoiceDescription(reservation: Reservation | undefined, courtConfigs: CourtFieldConfig[] | null | undefined): string {
-  if (!reservation) return "Alquiler cancha — datos de reserva no disponibles";
-  const f = reservation.field;
-  const courtPart =
-    f != null && f >= 1 && f <= 12
-      ? String(f)
-      : (() => {
-          const cfg = f && courtConfigs?.length ? courtConfigs.find((c) => c.field === f) : null;
-          return cfg ? getCourtSizeLabel(cfg) : f === 9 ? "5 vs 5" : "6 vs 6";
-        })();
-  let desc = `Alquiler cancha ${courtPart}`;
-  if (reservation.date) {
-    const d = new Date(reservation.date + "T12:00:00");
-    desc += ` - ${d.toLocaleDateString("es-PE", { day: "2-digit", month: "2-digit", year: "numeric" })}`;
-  }
-  if (reservation.time_slots?.length) {
-    const start = reservation.time_slots[0];
-    const lastH = parseInt(reservation.time_slots[reservation.time_slots.length - 1].split(":")[0]) + 1;
-    const startStr = formatHour12(start).replace(/:00\s?/g, "").replace(/\s/g, "");
-    const endStr = formatHour12(`${lastH}:00`).replace(/:00\s?/g, "").replace(/\s/g, "");
-    desc += ` ${startStr}-${endStr}`;
-  }
-  return desc;
-}
-
-const TransferCard = memo(function TransferCard({
-  transfer, invoice, reservation, courtConfigs, emittingInvoiceId, attachingInvoiceId, onVerify, onEmitInvoice, onAttachInvoice, onDetachInvoice, onVoidSunatInvoice, onRevoke, onViewImage, onHover, chatId, clientDni, clientRuc,
 }: {
   transfer: Transfer;
-  invoice: Invoice | undefined;
-  reservation?: Reservation | undefined;
-  courtConfigs?: CourtFieldConfig[] | null;
+  invoice?: Invoice;
   emittingInvoiceId: string | null;
   attachingInvoiceId: string | null;
-  onVerify: (transferId: string, currentStatus: boolean) => void;
-  onEmitInvoice: (transfer: Transfer, params: EmitComprobanteParams) => void;
-  onAttachInvoice: (transfer: Transfer, file: File) => void;
-  onDetachInvoice: (invoiceId: string) => Promise<boolean>;
-  onVoidSunatInvoice?: (invoiceId: string) => Promise<boolean>;
-  onRevoke: (transferId: string) => void;
+  onVerify: (id: string, verified: boolean) => void;
+  onToggleApplied: (id: string, applied: boolean) => void;
+  onRevoke: (id: string) => void;
   onViewImage: (url: string) => void;
-  onHover: (hovering: boolean) => void;
-  chatId: string;
-  clientDni?: string | null;
-  clientRuc?: string | null;
+  onRequestEmit: (t: Transfer) => void;
+  onAttachInvoice: (t: Transfer, file: File) => void;
+  onDetachInvoice: (id: string) => Promise<boolean>;
 }) {
-  const fileInputRef = useRef<HTMLInputElement>(null);
-  const [dragOver, setDragOver] = useState(false);
-  const [showEmitModal, setShowEmitModal] = useState(false);
-  const [wspStatus, setWspStatus] = useState<"idle" | "sending" | "sent" | "error">("idle");
-  const [wspError, setWspError] = useState<string | null>(null);
-  const [detachingInvoice, setDetachingInvoice] = useState(false);
-  const [voidingInvoice, setVoidingInvoice] = useState(false);
   const isManualLike = transfer.source === "manual" || transfer.source === "manual_adjustment";
-  const isValidated = transfer.verified || isManualLike;
-  const canAttach = isValidated && !invoice;
-  const invoiceStatusNorm = invoice?.status ?? (invoice?.serie_correlativo ? "emitted" : "");
-  const isInvoiceVoided = invoiceStatusNorm === "voided";
-  const canVoidSunat =
-    !!onVoidSunatInvoice &&
-    !!invoice &&
-    invoiceStatusNorm === "emitted" &&
-    Boolean(String(invoice.serie_correlativo || "").trim());
-
-  const handleDrop = useCallback((e: React.DragEvent) => {
-    e.preventDefault();
-    setDragOver(false);
-    if (!canAttach) return;
-    const file = e.dataTransfer.files?.[0];
-    if (file) onAttachInvoice(transfer, file);
-  }, [canAttach, onAttachInvoice, transfer]);
+  const verifiedLike = cobrosTransferVerifiedLike(transfer);
+  void onToggleApplied;
+  void onRevoke;
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const proxy = transfer.media_url
+    ? `/api/proxy-file?url=${encodeURIComponent(transfer.media_url)}`
+    : null;
+  const pdfHref = invoice ? invoicePlantillaPdfHref(invoice) : null;
+  const canComprobante = cobrosCanEmitOrAttachComprobante(transfer, invoice);
+  const emitting = emittingInvoiceId === transfer.id;
+  const attaching = attachingInvoiceId === transfer.id;
 
   return (
-    <div
-      className={`rounded-2xl border-2 transition-all ${dragOver && canAttach ? "border-blue-400 bg-blue-50/30 ring-2 ring-blue-200" : transfer.verified ? "border-green-400 bg-green-50/30" : "border-gray-200 bg-white"}`}
-      onMouseEnter={() => onHover(true)}
-      onMouseLeave={() => onHover(false)}
-      onDragOver={(e) => { if (canAttach) { e.preventDefault(); setDragOver(true); } }}
-      onDragLeave={() => setDragOver(false)}
-      onDrop={handleDrop}
-    >
-      <div className={`grid grid-cols-2 border-b-2 rounded-t-2xl ${transfer.verified ? "border-green-400 bg-green-50/50" : "border-gray-200 bg-gray-50/50"}`}>
-        <div className="px-5 py-2.5 text-xs font-bold text-gray-500 uppercase tracking-wider">Pago</div>
-        <div className={`px-5 py-2.5 text-xs font-bold text-gray-500 uppercase tracking-wider border-l-2 ${transfer.verified ? "border-green-400" : "border-gray-200"}`}>Boleta asociada</div>
+    <div className="overflow-hidden rounded-2xl border-2 border-gray-200 bg-white">
+      <div className="grid grid-cols-2 border-b-2 border-gray-200 bg-gray-50/50">
+        <div className="px-4 py-2.5 text-xs font-bold uppercase tracking-wide text-gray-600">Pago</div>
+        <div className="border-l-2 border-gray-200 px-4 py-2.5 text-xs font-bold uppercase tracking-wide text-gray-600">
+          Boleta emitida
+        </div>
       </div>
-
-      <div className="grid grid-cols-2">
-        {/* COLUMNA IZQUIERDA: PAGO */}
-        <div className="p-4 space-y-3">
-          <div className="w-full">
-            {transfer.media_url ? (
-              <div
-                className="relative group cursor-pointer overflow-hidden rounded-xl border border-gray-200 aspect-[3/4] bg-gray-100"
-                onClick={() => onViewImage(transfer.media_url!)}
-              >
-                {/* eslint-disable-next-line @next/next/no-img-element */}
-                <img src={transfer.media_url} alt="Voucher" className="w-full h-full object-cover transition-transform group-hover:scale-105" />
-                <div className="absolute inset-0 bg-black/0 group-hover:bg-black/20 flex items-center justify-center transition-colors">
-                  <span className="text-sm font-bold text-white bg-black/60 px-4 py-2 rounded-lg backdrop-blur-sm opacity-0 group-hover:opacity-100 transition-opacity">Ver imagen</span>
-                </div>
-              </div>
-            ) : (
-              <div className="rounded-xl bg-gray-50 border-2 border-dashed border-gray-200 flex flex-col items-center justify-center p-6 text-center aspect-[3/4]">
-                {transfer.source === "manual" ? (
-                  <>
-                    <svg className="w-10 h-10 text-gray-300 mb-2" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M17 9V7a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2m2 4h10a2 2 0 002-2v-6a2 2 0 00-2-2H9a2 2 0 00-2 2v6a2 2 0 002 2zm7-5a2 2 0 11-4 0 2 2 0 014 0z" /></svg>
-                    <span className="text-sm font-semibold text-gray-400">Pago en Caja</span>
-                  </>
-                ) : transfer.source === "manual_adjustment" ? (
-                  <>
-                    <svg className="w-10 h-10 text-gray-300 mb-2" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" /></svg>
-                    <span className="text-sm font-semibold text-gray-400">Ajuste manual</span>
-                  </>
-                ) : (
-                  <>
-                    <svg className="w-10 h-10 text-amber-300 mb-2" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" /></svg>
-                    <span className="text-sm font-semibold text-gray-400">Sin imagen</span>
-                  </>
-                )}
-              </div>
-            )}
-          </div>
-
-          <div>
-            <p className="text-lg font-bold text-gray-900">S/ {transfer.amount?.toFixed(2)}</p>
-            <p className="text-xs text-gray-500 mt-0.5">
-              {formatTransferDate(transfer.created_at)} · {formatTransferTime(transfer.created_at)}
-              <span className="text-gray-300 mx-1">·</span>
-              {transfer.source === "manual" ? "en caja" : transfer.source === "manual_adjustment" ? "ajuste" : "digital"}
-            </p>
-            <p className={`text-xs font-semibold mt-1 ${transfer.verified ? "text-green-600" : "text-amber-600"}`}>
-              {transfer.verified ? "Validado" : isManualLike ? (transfer.source === "manual_adjustment" ? "Ajuste manual" : "Cobro manual") : "Pendiente validación"}
-            </p>
-          </div>
-
-          {!isManualLike && (
+      <div className="grid grid-cols-1 sm:grid-cols-2">
+        <div className="space-y-3 border-b-2 border-gray-200 p-4 sm:border-b-0 sm:border-r-2 sm:p-5">
+          {proxy ? (
             <button
-              onClick={() => onVerify(transfer.id, !!transfer.verified)}
-              className={`w-full py-2.5 px-4 rounded-xl font-bold text-sm transition-all active:scale-[0.98] flex items-center justify-center gap-2 ${transfer.verified
-                ? "bg-white border-2 border-gray-200 text-gray-600 hover:border-red-200 hover:text-red-500"
-                : "bg-field-dark text-white hover:opacity-95 shadow-sm"
-                }`}
+              type="button"
+              onClick={() => onViewImage(proxy)}
+              className="group relative block w-full max-w-md overflow-hidden rounded-xl border border-gray-200 bg-gray-100 focus:outline-none focus:ring-2 focus:ring-field-dark/30"
             >
-              {transfer.verified ? (
-                <><svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg>Deshacer</>
-              ) : (
-                <><svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" /></svg>Validar Pago</>
-              )}
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img
+                src={proxy}
+                alt=""
+                className="aspect-[4/3] w-full object-cover object-top transition-transform duration-200 group-hover:scale-[1.02]"
+              />
+              <div className="pointer-events-none absolute inset-0 flex flex-col items-center justify-center gap-1 bg-black/0 transition-colors duration-200 group-hover:bg-black/50">
+                <span className="max-w-[90%] rounded-lg bg-black/75 px-3 py-2 text-center text-xs font-bold leading-snug text-white opacity-0 shadow-lg backdrop-blur-sm transition-opacity duration-200 group-hover:opacity-100 sm:text-sm">
+                  Clic para ampliar la captura
+                </span>
+              </div>
             </button>
+          ) : (
+            <div className="flex aspect-[4/3] w-full max-w-md items-center justify-center rounded-xl border border-dashed border-gray-200 bg-gray-50 text-sm text-gray-400">
+              Sin captura
+            </div>
           )}
-          <button
-            onClick={() => onRevoke(transfer.id)}
-            className="w-full py-2.5 px-4 rounded-xl font-bold text-sm transition-all active:scale-[0.98] flex items-center justify-center gap-2 bg-white border-2 border-red-100 text-red-600 hover:bg-red-50"
-          >
-            <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 14L21 3m0 0h-7m7 0v7M14 10L3 21m0 0h7m-7 0v-7" /></svg>
-            Desvincular pago
-          </button>
+          <div>
+            <p className="text-xl font-bold tabular-nums text-gray-900">S/ {(transfer.amount ?? 0).toFixed(2)}</p>
+            <p className="mt-0.5 text-xs text-gray-500">
+              {formatTransferDate(transfer.created_at)} · {formatTransferTime(transfer.created_at)}
+              <span className="mx-1 text-gray-300">·</span>
+              {transfer.source === "manual"
+                ? "caja"
+                : transfer.source === "manual_adjustment"
+                  ? "ajuste"
+                  : "digital"}
+            </p>
+          </div>
+          <div className="flex flex-wrap gap-2">
+            {/* Checkbox «Aplicado» oculto en Cobros (al restaurar: const isApplied = transfer.applied ?? …)
+            …
+            */}
+            {!isManualLike && (
+              <button
+                type="button"
+                onClick={() => onVerify(transfer.id, !!transfer.verified)}
+                className={`inline-flex min-h-[44px] flex-1 items-center justify-center gap-2 rounded-xl px-4 py-2.5 text-sm font-bold sm:flex-none ${
+                  transfer.verified
+                    ? "border-2 border-gray-200 text-gray-700 hover:bg-gray-50"
+                    : "bg-field-dark text-white hover:opacity-95"
+                }`}
+              >
+                {transfer.verified ? (
+                  "Quitar validación"
+                ) : (
+                  <>
+                    <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" aria-hidden>
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                    </svg>
+                    Validar pago
+                  </>
+                )}
+              </button>
+            )}
+            {/* Botón «Desvincular» oculto en Cobros … */}
+          </div>
         </div>
 
-        {/* COLUMNA DERECHA: BOLETA */}
-        <div className={`p-4 border-l-2 flex flex-col justify-center ${transfer.verified ? "border-green-400" : "border-gray-200"}`}>
-          {!isValidated ? (
-            <div className="text-center py-8">
-              <svg className="w-12 h-12 mx-auto mb-3 text-gray-200" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" /></svg>
-              <p className="text-sm font-semibold text-gray-400">Valida el pago primero</p>
-            </div>
-          ) : invoice ? (
-            <div className="space-y-3">
-              <div className="w-full relative">
-                <PdfPreviewThumbnail
-                  url={invoicePlantillaPdfHref(invoice) ?? invoice.file_url}
-                  onClickPreview={onViewImage}
-                />
-                {invoice.status === "attached" && (
-                  <button
-                    type="button"
-                    onClick={async () => {
-                      if (detachingInvoice) return;
-                      setDetachingInvoice(true);
-                      await onDetachInvoice(invoice.id);
-                      setDetachingInvoice(false);
-                    }}
-                    disabled={detachingInvoice}
-                    title="Desvincular boleta adjuntada"
-                    className="absolute top-2 right-2 z-10 h-7 w-7 rounded-full bg-gray-900/65 text-white text-sm font-bold hover:bg-gray-900/80 transition-colors disabled:opacity-50"
-                  >
-                    ✕
-                  </button>
-                )}
-              </div>
-              <div>
-                <p className="text-lg font-bold text-gray-900">S/ {invoice.amount.toFixed(2)}</p>
-                <p className="text-xs text-gray-500 mt-0.5">{new Date(invoice.created_at).toLocaleDateString("es-PE")}</p>
-              </div>
-              <div className="flex gap-2">
-                <a
-                  href={invoicePlantillaPdfHref(invoice) ?? `/api/proxy-file?url=${encodeURIComponent(invoice.file_url)}`}
-                  download={invoiceComprobantePdfDownloadFilename(invoice)}
-                  className="flex-1 py-2.5 px-3 rounded-xl font-bold text-sm bg-blue-50 border-2 border-blue-100 text-blue-700 hover:bg-blue-100 flex items-center justify-center gap-2 transition-colors"
-                >
-                  <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" /></svg>
-                  Descargar
-                </a>
-                <button
-                  onClick={async () => {
-                    if (wspStatus === "sending" || wspStatus === "sent") return;
-                    setWspStatus("sending");
-                    setWspError(null);
-                    try {
-                      const res = await fetch("/api/invoices/send", {
-                        method: "POST",
-                        headers: { "Content-Type": "application/json" },
-                        body: JSON.stringify({
-                          chat_id: chatId,
-                          invoice_id: invoice.id,
-                          filename: invoiceComprobantePdfDownloadFilename(invoice),
-                        }),
-                        signal: AbortSignal.timeout(200_000),
-                      });
-                      if (!res.ok) {
-                        const data = await res.json().catch(() => ({}));
-                        throw new Error(typeof data?.error === "string" ? data.error : "No se pudo enviar la boleta.");
-                      }
-                      setWspStatus("sent");
-                    } catch (error) {
-                      setWspStatus("error");
-                      setWspError(error instanceof Error ? error.message : "No se pudo enviar la boleta.");
-                    }
-                  }}
-                  disabled={wspStatus === "sending" || wspStatus === "sent"}
-                  className={`flex-1 py-2.5 px-3 rounded-xl font-bold text-sm flex items-center justify-center gap-2 transition-all ${wspStatus === "sent"
-                    ? "bg-green-50 border-2 border-green-200 text-green-700"
-                    : wspStatus === "error"
-                    ? "bg-red-50 border-2 border-red-200 text-red-700"
-                    : "bg-green-600 text-white hover:bg-green-700 border-2 border-green-600 hover:border-green-700"
-                    } disabled:opacity-80`}
-                >
-                  {wspStatus === "sending" ? (
-                    <><svg className="w-4 h-4 animate-spin" fill="none" viewBox="0 0 24 24"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" /><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" /></svg>Enviando</>
-                  ) : wspStatus === "sent" ? (
-                    <><svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" /></svg>Enviado</>
-                  ) : wspStatus === "error" ? (
-                    <><svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v4m0 8v4m8-8h-4M8 12H4" /></svg>Reintentar envío</>
-                  ) : (
-                    <><svg className="w-4 h-4" fill="currentColor" viewBox="0 0 24 24"><path d={WSP_ICON_PATH} /></svg>Enviar</>
-                  )}
-                </button>
-              </div>
-              {wspError && (
-                <p className="text-xs text-red-600 font-medium">{wspError}</p>
+        <div className="flex flex-col items-stretch gap-3 p-4 sm:p-5">
+          {invoice ? (
+            <>
+              {pdfHref ? (
+                <div className="mx-auto w-full max-w-[220px]">
+                  <PdfPreviewThumbnail url={pdfHref} onClickPreview={onViewImage} variant="full" />
+                </div>
+              ) : (
+                <div className="flex min-h-[160px] w-full items-center justify-center rounded-xl border border-dashed border-amber-200 bg-amber-50/50 px-3 text-center text-sm text-amber-900">
+                  Hay comprobante registrado, pero no hay PDF para previsualizar.
+                </div>
               )}
-              {isInvoiceVoided ? (
-                <p className="rounded-xl border-2 border-gray-200 bg-gray-100 py-2.5 px-3 text-center text-sm font-bold text-gray-600">
-                  Anulado
-                </p>
-              ) : canVoidSunat ? (
-                <button
-                  type="button"
-                  disabled={voidingInvoice}
-                  onClick={async () => {
-                    const label = invoice.tipo_comprobante === "factura" ? "factura" : "boleta";
-                    if (
-                      !confirm(
-                        `¿Anular esta ${label} (${invoice.serie_correlativo})?\n\nNo se puede deshacer desde el panel.`
-                      )
-                    ) {
-                      return;
-                    }
-                    setVoidingInvoice(true);
-                    try {
-                      await onVoidSunatInvoice!(invoice.id);
-                    } finally {
-                      setVoidingInvoice(false);
-                    }
-                  }}
-                  className="w-full py-2.5 px-4 rounded-xl text-sm font-bold border-2 border-red-300 bg-red-50 text-red-800 hover:bg-red-100 transition-colors disabled:opacity-60"
-                >
-                  {voidingInvoice
-                    ? "Anulando…"
-                    : invoice.tipo_comprobante === "factura"
-                      ? "Anular"
-                      : "Anular"}
-                </button>
-              ) : invoiceStatusNorm === "emitted" && !invoice.serie_correlativo ? (
-                <p className="text-xs text-amber-800">
-                  No se puede anular: falta número de comprobante en el registro.
-                </p>
-              ) : null}
-            </div>
-          ) : (
-            <div className="space-y-3">
-              <div className="rounded-xl bg-gray-50 border-2 border-dashed border-gray-200 flex flex-col items-center justify-center p-6 text-center aspect-[3/4]">
-                <svg className="w-10 h-10 text-gray-300 mb-2" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" /></svg>
-                <span className="text-sm font-semibold text-gray-400">Sin boleta</span>
+              <div className="text-center">
+                {invoice.serie_correlativo ? (
+                  <p className="font-mono text-sm font-semibold text-indigo-900">{invoice.serie_correlativo}</p>
+                ) : null}
+                {pdfHref ? (
+                  <a
+                    href={pdfHref}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="mt-1 inline-block text-xs font-semibold text-blue-600 hover:underline"
+                  >
+                    Abrir PDF
+                  </a>
+                ) : null}
               </div>
-
-              <input
-                ref={fileInputRef}
-                type="file"
-                accept=".pdf"
-                className="hidden"
-                onChange={(e) => {
-                  const f = e.target.files?.[0];
-                  if (f) onAttachInvoice(transfer, f);
-                  e.target.value = "";
+              <button
+                type="button"
+                onClick={async () => {
+                  if (!window.confirm("¿Quitar este comprobante vinculado a este pago?")) return;
+                  await onDetachInvoice(invoice.id);
                 }}
-              />
-              <button
-                onClick={() => fileInputRef.current?.click()}
-                disabled={attachingInvoiceId === transfer.id || emittingInvoiceId === transfer.id || !canAttach}
-                className="w-full py-2.5 px-4 rounded-xl font-bold text-sm bg-gray-900 text-white hover:bg-gray-800 flex items-center justify-center gap-2 transition-colors disabled:opacity-60 disabled:cursor-not-allowed shadow-sm"
+                className="mt-auto text-center text-xs font-semibold text-red-600 hover:underline"
               >
-                {attachingInvoiceId === transfer.id ? (
-                  <><svg className="w-4 h-4 animate-spin" fill="none" viewBox="0 0 24 24"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" /><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" /></svg>Subiendo...</>
-                ) : (
-                  <><svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.172 7l-6.586 6.586a2 2 0 102.828 2.828l6.414-6.586a4 4 0 00-5.656-5.656l-6.415 6.585a6 6 0 108.486 8.486L20.5 13" /></svg>Adjuntar Boleta</>
-                )}
+                Quitar comprobante
               </button>
-
-              <button
-                onClick={() => setShowEmitModal(true)}
-                disabled={attachingInvoiceId === transfer.id || emittingInvoiceId === transfer.id}
-                className="flex w-full min-h-[44px] items-center justify-center gap-2 rounded-xl border border-field-dark bg-field-dark px-4 py-2.5 text-sm font-bold text-white hover:opacity-95 disabled:cursor-not-allowed disabled:opacity-60"
-              >
-                {emittingInvoiceId === transfer.id ? (
-                  <><svg className="w-4 h-4 animate-spin" fill="none" viewBox="0 0 24 24"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" /><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" /></svg>Emitiendo...</>
-                ) : (
-                  <><svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" /></svg>Emitir Boleta</>
-                )}
-              </button>
+            </>
+          ) : (
+            <div className="flex min-h-[220px] flex-1 flex-col items-center justify-center rounded-xl border-2 border-dashed border-gray-200 bg-slate-50/80 px-4 py-6 text-center">
+              <svg className="h-12 w-12 text-gray-300" fill="none" viewBox="0 0 24 24" stroke="currentColor" aria-hidden>
+                <path
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  strokeWidth={1.5}
+                  d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"
+                />
+              </svg>
+              {!canComprobante ? (
+                <>
+                  <p className="mt-3 text-sm font-semibold text-gray-700">Valida el pago primero</p>
+                  <p className="mt-1 text-xs text-gray-500">Después podrás emitir o adjuntar la boleta para este cobro.</p>
+                </>
+              ) : (
+                <>
+                  <p className="mt-3 text-sm font-semibold text-gray-700">Sin boleta en este pago</p>
+                  <p className="mt-1 text-xs text-gray-500">Emite desde el panel o adjunta un PDF.</p>
+                  <div className="mt-4 flex w-full max-w-xs flex-col gap-2">
+                    <button
+                      type="button"
+                      disabled={emitting}
+                      onClick={() => onRequestEmit(transfer)}
+                      className="rounded-xl border-2 border-field-dark bg-field-dark px-4 py-2.5 text-sm font-bold text-white hover:opacity-95 disabled:opacity-50"
+                    >
+                      {emitting ? "Emitiendo…" : "Emitir boleta o factura"}
+                    </button>
+                    <input
+                      ref={fileInputRef}
+                      type="file"
+                      accept="application/pdf"
+                      className="hidden"
+                      onChange={(e) => {
+                        const f = e.target.files?.[0];
+                        e.target.value = "";
+                        if (f) onAttachInvoice(transfer, f);
+                      }}
+                    />
+                    <button
+                      type="button"
+                      disabled={attaching}
+                      onClick={() => fileInputRef.current?.click()}
+                      className="rounded-xl border-2 border-gray-300 bg-white px-4 py-2.5 text-sm font-bold text-gray-800 hover:bg-gray-50 disabled:opacity-50"
+                    >
+                      {attaching ? "Adjuntando…" : "Adjuntar PDF"}
+                    </button>
+                  </div>
+                </>
+              )}
             </div>
           )}
         </div>
       </div>
-
-      {showEmitModal && typeof document !== "undefined" && ReactDOM.createPortal(
-        <EmitInvoiceModal
-          transfer={transfer}
-          clientDni={clientDni}
-          clientRuc={clientRuc}
-          initialDescripcion={buildInvoiceDescription(reservation, courtConfigs)}
-          initialCliente={reservation?.representative_name?.trim() ?? ""}
-          onClose={() => setShowEmitModal(false)}
-          onEmitInvoice={onEmitInvoice}
-          emitting={emittingInvoiceId === transfer.id}
-          attaching={attachingInvoiceId === transfer.id}
-        />,
-        document.body
-      )}
     </div>
   );
 });
 
-// ─── Reservation Row (memoizado para evitar re-renders en tabla) ─────────────
+type CobrosNearbyAccordionTheme = {
+  cardBorder: string;
+  header: string;
+  headerText: string;
+  chevron: string;
+  panel: string;
+  emptyBox: string;
+  emptyText: string;
+};
 
-const ReservationRow = memo(function ReservationRow({
-  r,
-  onUpdatePrice,
-  onUpdateAmountPaid,
-  onMarkedInSession,
-  paymentLoading,
-}: {
-  r: Reservation;
-  onUpdatePrice?: (totalPrice: number, reservationId?: string) => Promise<boolean>;
-  onUpdateAmountPaid?: (amountPaid: number, reservationId?: string) => Promise<boolean>;
-  onMarkedInSession?: (reservationId: string) => void;
-  paymentLoading: boolean;
-}) {
-  const price = r.total_price ?? 0;
-  const paid = r.amount_paid ?? 0;
-  const dateObj = new Date(r.date + "T12:00:00");
-  const dayName = dateObj.toLocaleDateString("es-PE", { weekday: "short" });
-  const dayNum = dateObj.getDate();
-  const start = r.time_slots?.[0] || "";
-  const lastH = r.time_slots?.length ? parseInt(r.time_slots[r.time_slots.length - 1].split(":")[0]) + 1 : 0;
-  const timeStr = `${formatHour12(start).replace(/:00\s?/g, "").replace(/\s/g, "")}-${formatHour12(`${lastH}:00`).replace(/:00\s?/g, "").replace(/\s/g, "")}`;
-  const fieldShort = r.field ? `C${r.field}` : "—";
+/** Gris: periodo sin pagos en el rango. Ámbar: al menos un pago en ese rango. */
+const COBROS_NEARBY_THEME_EMPTY: CobrosNearbyAccordionTheme = {
+  cardBorder: "border-gray-300/90",
+  header: "bg-gray-300/80 hover:bg-gray-300",
+  headerText: "text-gray-900",
+  chevron: "text-gray-600",
+  panel: "border-t border-gray-200/90 bg-gray-50",
+  emptyBox: "rounded-lg border border-dashed border-gray-400/45 bg-gray-200/35",
+  emptyText: "text-sm font-medium text-gray-600",
+};
 
-  const [editingPrice, setEditingPrice] = useState(false);
-  const [priceInput, setPriceInput] = useState(String(price));
-  const [updating, setUpdating] = useState(false);
-  const lastAmountBeforeFull = useRef<number>(0);
-  const isTogglingPaidRef = useRef(false);
-  useEffect(() => {
-    if (!editingPrice) setPriceInput(String(r.total_price ?? 0));
-  }, [r.id, r.total_price, editingPrice]);
-
-  const handleSavePrice = useCallback(async () => {
-    const parsed = parseFloat(priceInput.replace(",", "."));
-    if (isNaN(parsed) || parsed < 0 || !onUpdatePrice) return;
-    setUpdating(true);
-    const ok = await onUpdatePrice(parsed, r.id);
-    setUpdating(false);
-    if (ok) setEditingPrice(false);
-  }, [priceInput, onUpdatePrice, r.id]);
-
-  const handleTogglePaid = useCallback(async (checked: boolean) => {
-    if (!onUpdateAmountPaid || isTogglingPaidRef.current) return;
-    isTogglingPaidRef.current = true;
-    setUpdating(true);
-    try {
-      if (checked) {
-        lastAmountBeforeFull.current = paid;
-        await onUpdateAmountPaid(price, r.id);
-        onMarkedInSession?.(r.id);
-      } else {
-        await onUpdateAmountPaid(lastAmountBeforeFull.current, r.id);
-      }
-    } finally {
-      isTogglingPaidRef.current = false;
-      setUpdating(false);
-    }
-  }, [onUpdateAmountPaid, paid, price, r.id, onMarkedInSession]);
-
-  return (
-    <tr className="border-b border-gray-100 bg-white">
-      <td className="py-2.5 px-3 text-sm font-medium text-gray-900">
-        {dayName} {dayNum} · {timeStr} · {fieldShort}
-      </td>
-      <td className="py-2.5 px-3 text-sm text-gray-600 font-medium">
-        {editingPrice && onUpdatePrice ? (
-          <div className="flex items-center gap-1">
-            <span className="text-gray-500">S/</span>
-            <input
-              type="text"
-              inputMode="decimal"
-              value={priceInput}
-              onChange={(e) => setPriceInput(e.target.value.replace(/[^\d.,]/g, ""))}
-              onKeyDown={(e) => {
-                if (e.key === "Enter") void handleSavePrice();
-                if (e.key === "Escape") { setEditingPrice(false); setPriceInput(String(price)); }
-              }}
-              className="w-16 px-1.5 py-0.5 rounded border border-blue-300 text-sm font-medium focus:outline-none focus:ring-1 focus:ring-blue-500"
-              autoFocus
-            />
-            <button onClick={() => void handleSavePrice()} disabled={updating} className="p-1 text-blue-600 hover:bg-blue-50 rounded" title="Guardar">
-              <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" /></svg>
-            </button>
-          </div>
-        ) : (
-          <button
-            type="button"
-            onClick={() => onUpdatePrice && setEditingPrice(true)}
-            className="flex items-center gap-1 group hover:bg-gray-50 rounded px-1 -mx-1 py-0.5"
-          >
-            S/ {price.toFixed(2)}
-            {onUpdatePrice && <span className="text-gray-400">{PENCIL_ICON}</span>}
-          </button>
-        )}
-      </td>
-      <td className="py-2.5 px-3 text-center">
-        {onUpdateAmountPaid && (
-          <label className="inline-flex items-center justify-center cursor-pointer" title={paid >= price ? "Quitar pago" : "Marcar como pagado"}>
-            <input
-              type="checkbox"
-              checked={paid >= price && price > 0}
-              onChange={(e) => void handleTogglePaid(e.target.checked)}
-              disabled={updating || paymentLoading}
-              className="rounded border-gray-300 text-green-600 focus:ring-green-500 w-5 h-5 cursor-pointer"
-            />
-          </label>
-        )}
-      </td>
-    </tr>
-  );
-});
+const COBROS_NEARBY_THEME_WITH_PAYMENTS: CobrosNearbyAccordionTheme = {
+  cardBorder: "border-amber-200/90",
+  header: "bg-amber-200/80 hover:bg-amber-200",
+  headerText: "text-amber-950",
+  chevron: "text-amber-800/85",
+  panel: "border-t border-amber-200/85 bg-amber-50",
+  emptyBox: "rounded-lg border border-dashed border-amber-400/50 bg-amber-100/55",
+  emptyText: "text-sm font-medium text-amber-900/75",
+};
 
 // ─── Cobros Tab Content ─────────────────────────────────────────────────────
 
 const CobrosTabContent = memo(function CobrosTabContent({
   allClientReservations,
   reservation,
-  courtConfigs,
   transfers,
   invoices,
   loading,
   emittingInvoiceId,
   attachingInvoiceId,
   onVerifyTransfer,
-  onEmitInvoice,
+  onRevokeManualPayment,
+  onToggleApplied,
+  onRequestEmit,
   onAttachInvoice,
   onDetachInvoice,
-  onVoidSunatInvoice,
-  onRevokeManualPayment,
-  onRegisterPayment,
-  onToggleApplied,
-  onUpdatePrice,
-  onUpdateAmountPaid,
-  paymentLoading,
   chatId,
-  clientDni,
-  clientRuc,
   setViewingImage,
-  setHoveredTransferId,
 }: {
   allClientReservations: Reservation[];
   reservation: Reservation;
-  courtConfigs?: CourtFieldConfig[] | null;
   transfers: Transfer[];
   invoices: Invoice[];
   loading: boolean;
   emittingInvoiceId: string | null;
   attachingInvoiceId: string | null;
   onVerifyTransfer: (id: string, verified: boolean) => void;
-  onEmitInvoice: (t: Transfer, p: EmitComprobanteParams) => void;
-  onAttachInvoice: (t: Transfer, f: File) => void;
-  onDetachInvoice: (id: string) => Promise<boolean>;
-  onVoidSunatInvoice?: (invoiceId: string) => Promise<boolean>;
   onRevokeManualPayment: (id: string) => void;
-  onRegisterPayment: (reservationId: string | null, amount: number, method: PaymentMethod, mediaUrl?: string) => void;
   onToggleApplied: (transferId: string, applied: boolean) => void;
-  onUpdatePrice?: (totalPrice: number, reservationId?: string) => Promise<boolean>;
-  onUpdateAmountPaid?: (amountPaid: number, reservationId?: string) => Promise<boolean>;
-  paymentLoading: boolean;
+  onRequestEmit: (t: Transfer) => void;
+  onAttachInvoice: (t: Transfer, file: File) => void;
+  onDetachInvoice: (id: string) => Promise<boolean>;
   chatId: string;
-  clientDni?: string | null;
-  clientRuc?: string | null;
   setViewingImage: (src: string) => void;
-  setHoveredTransferId: (id: string | null) => void;
 }) {
-  const resDate = new Date(reservation.date + "T12:00:00");
-  const day = resDate.getDay();
-  const diffToMon = day === 0 ? -6 : 1 - day;
-  const mon = new Date(resDate);
-  mon.setDate(mon.getDate() + diffToMon);
-  const sun = new Date(mon);
-  sun.setDate(sun.getDate() + 6);
-  const weekStart = mon.toISOString().slice(0, 10);
-  const weekEnd = sun.toISOString().slice(0, 10);
+  const { weekStart, weekEnd } = useMemo(
+    () => reservationWeekMonSun(reservation.date || ""),
+    [reservation.date]
+  );
 
-  const [modifiedInSessionReservationIds, setModifiedInSessionReservationIds] = useState<Set<string>>(new Set());
-  const [modifiedInSessionTransferIds, setModifiedInSessionTransferIds] = useState<Set<string>>(new Set());
+  const transfersByPeriod = useMemo(() => {
+    const inRange = (start: string, end: string) =>
+      transfers
+        .filter((t) => {
+          const ymd = transferDateYmd(t);
+          return ymd >= start && ymd <= end;
+        })
+        .sort((a, b) => String(b.created_at).localeCompare(String(a.created_at)));
+    return {
+      prev: inRange(addDaysYmd(weekStart, -7), addDaysYmd(weekEnd, -7)),
+      same: inRange(weekStart, weekEnd),
+      next: inRange(addDaysYmd(weekStart, 7), addDaysYmd(weekEnd, 7)),
+    };
+  }, [transfers, weekStart, weekEnd]);
 
-  const visibleReservations = useMemo(() => {
-    const isPaid = (r: Reservation) => (r.amount_paid ?? 0) >= (r.total_price ?? 0) && (r.total_price ?? 0) > 0;
-    const isThisWeek = (d: string) => d >= weekStart && d <= weekEnd;
-    return allClientReservations.filter(
-      (r) => !isPaid(r) || isThisWeek(r.date) || modifiedInSessionReservationIds.has(r.id)
-    );
-  }, [allClientReservations, weekStart, weekEnd, modifiedInSessionReservationIds]);
+  const [openNearby, setOpenNearby] = useState({ prev: true, same: true, next: true });
 
-  const allOrdered = useMemo(() => {
-    const past = visibleReservations.filter((r) => r.date < weekStart);
-    const thisWeekRes = visibleReservations.filter((r) => r.date >= weekStart && r.date <= weekEnd);
-    const future = visibleReservations.filter((r) => r.date > weekEnd);
-    return [...past, ...thisWeekRes, ...future];
-  }, [visibleReservations, weekStart, weekEnd]);
+  const nearbySections = useMemo(
+    () =>
+      [
+        { key: "prev" as const, title: "Pagos recibidos la semana anterior a la reserva", list: transfersByPeriod.prev },
+        { key: "same" as const, title: "Pagos recibidos la misma semana de la reserva", list: transfersByPeriod.same },
+        { key: "next" as const, title: "Pagos recibidos la semana siguiente a la reserva", list: transfersByPeriod.next },
+      ],
+    [transfersByPeriod]
+  );
 
-  const totalCost = useMemo(() => allClientReservations.reduce((s, r) => s + (r.total_price ?? 0), 0), [allClientReservations]);
-  const totalPaid = useMemo(() => allClientReservations.reduce((s, r) => s + (r.amount_paid ?? 0), 0), [allClientReservations]);
+  const totalCost = useMemo(
+    () => allClientReservations.reduce((s, r) => s + (r.total_price ?? 0), 0),
+    [allClientReservations]
+  );
+  const totalPaid = useMemo(
+    () => allClientReservations.reduce((s, r) => s + (r.amount_paid ?? 0), 0),
+    [allClientReservations]
+  );
+  /* eslint-disable @typescript-eslint/no-unused-vars -- UI «Por cobrar» comentada arriba */
   const totalRemaining = Math.max(0, totalCost - totalPaid);
   const reservationsWithDebt = useMemo(
     () => allClientReservations.filter((r) => (r.total_price ?? 0) - (r.amount_paid ?? 0) > 0),
     [allClientReservations]
   );
-  const reservationsForPayment = useMemo(
-    () =>
-      allClientReservations.filter(
-        (r) => r.status !== "cancelled" && r.status !== "expired"
-      ),
-    [allClientReservations]
-  );
 
   const pendingByPeriod = useMemo(() => {
-    const addDays = (dateStr: string, days: number) => {
-      const d = new Date(dateStr + "T12:00:00");
-      d.setDate(d.getDate() + days);
-      return d.toISOString().slice(0, 10);
-    };
-    const lastWeekStart = addDays(weekStart, -7);
-    const lastWeekEnd = addDays(weekEnd, -7);
-    const monthNames = ["Enero", "Febrero", "Marzo", "Abril", "Mayo", "Junio", "Julio", "Agosto", "Septiembre", "Octubre", "Noviembre", "Diciembre"] as const;
+    const lastWeekStart = addDaysYmd(weekStart, -7);
+    const lastWeekEnd = addDaysYmd(weekEnd, -7);
+    const monthNames = [
+      "Enero", "Febrero", "Marzo", "Abril", "Mayo", "Junio", "Julio", "Agosto", "Septiembre", "Octubre",
+      "Noviembre", "Diciembre",
+    ] as const;
     const getPeriodLabel = (dateStr: string): string => {
       if (dateStr >= weekStart && dateStr <= weekEnd) return "Esta semana";
       if (dateStr >= lastWeekStart && dateStr <= lastWeekEnd) return "Semana pasada";
       const d = new Date(dateStr + "T12:00:00");
       return monthNames[d.getMonth()] + " " + d.getFullYear();
     };
-    return reservationsWithDebt.reduce((acc, r) => {
-      const pending = Math.max(0, (r.total_price ?? 0) - (r.amount_paid ?? 0));
-      const label = getPeriodLabel(r.date);
-      acc[label] = (acc[label] ?? 0) + pending;
-      return acc;
-    }, {} as Record<string, number>);
+    return reservationsWithDebt.reduce(
+      (acc, r) => {
+        const pending = Math.max(0, (r.total_price ?? 0) - (r.amount_paid ?? 0));
+        const label = getPeriodLabel(r.date);
+        acc[label] = (acc[label] ?? 0) + pending;
+        return acc;
+      },
+      {} as Record<string, number>
+    );
   }, [reservationsWithDebt, weekStart, weekEnd]);
+  /* eslint-enable @typescript-eslint/no-unused-vars */
 
-  const clientSearch = String(reservation.phone_number || reservation.chat_id || "").replace(/\D/g, "").slice(-9);
-  const historicoUrl = `/verificacion?search=${encodeURIComponent(clientSearch)}`;
-
-  /** Rango amplio para listar transferencias aplicadas (evita ocultar pagos antiguos al emitir boleta). */
-  const { transferWindowStart, transferWindowEnd } = useMemo(() => {
-    const today = new Date();
-    const start = new Date(today);
-    start.setFullYear(start.getFullYear() - 10);
-    const end = new Date(today);
-    end.setFullYear(end.getFullYear() + 2);
-    return {
-      transferWindowStart: start.toISOString().slice(0, 10),
-      transferWindowEnd: end.toISOString().slice(0, 10),
-    };
-  }, []);
-
-  const filteredTransfers = useMemo(() => transfers.filter((t) => {
-    const isApplied = t.applied ?? (t.status === "applied" || t.status === "partial");
-    const transferDate = t.created_at?.split?.("T")?.[0] ?? "";
-    const isInWindow = transferDate >= transferWindowStart && transferDate <= transferWindowEnd;
-    const hasInvoice = invoices.some((inv) => inv.transfer_id === t.id);
-    const canEmitBoleta = (t.amount ?? 0) > 0 && !hasInvoice;
-    return !isApplied || isInWindow || modifiedInSessionTransferIds.has(t.id) || canEmitBoleta;
-  }), [transfers, transferWindowStart, transferWindowEnd, modifiedInSessionTransferIds, invoices]);
-
-  const handleMarkedInSession = useCallback((id: string) => {
-    setModifiedInSessionReservationIds((prev) => new Set(prev).add(id));
-  }, []);
-
-  const handleToggleAppliedWithSession = useCallback((id: string, applied: boolean) => {
-    onToggleApplied(id, applied);
-    if (applied) setModifiedInSessionTransferIds((prev) => new Set(prev).add(id));
-  }, [onToggleApplied]);
+  const digits = String(reservation.phone_number || reservation.chat_id || chatId || "").replace(/\D/g, "");
+  const phoneForSearch =
+    digits.length >= 9 ? normalizePeruPhone(digits) : digits.length > 0 ? digits : chatId.replace(/\D/g, "");
 
   return (
-    <div className="flex-1 overflow-y-auto flex flex-col">
-      {/* Resumen: enfoque en lo que falta por cobrar */}
-      <div className="px-6 py-4 border-b border-gray-200 bg-gray-50 shrink-0">
-        <div className={`rounded-xl px-4 py-4 text-center border-2 min-h-[7.5rem] flex flex-col justify-center ${totalRemaining <= 0 ? "bg-green-50 border-green-200" : "bg-orange-50 border-orange-200"}`}>
-          <p className={`text-xs font-bold uppercase tracking-wide ${totalRemaining <= 0 ? "text-green-600" : "text-orange-600"}`}>Por cobrar</p>
-          <p className={`text-2xl font-bold mt-1 ${totalRemaining <= 0 ? "text-green-700" : "text-orange-600"}`}>S/ {totalRemaining.toFixed(2)}</p>
+    <div className="flex flex-1 flex-col overflow-y-auto">
+      {/* Por cobrar (cliente): oculto para probar layout sin monto agregado
+      <div className="shrink-0 border-b border-gray-200 bg-gray-50 px-6 py-4">
+        <div
+          className={`flex min-h-[7.5rem] flex-col justify-center rounded-xl border-2 px-4 py-4 text-center ${
+            totalRemaining <= 0 ? "border-green-200 bg-green-50" : "border-orange-200 bg-orange-50"
+          }`}
+        >
+          <p
+            className={`text-xs font-bold uppercase tracking-wide ${
+              totalRemaining <= 0 ? "text-green-600" : "text-orange-600"
+            }`}
+          >
+            Por cobrar
+          </p>
+          <p
+            className={`mt-1 text-2xl font-bold ${
+              totalRemaining <= 0 ? "text-green-700" : "text-orange-600"
+            }`}
+          >
+            S/ {totalRemaining.toFixed(2)}
+          </p>
           {Object.keys(pendingByPeriod).length > 0 && (
-            <div className="flex flex-wrap justify-center gap-x-3 gap-y-1 mt-2 text-xs font-medium text-gray-600">
+            <div className="mt-2 flex flex-wrap justify-center gap-x-3 gap-y-1 text-xs font-medium text-gray-600">
               {Object.entries(pendingByPeriod)
                 .sort(([a], [b]) => {
                   const order = ["Esta semana", "Semana pasada"];
@@ -1483,90 +1159,94 @@ const CobrosTabContent = memo(function CobrosTabContent({
                   return a.localeCompare(b);
                 })
                 .map(([label, amt]) => (
-                  <span key={label}>{label}: S/ {amt.toFixed(2)}</span>
+                  <span key={label}>
+                    {label}: S/ {amt.toFixed(2)}
+                  </span>
                 ))}
             </div>
           )}
         </div>
       </div>
+      */}
 
-      {/* Tabla de reservas con headers */}
-      <div className="flex-1 overflow-y-auto p-6 space-y-6 bg-gray-50">
-        <section>
-          <div className="flex items-center justify-between mb-2">
-            <h4 className="text-xs font-bold text-gray-500 uppercase tracking-wide">Reservas del cliente</h4>
-            <a
-              href={historicoUrl}
-              target="_blank"
-              rel="noopener noreferrer"
+      <div className="flex-1 space-y-6 overflow-y-auto bg-gray-50 p-6">
+        <section className="space-y-2">
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <h4 className="text-xs font-bold uppercase tracking-wide text-gray-500">
+              Pagos cerca de la fecha de la reserva
+            </h4>
+            <Link
+              href={`/pagos-recibidos?search=${encodeURIComponent(phoneForSearch)}`}
               className="text-xs font-semibold text-blue-600 hover:text-blue-700 hover:underline"
             >
               Ver histórico
-            </a>
+            </Link>
           </div>
-          <div className="rounded-xl border border-gray-200 bg-white overflow-hidden">
-            <table className="w-full text-left">
-              <thead>
-                <tr className="bg-gray-100 border-b border-gray-200">
-                  <th className="py-2.5 px-3 text-xs font-bold text-gray-500 uppercase">Reserva</th>
-                  <th className="py-2.5 px-3 text-xs font-bold text-gray-500 uppercase">Precio</th>
-                  <th className="py-2.5 px-3 text-xs font-bold text-gray-500 uppercase text-center w-14">Pagado</th>
-                </tr>
-              </thead>
-              <tbody>
-                {allOrdered.map((r) => (
-                  <ReservationRow
-                    key={r.id}
-                    r={r}
-                    onUpdatePrice={onUpdatePrice}
-                    onUpdateAmountPaid={onUpdateAmountPaid}
-                    onMarkedInSession={handleMarkedInSession}
-                    paymentLoading={paymentLoading}
-                  />
-                ))}
-              </tbody>
-            </table>
-          </div>
-        </section>
 
-        {/* Registrar pago + Últimos pagos */}
-        <section className="space-y-3">
-          <h4 className="text-xs font-bold text-gray-500 uppercase tracking-wide">Últimos pagos</h4>
-          <div className="flex flex-col gap-4">
-            <RegisterPaymentFormCobros
-              reservationsForPayment={reservationsForPayment}
-              totalRemaining={totalRemaining}
-              loading={paymentLoading}
-              onSubmit={onRegisterPayment}
-            />
-          {loading && transfers.length === 0 ? (
-            <><SkeletonCard /><SkeletonCard /></>
-          ) : transfers.length > 0 ? (
-            <PaymentAccordionList
-              transfers={filteredTransfers}
-              invoices={invoices}
-              allClientReservations={allClientReservations}
-              courtConfigs={courtConfigs ?? null}
-              emittingInvoiceId={emittingInvoiceId}
-              attachingInvoiceId={attachingInvoiceId}
-              onVerifyTransfer={onVerifyTransfer}
-              onEmitInvoice={onEmitInvoice}
-              onAttachInvoice={onAttachInvoice}
-              onDetachInvoice={onDetachInvoice}
-              onVoidSunatInvoice={onVoidSunatInvoice}
-              onRevokeManualPayment={onRevokeManualPayment}
-              onToggleApplied={handleToggleAppliedWithSession}
-              onViewImage={setViewingImage}
-              onHover={setHoveredTransferId}
-              chatId={chatId}
-              clientDni={clientDni}
-              clientRuc={clientRuc}
-            />
-          ) : (
-            <div className="p-8 text-center border-2 border-dashed border-gray-200 rounded-2xl bg-white">
-              <p className="text-gray-500 font-medium">No hay pagos registrados</p>
-            </div>
-          )}
+          <div className="space-y-2">
+            {nearbySections.map(({ key, title, list }) => {
+              const open = openNearby[key];
+              const th = list.length > 0 ? COBROS_NEARBY_THEME_WITH_PAYMENTS : COBROS_NEARBY_THEME_EMPTY;
+              return (
+                <div
+                  key={key}
+                  className={`overflow-hidden rounded-xl border shadow-sm ${th.cardBorder}`}
+                >
+                  <button
+                    type="button"
+                    onClick={() => setOpenNearby((o) => ({ ...o, [key]: !o[key] }))}
+                    className={`flex w-full items-center justify-between gap-3 px-4 py-3.5 text-left text-sm font-bold transition-colors ${th.header} ${th.headerText} ${
+                      open ? "rounded-t-xl" : "rounded-xl"
+                    }`}
+                  >
+                    <span>{title}</span>
+                    <svg
+                      className={`h-5 w-5 shrink-0 transition-transform ${th.chevron} ${open ? "rotate-180" : ""}`}
+                      fill="none"
+                      viewBox="0 0 24 24"
+                      stroke="currentColor"
+                      aria-hidden
+                    >
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                    </svg>
+                  </button>
+                  {open && (
+                    <div className={`space-y-2 rounded-b-xl px-3 py-4 sm:px-4 ${th.panel}`}>
+                      {loading && list.length === 0 ? (
+                        <>
+                          <CobrosPaymentRowSkeleton />
+                          <CobrosPaymentRowSkeleton />
+                        </>
+                      ) : list.length > 0 ? (
+                        list.map((t) => {
+                          const inv = invoices.find((i) => i.transfer_id === t.id);
+                          return (
+                            <CobrosNearbyPaymentRow
+                              key={t.id}
+                              transfer={t}
+                              invoice={inv}
+                              emittingInvoiceId={emittingInvoiceId}
+                              attachingInvoiceId={attachingInvoiceId}
+                              onVerify={onVerifyTransfer}
+                              onToggleApplied={onToggleApplied}
+                              onRevoke={onRevokeManualPayment}
+                              onViewImage={setViewingImage}
+                              onRequestEmit={onRequestEmit}
+                              onAttachInvoice={onAttachInvoice}
+                              onDetachInvoice={onDetachInvoice}
+                            />
+                          );
+                        })
+                      ) : (
+                        <div className={`px-4 py-6 text-center ${th.emptyBox}`}>
+                          <p className={th.emptyText}>Ningún pago en este rango</p>
+                        </div>
+                      )}
+                    </div>
+                  )}
+                </div>
+              );
+            })}
           </div>
         </section>
       </div>
@@ -1574,25 +1254,31 @@ const CobrosTabContent = memo(function CobrosTabContent({
   );
 });
 
-function SkeletonCard() {
+/** Misma rejilla que `CobrosNearbyPaymentRow` (pago | boleta). */
+function CobrosPaymentRowSkeleton() {
   return (
-    <div className="rounded-2xl border-2 border-gray-200 bg-white animate-pulse">
-      <div className="grid grid-cols-2 border-b-2 border-gray-200 bg-gray-50/50 rounded-t-2xl">
-        <div className="px-5 py-2.5"><div className="h-3 w-12 bg-gray-200 rounded" /></div>
-        <div className="px-5 py-2.5 border-l-2 border-gray-200"><div className="h-3 w-24 bg-gray-200 rounded" /></div>
-      </div>
-      <div className="grid grid-cols-2">
-        <div className="p-5 space-y-4">
-          <div className="rounded-xl bg-gray-200 aspect-[4/3]" />
-          <div className="space-y-2">
-            <div className="h-7 w-28 bg-gray-200 rounded" />
-            <div className="h-5 w-24 bg-gray-200 rounded" />
-            <div className="h-5 w-20 bg-gray-200 rounded" />
-          </div>
-          <div className="h-11 w-full bg-gray-200 rounded-xl" />
+    <div className="overflow-hidden rounded-2xl border-2 border-gray-200 bg-white animate-pulse">
+      <div className="grid grid-cols-2 border-b-2 border-gray-200 bg-gray-50/50">
+        <div className="px-4 py-2.5 sm:px-5">
+          <div className="h-3 w-10 rounded bg-gray-200" />
         </div>
-        <div className="p-5 border-l-2 border-gray-200 flex items-center justify-center">
-          <div className="h-11 w-32 bg-gray-200 rounded-xl" />
+        <div className="border-l-2 border-gray-200 px-4 py-2.5 sm:px-5">
+          <div className="h-3 w-28 rounded bg-gray-200" />
+        </div>
+      </div>
+      <div className="grid grid-cols-1 sm:grid-cols-2">
+        <div className="space-y-4 border-b-2 border-gray-200 p-4 sm:border-b-0 sm:border-r-2 sm:p-5">
+          <div className="aspect-[4/3] max-w-md rounded-xl bg-gray-200" />
+          <div className="space-y-2">
+            <div className="h-8 w-32 rounded bg-gray-200" />
+            <div className="h-4 w-40 rounded bg-gray-200" />
+            <div className="h-5 w-36 rounded bg-gray-200" />
+          </div>
+          <div className="h-11 max-w-md rounded-xl bg-gray-200" />
+        </div>
+        <div className="flex flex-col items-center justify-center gap-3 p-4 sm:p-5">
+          <div className="aspect-[3/4] w-full max-w-[200px] rounded-xl bg-gray-200" />
+          <div className="h-9 w-36 rounded-xl bg-gray-200" />
         </div>
       </div>
     </div>
@@ -1651,12 +1337,12 @@ const PaymentSidebar = memo(function PaymentSidebar({
 
   const [activeTab, setActiveTab] = useState<"detalles" | "cobros">("detalles");
   const [viewingImage, setViewingImage] = useState<string | null>(null);
+  const [emitModalTransfer, setEmitModalTransfer] = useState<Transfer | null>(null);
   const fieldConfig = useMemo(
     () => (reservation.field && courtConfigs?.length ? courtConfigs.find((c) => c.field === reservation.field) : null),
     [reservation.field, courtConfigs]
   );
   const courtSizeLabel = useMemo(() => (fieldConfig ? getCourtSizeLabel(fieldConfig) : null), [fieldConfig]);
-  const [hoveredTransferId, setHoveredTransferId] = useState<string | null>(null);
   const [editingDni, setEditingDni] = useState(false);
   const [dniValue, setDniValue] = useState(reservation.dni || "");
   const [editingRuc, setEditingRuc] = useState(false);
@@ -1674,35 +1360,27 @@ const PaymentSidebar = memo(function PaymentSidebar({
     return () => clearInterval(id);
   }, [reservation.status, reservation.id]);
 
-  // Ctrl+V / paste: adjuntar boleta desde clipboard
+  // Ctrl+V / paste: adjuntar PDF solo si hay un único pago elegible (sin hover en lista).
   useEffect(() => {
     const handlePaste = (e: ClipboardEvent) => {
-      const file = Array.from(e.clipboardData?.files || []).find(
-        (f) => f.type === "application/pdf"
-      );
+      const file = Array.from(e.clipboardData?.files || []).find((f) => f.type === "application/pdf");
       if (!file) return;
 
       const eligibleTransfers = transfers.filter(
-        (t) => (t.verified || t.source === "manual" || t.source === "manual_adjustment") && (t.amount ?? 0) > 0 && !invoices.find((inv) => inv.transfer_id === t.id)
+        (t) =>
+          (t.verified || t.source === "manual" || t.source === "manual_adjustment") &&
+          (t.amount ?? 0) > 0 &&
+          !invoices.find((inv) => inv.transfer_id === t.id)
       );
-      if (eligibleTransfers.length === 0) return;
+      if (eligibleTransfers.length !== 1) return;
 
-      let target: Transfer | undefined;
-      if (eligibleTransfers.length === 1) {
-        target = eligibleTransfers[0];
-      } else if (hoveredTransferId) {
-        target = eligibleTransfers.find((t) => t.id === hoveredTransferId);
-      }
-
-      if (target) {
-        e.preventDefault();
-        onAttachInvoice(target, file);
-      }
+      e.preventDefault();
+      onAttachInvoice(eligibleTransfers[0]!, file);
     };
 
     window.addEventListener("paste", handlePaste);
     return () => window.removeEventListener("paste", handlePaste);
-  }, [transfers, invoices, hoveredTransferId, onAttachInvoice]);
+  }, [transfers, invoices, onAttachInvoice]);
   useEffect(() => {
     const r = String(reservation.dni ?? "").replace(/\D/g, "").slice(0, 8);
     const p = String(clientLastDni ?? "").replace(/\D/g, "").slice(0, 8);
@@ -1870,7 +1548,7 @@ const PaymentSidebar = memo(function PaymentSidebar({
               onRevokeManualPayment,
               onRegisterPayment,
               onViewImage: (url) => setViewingImage(url),
-              onHoverTransferChanged: setHoveredTransferId,
+              onHoverTransferChanged: () => {},
               chatId: reservation.chat_id || reservation.phone_number || "",
               clientDni: clientDniForEmit || undefined,
               clientRuc: clientRuc ?? undefined,
@@ -1884,31 +1562,40 @@ const PaymentSidebar = memo(function PaymentSidebar({
           <CobrosTabContent
             allClientReservations={allClientReservations}
             reservation={reservation}
-            courtConfigs={courtConfigs}
             transfers={transfers}
             invoices={invoices}
             loading={loading}
             emittingInvoiceId={emittingInvoiceId}
             attachingInvoiceId={attachingInvoiceId}
             onVerifyTransfer={onVerifyTransfer}
-            onEmitInvoice={onEmitInvoice}
+            onRevokeManualPayment={onRevokeManualPayment}
+            onToggleApplied={onToggleApplied ?? (() => {})}
+            onRequestEmit={(t) => setEmitModalTransfer(t)}
             onAttachInvoice={onAttachInvoice}
             onDetachInvoice={onDetachInvoice}
-            onVoidSunatInvoice={onVoidSunatInvoice}
-            onRevokeManualPayment={onRevokeManualPayment}
-            onRegisterPayment={onRegisterPayment}
-            onToggleApplied={onToggleApplied ?? (() => {})}
-            onUpdatePrice={onUpdatePrice}
-            onUpdateAmountPaid={onUpdateAmountPaid}
-            paymentLoading={paymentLoading}
             chatId={reservation.chat_id || reservation.phone_number || ""}
-            clientDni={clientDniForEmit || undefined}
-            clientRuc={clientRuc ?? undefined}
             setViewingImage={setViewingImage}
-            setHoveredTransferId={setHoveredTransferId}
           />
         )}
       </div>
+
+      {emitModalTransfer ? (
+        <EmitInvoiceModal
+          transfer={emitModalTransfer}
+          clientDni={clientDniForEmit || undefined}
+          clientRuc={clientRuc ?? undefined}
+          initialDescripcion={
+            reservation.field
+              ? `Alquiler cancha ${reservation.field} · ${reservation.date}`
+              : `Reserva · ${reservation.date}`
+          }
+          initialCliente={displayName ?? reservation.representative_name ?? ""}
+          onClose={() => setEmitModalTransfer(null)}
+          onEmitInvoice={onEmitInvoice}
+          emitting={emittingInvoiceId === emitModalTransfer.id}
+          attaching={attachingInvoiceId === emitModalTransfer.id}
+        />
+      ) : null}
 
       {viewingImage && <ImageViewer src={viewingImage} onClose={() => setViewingImage(null)} />}
     </>

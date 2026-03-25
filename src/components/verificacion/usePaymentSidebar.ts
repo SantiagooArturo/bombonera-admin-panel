@@ -83,7 +83,6 @@ export function usePaymentSidebar(options?: UsePaymentSidebarOptions) {
     }
 
     try {
-      await store.syncReservationPayments(reservation.id);
       if (openRequestIdRef.current !== reservation.id) return;
 
       const rawChatId = String(reservation.chat_id || reservation.phone_number || "").replace(/\D/g, "");
@@ -116,15 +115,7 @@ export function usePaymentSidebar(options?: UsePaymentSidebarOptions) {
         }
       }
 
-      const transfersForRes = (transfersByClient || []).filter((t) => t.reservation_id === reservation.id);
-      const total = transfersForRes.reduce((sum: number, t: Transfer) => {
-        if (t.status === "applied" || t.status === "partial") return sum + (t.amount || 0);
-        return sum;
-      }, 0);
-      const amountPaid = (freshReservation as { amount_paid_manual?: boolean }).amount_paid_manual
-        ? (freshReservation.amount_paid ?? 0)
-        : total;
-      setSelectedReservation({ ...freshReservation, amount_paid: amountPaid });
+      setSelectedReservation(freshReservation);
 
       if (clientTypeRes.ok) {
         const clientTypeData = await clientTypeRes.json();
@@ -526,7 +517,7 @@ export function usePaymentSidebar(options?: UsePaymentSidebarOptions) {
     if (!id) return false;
     const prevReservations = allClientReservations;
     const prevSelected = selectedReservation;
-    const patch = { amount_paid: amountPaid };
+    const patch: Partial<Reservation> = { amount_paid: amountPaid, amount_paid_manual: true };
     setAllClientReservations((prev) =>
       prev.map((r) => (r.id === id ? { ...r, ...patch } : r))
     );
@@ -541,7 +532,7 @@ export function usePaymentSidebar(options?: UsePaymentSidebarOptions) {
       const res = await fetch("/api/reservations", {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ id, amount_paid: amountPaid }),
+        body: JSON.stringify({ id, amount_paid: amountPaid, amount_paid_direct: true }),
       });
       if (!res.ok) {
         setAllClientReservations(prevReservations);

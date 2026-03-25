@@ -18,6 +18,11 @@ export interface Reservation {
   phone_number: string;
   /** Cuánto ha pagado el usuario hasta ahora. */
   amount_paid?: number;
+  /**
+   * Si true, `amount_paid` no se recalcula desde transferencias (sync / reglas automáticas).
+   * Se activa al editar Pagado/Deuda desde el panel.
+   */
+  amount_paid_manual?: boolean;
   /** Si la reserva está confirmada (pagó al menos el mínimo). */
   confirmed?: boolean;
   /** Cuándo se confirmó la reserva. */

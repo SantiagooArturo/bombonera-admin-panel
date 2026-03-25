@@ -231,7 +231,19 @@ export async function PATCH(request: NextRequest) {
   try {
     const db = getDb();
     const body = await request.json();
-    const { id, status, field, arrived, time_slots, dni, total_price, representative_name, amount_paid } = body;
+    const {
+      id,
+      status,
+      field,
+      arrived,
+      time_slots,
+      dni,
+      total_price,
+      representative_name,
+      amount_paid,
+      /** Si true: solo persiste `amount_paid` y marca `amount_paid_manual` (no crea transferencias de ajuste). */
+      amount_paid_direct,
+    } = body;
 
     if (!id) {
       return NextResponse.json(
@@ -260,45 +272,50 @@ export async function PATCH(request: NextRequest) {
       const resData = resDoc.data()!;
       const phoneNumber = resData.phone_number || "";
 
-      const transfersSnap = await db.collection("transfers").where("reservation_id", "==", id).get();
-      let sumNonAdjustment = 0;
-      let existingAdjustmentRef: FirebaseFirestore.DocumentReference | null = null;
+      if (amount_paid_direct === true) {
+        updateData.amount_paid = amount_paid;
+        updateData.amount_paid_manual = true;
+      } else {
+        const transfersSnap = await db.collection("transfers").where("reservation_id", "==", id).get();
+        let sumNonAdjustment = 0;
+        let existingAdjustmentRef: FirebaseFirestore.DocumentReference | null = null;
 
-      for (const doc of transfersSnap.docs) {
-        const d = doc.data();
-        if (d.source === "manual_adjustment") {
-          existingAdjustmentRef = doc.ref;
-        } else if (d.status === "applied" || d.status === "partial") {
-          sumNonAdjustment += d.amount || 0;
+        for (const doc of transfersSnap.docs) {
+          const d = doc.data();
+          if (d.source === "manual_adjustment") {
+            existingAdjustmentRef = doc.ref;
+          } else if (d.status === "applied" || d.status === "partial") {
+            sumNonAdjustment += d.amount || 0;
+          }
         }
-      }
 
-      const adjustmentAmount = amount_paid - sumNonAdjustment;
+        const adjustmentAmount = amount_paid - sumNonAdjustment;
 
-      if (existingAdjustmentRef) {
-        if (adjustmentAmount === 0) {
-          await existingAdjustmentRef.delete();
-        } else {
-          await existingAdjustmentRef.update({ amount: adjustmentAmount });
+        if (existingAdjustmentRef) {
+          if (adjustmentAmount === 0) {
+            await existingAdjustmentRef.delete();
+          } else {
+            await existingAdjustmentRef.update({ amount: adjustmentAmount });
+          }
+        } else if (adjustmentAmount !== 0) {
+          const now = new Date().toISOString();
+          const chatId = resData.chat_id || resData.phone_number || phoneNumber;
+          await db.collection("transfers").add({
+            phone_number: phoneNumber,
+            recipient_name: null,
+            amount: adjustmentAmount,
+            transaction_date: now.split("T")[0],
+            operation_id: null,
+            reservation_id: id,
+            chat_id: chatId,
+            status: "applied",
+            source: "manual_adjustment",
+            payment_method: "ajuste",
+            created_at: now,
+          });
         }
-      } else if (adjustmentAmount !== 0) {
-        const now = new Date().toISOString();
-        const chatId = resData.chat_id || resData.phone_number || phoneNumber;
-        await db.collection("transfers").add({
-          phone_number: phoneNumber,
-          recipient_name: null,
-          amount: adjustmentAmount,
-          transaction_date: now.split("T")[0],
-          operation_id: null,
-          reservation_id: id,
-          chat_id: chatId,
-          status: "applied",
-          source: "manual_adjustment",
-          payment_method: "ajuste",
-          created_at: now,
-        });
+        updateData.amount_paid = amount_paid;
       }
-      updateData.amount_paid = amount_paid;
     }
 
     if (Array.isArray(time_slots) && time_slots.length > 0) {
