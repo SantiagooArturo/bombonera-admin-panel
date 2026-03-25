@@ -188,8 +188,7 @@ export function BoletasPage() {
     <div className="mx-auto w-full max-w-[min(100%,120rem)] px-3 py-8 sm:px-4 md:px-5 lg:px-6 xl:px-8 2xl:px-10">
       <div className="mb-6 flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
         <div>
-          <h1 className="text-xl font-bold text-gray-900 md:text-2xl">Comprobantes</h1>
-          <p className="mt-1 text-sm text-gray-600">Boletas y facturas, por fecha.</p>
+          <h1 className="text-xl font-bold text-gray-900 md:text-2xl">Boletas y facturas emitidas</h1>
         </div>
         <button
           type="button"
