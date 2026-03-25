@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useSearchParams } from "next/navigation";
 import type { Invoice } from "@/lib/types";
 import { useStore } from "@/lib/hooks";
 import { useToastContext } from "@/components/ClientLayout";
@@ -27,6 +28,7 @@ type ComprobanteTab = "todos" | "boletas" | "facturas";
 export function BoletasPage() {
   const store = useStore();
   const toast = useToastContext();
+  const searchParams = useSearchParams();
   const [tab, setTab] = useState<ComprobanteTab>("todos");
   const [invoices, setInvoices] = useState<Invoice[]>([]);
   const [loading, setLoading] = useState(false);
@@ -35,7 +37,7 @@ export function BoletasPage() {
   const [wspError, setWspError] = useState<Record<string, string>>({});
   const [voidingInvoiceId, setVoidingInvoiceId] = useState<string | null>(null);
   const [miscModalOpen, setMiscModalOpen] = useState(false);
-  const [searchQuery, setSearchQuery] = useState("");
+  const [searchQuery, setSearchQuery] = useState(() => searchParams.get("search")?.trim() ?? "");
   /** Evita depender de `didStart` tras setState (Strict Mode / batching puede dejar la petición sin ejecutar). */
   const wspSendInFlightRef = useRef<Set<string>>(new Set());
 

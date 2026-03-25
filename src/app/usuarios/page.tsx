@@ -1,6 +1,14 @@
 "use client";
 
-import { Suspense, useEffect, useState, useMemo } from "react";
+import {
+  Suspense,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type MouseEvent,
+  type ReactNode,
+} from "react";
 import { useSearchParams } from "next/navigation";
 import Link from "next/link";
 import ClientLayout, { useToastContext } from "@/components/ClientLayout";
@@ -11,7 +19,6 @@ import {
   type User,
 } from "@/lib/types";
 import AddUserModal from "@/features/usuarios/components/AddUserModal";
-import UserPaymentsDrawer from "@/features/usuarios/components/UserPaymentsDrawer";
 import { formatDisplayPhone, userWhatsAppPhone, wspLink } from "@/features/operaciones/utils";
 
 // ─── Helpers ────────────────────────────────────────────────────────────────
@@ -28,6 +35,46 @@ const CLIENT_TYPE_ORDER: ClientType[] = [
 function clientTypeSortValue(ct: ClientType): number {
   const idx = CLIENT_TYPE_ORDER.indexOf(ct);
   return idx >= 0 ? idx : CLIENT_TYPE_ORDER.length;
+}
+
+/** Buscador de /pagos-recibidos y /boletas (coincide con WhatsApp del usuario). */
+function usuarioPagosBoletasSearchParam(wa: string): string {
+  return encodeURIComponent(formatDisplayPhone(wa));
+}
+
+/** Mínimo entre aperturas en nueva pestaña (anti ráfaga si el navegador tarda). */
+const NEW_TAB_CLICK_COOLDOWN_MS = 2500;
+
+function CooldownNewTabLink({
+  href,
+  className,
+  children,
+  cooldownMs = NEW_TAB_CLICK_COOLDOWN_MS,
+}: {
+  href: string;
+  className?: string;
+  children: ReactNode;
+  cooldownMs?: number;
+}) {
+  const lastOpenAtRef = useRef(0);
+  return (
+    <Link
+      href={href}
+      target="_blank"
+      rel="noopener noreferrer"
+      className={className}
+      onClick={(e: MouseEvent<HTMLAnchorElement>) => {
+        const now = Date.now();
+        if (now - lastOpenAtRef.current < cooldownMs) {
+          e.preventDefault();
+          return;
+        }
+        lastOpenAtRef.current = now;
+      }}
+    >
+      {children}
+    </Link>
+  );
 }
 
 function needsAttention(user: User): boolean {
@@ -100,8 +147,6 @@ function UsuariosContent() {
   );
   const [recurrentReminderEnabled, setRecurrentReminderEnabled] = useState<boolean | null>(null);
   const [recurrentReminderLoading, setRecurrentReminderLoading] = useState(false);
-  const [paymentsUser, setPaymentsUser] = useState<User | null>(null);
-
   useEffect(() => {
     store.fetchUsers();
   }, [store]);
@@ -423,8 +468,9 @@ function UsuariosContent() {
                     <SortHeader label="Reservas" sortKey="reservation_count" onSort={handleSort} />
                     <SortHeader label="Tipo de cliente" sortKey="client_type" onSort={handleSort} />
                     <th className="p-6 text-gray-600 font-bold text-lg text-center">Bot</th>
+                    <th className="p-6 text-gray-600 font-bold text-lg text-center whitespace-nowrap">Pagos</th>
                     <th className="p-6 text-gray-600 font-bold text-lg text-center whitespace-nowrap">
-                      Pagos / Boletas / Facturas
+                      Boletas / Facturas
                     </th>
                     <th className="p-6 text-gray-600 font-bold text-lg text-center">Acciones</th>
                   </tr>
@@ -432,7 +478,7 @@ function UsuariosContent() {
                 <tbody>
                   {sortedUsers.length === 0 ? (
                     <tr>
-                      <td colSpan={6} className="p-12 text-center text-lg text-gray-400">
+                      <td colSpan={7} className="p-12 text-center text-lg text-gray-400">
                         {search ? "No se encontraron usuarios" : "No hay usuarios en la colección"}
                       </td>
                     </tr>
@@ -581,23 +627,50 @@ function UsuariosContent() {
                             </button>
                           </td>
                           <td className="p-6 text-center align-middle">
-                            <button
-                              type="button"
-                              onClick={() => setPaymentsUser(user)}
-                              className="inline-flex items-center justify-center gap-1.5 px-3 py-2 text-sm font-semibold text-green-600 bg-green-50 rounded-lg hover:bg-green-100 transition-colors max-w-[11rem] text-center leading-snug"
-                            >
-                              <svg className="w-4 h-4 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 9V7a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2m2 4h10a2 2 0 002-2v-6a2 2 0 00-2-2H9a2 2 0 00-2 2v6a2 2 0 002 2zm7-5a2 2 0 11-4 0 2 2 0 014 0z" />
-                              </svg>
-                              Gestionar Pagos/Boletas/Facturas
-                            </button>
+                            {wa ? (
+                              <CooldownNewTabLink
+                                href={`/pagos-recibidos?search=${usuarioPagosBoletasSearchParam(wa)}`}
+                                className="inline-flex items-center justify-center gap-1.5 px-3 py-2 text-sm font-semibold text-green-700 bg-green-50 rounded-lg hover:bg-green-100 transition-colors"
+                              >
+                                <svg className="w-4 h-4 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
+                                </svg>
+                                Ver pagos
+                              </CooldownNewTabLink>
+                            ) : (
+                              <span
+                                className="inline-flex items-center justify-center px-3 py-2 text-sm font-semibold text-gray-300 bg-gray-50 rounded-lg cursor-not-allowed"
+                                title="Sin WhatsApp válido"
+                              >
+                                Ver pagos
+                              </span>
+                            )}
+                          </td>
+                          <td className="p-6 text-center align-middle">
+                            {wa ? (
+                              <CooldownNewTabLink
+                                href={`/boletas?search=${usuarioPagosBoletasSearchParam(wa)}`}
+                                className="inline-flex items-center justify-center gap-1.5 px-3 py-2 text-sm font-semibold text-violet-700 bg-violet-50 rounded-lg hover:bg-violet-100 transition-colors"
+                              >
+                                <svg className="w-4 h-4 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
+                                </svg>
+                                Ver boletas / facturas
+                              </CooldownNewTabLink>
+                            ) : (
+                              <span
+                                className="inline-flex items-center justify-center px-3 py-2 text-sm font-semibold text-gray-300 bg-gray-50 rounded-lg cursor-not-allowed"
+                                title="Sin WhatsApp válido"
+                              >
+                                Ver boletas / facturas
+                              </span>
+                            )}
                           </td>
                           <td className="p-6 text-center">
                             <div className="flex items-center justify-center gap-2 flex-wrap">
                               {wa ? (
-                                <Link
+                                <CooldownNewTabLink
                                   href={`/verificacion?search=${encodeURIComponent(phoneDisplay)}`}
-                                  target="_blank"
                                   className="inline-flex items-center gap-1.5 px-3 py-2 text-sm font-semibold text-blue-600 bg-blue-50 rounded-lg hover:bg-blue-100 transition-colors"
                                 >
                                   <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -605,7 +678,7 @@ function UsuariosContent() {
                                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
                                   </svg>
                                   Ver reservas
-                                </Link>
+                                </CooldownNewTabLink>
                               ) : (
                                 <span
                                   className="inline-flex items-center gap-1.5 px-3 py-2 text-sm font-semibold text-gray-300 bg-gray-50 rounded-lg cursor-not-allowed"
@@ -639,15 +712,6 @@ function UsuariosContent() {
           </>
         )}
       </div>
-
-      {/* Drawer de pagos del usuario */}
-      {paymentsUser && (
-        <UserPaymentsDrawer
-          user={paymentsUser}
-          onClose={() => setPaymentsUser(null)}
-          onUserUpdated={(u) => setPaymentsUser(u)}
-        />
-      )}
 
       {/* Modal de confirmación: eliminar usuario */}
       {resetConfirmId && (

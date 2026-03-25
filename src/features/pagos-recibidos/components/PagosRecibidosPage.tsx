@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
+import { useSearchParams } from "next/navigation";
 import type { Transfer } from "@/lib/types";
 import { PAYMENT_METHOD_LABELS, PAYMENT_SOURCE_LABELS } from "@/lib/types";
 import { useToastContext } from "@/components/ClientLayout";
@@ -19,10 +20,11 @@ const POLL_MS = 15_000;
 
 export function PagosRecibidosPage() {
   const toast = useToastContext();
+  const searchParams = useSearchParams();
   const [transfers, setTransfers] = useState<Transfer[]>([]);
   const [initialLoading, setInitialLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [searchQuery, setSearchQuery] = useState("");
+  const [searchQuery, setSearchQuery] = useState(() => searchParams.get("search")?.trim() ?? "");
   const [registerOpen, setRegisterOpen] = useState(false);
 
   const load = useCallback(
