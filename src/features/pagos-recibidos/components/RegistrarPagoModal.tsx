@@ -12,6 +12,7 @@ import {
   isValidPeruPhone,
   normalizePeruPhone,
 } from "@/features/operaciones/utils";
+import type { PaymentMethod } from "@/lib/types";
 
 type RegistrarPagoModalProps = {
   onClose: () => void;
@@ -20,11 +21,13 @@ type RegistrarPagoModalProps = {
 
 export const RegistrarPagoModal = memo(function RegistrarPagoModal({ onClose, onSuccess }: RegistrarPagoModalProps) {
   const store = useStore();
+  const [flowStep, setFlowStep] = useState<1 | 2>(1);
   const [phoneNorm, setPhoneNorm] = useState("");
   const [clienteDirectoryInput, setClienteDirectoryInput] = useState("");
   const [clientName, setClientName] = useState("");
   const [dni, setDni] = useState("");
   const [amount, setAmount] = useState("");
+  const [paymentMethod, setPaymentMethod] = useState<PaymentMethod>("efectivo");
   const [fecha, setFecha] = useState(getLimaTodayYmd);
   const [hora, setHora] = useState(getLimaNowTimeHm);
   const [file, setFile] = useState<File | null>(null);
@@ -100,23 +103,27 @@ export const RegistrarPagoModal = memo(function RegistrarPagoModal({ onClose, on
   const phoneOk = isValidPeruPhone(phoneNorm);
   const dniDigits = dni.replace(/\D/g, "").slice(0, 8);
   const dniOk = dniDigits.length === 0 || dniDigits.length === 8;
-  const canSubmit = phoneOk && amountOk && !!file && dniOk && !busy;
+  const canSubmit = phoneOk && amountOk && dniOk && !busy;
 
   async function handleSubmit() {
-    if (!canSubmit || !file) return;
+    if (!canSubmit) return;
     setError(null);
     setBusy(true);
     try {
-      const blob = await compressImageForUpload(file);
-      const form = new FormData();
-      form.append("file", blob, "comprobante.jpg");
-      const up = await fetch("/api/upload", { method: "POST", body: form });
-      const upData = await up.json().catch(() => ({}));
-      if (!up.ok) {
-        throw new Error(typeof upData?.error === "string" ? upData.error : "No se pudo subir la captura.");
+      let mediaUrl: string | undefined;
+      if (paymentMethod === "digital" && file) {
+        const blob = await compressImageForUpload(file);
+        const form = new FormData();
+        form.append("file", blob, "comprobante.jpg");
+        const up = await fetch("/api/upload", { method: "POST", body: form });
+        const upData = await up.json().catch(() => ({}));
+        if (!up.ok) {
+          throw new Error(typeof upData?.error === "string" ? upData.error : "No se pudo subir la captura.");
+        }
+        const url = typeof upData?.url === "string" ? upData.url : "";
+        if (!url) throw new Error("No se obtuvo URL del archivo.");
+        mediaUrl = url;
       }
-      const mediaUrl = typeof upData?.url === "string" ? upData.url : "";
-      if (!mediaUrl) throw new Error("No se obtuvo URL del archivo.");
 
       const res = await fetch("/api/payments/manual", {
         method: "POST",
@@ -125,8 +132,8 @@ export const RegistrarPagoModal = memo(function RegistrarPagoModal({ onClose, on
           reservation_id: null,
           amount: parsed,
           phone_number: phoneNorm,
-          payment_method: "digital",
-          media_url: mediaUrl,
+          payment_method: paymentMethod,
+          ...(mediaUrl ? { media_url: mediaUrl } : {}),
           chat_id: phoneNorm.replace(/\D/g, ""),
           recipient_name: clientName.trim() || undefined,
           transaction_date: fecha.trim() || undefined,
@@ -139,6 +146,9 @@ export const RegistrarPagoModal = memo(function RegistrarPagoModal({ onClose, on
         throw new Error(typeof data?.error === "string" ? data.error : "No se pudo registrar el pago.");
       }
       onSuccess();
+      setFlowStep(1);
+      setPaymentMethod("efectivo");
+      clearFile();
       onClose();
     } catch (e) {
       setError(e instanceof Error ? e.message : "Error al registrar");
@@ -173,108 +183,148 @@ export const RegistrarPagoModal = memo(function RegistrarPagoModal({ onClose, on
         </div>
 
         <div className="mt-4 space-y-4">
-          <EmitClienteDirectoryField
-            linkedPhoneNorm={phoneNorm}
-            onLinkedPhoneChange={setPhoneNorm}
-            inputText={clienteDirectoryInput}
-            onInputTextChange={setClienteDirectoryInput}
-            options={emitClienteDirectoryOptions}
-            placeholder="Buscar o número"
-          />
-
-          <div>
-            <label htmlFor="reg-pago-name" className={labelClass}>
-              Nombre (opcional)
-            </label>
-            <input
-              id="reg-pago-name"
-              type="text"
-              value={clientName}
-              onChange={(e) => setClientName(e.target.value)}
-              className={inputClass}
-              autoComplete="off"
-            />
-          </div>
-
-          <div>
-            <label htmlFor="reg-pago-dni" className={labelClass}>
-              DNI (opcional)
-            </label>
-            <input
-              id="reg-pago-dni"
-              type="text"
-              inputMode="numeric"
-              placeholder="8 dígitos si lo tiene"
-              value={dni}
-              onChange={(e) => setDni(e.target.value.replace(/\D/g, "").slice(0, 8))}
-              className={inputClass}
-            />
-            {!dniOk ? <p className="mt-1 text-xs text-red-600">Si escribe DNI, deben ser 8 dígitos.</p> : null}
-          </div>
-
-          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-            <div>
-              <label htmlFor="reg-pago-fecha" className={labelClass}>
-                Fecha
-              </label>
-              <input
-                id="reg-pago-fecha"
-                type="date"
-                value={fecha}
-                onChange={(e) => setFecha(e.target.value)}
-                className={inputClass}
+          {flowStep === 1 ? (
+            <>
+              <p className={labelClass}>Cliente</p>
+              <EmitClienteDirectoryField
+                linkedPhoneNorm={phoneNorm}
+                onLinkedPhoneChange={setPhoneNorm}
+                inputText={clienteDirectoryInput}
+                onInputTextChange={setClienteDirectoryInput}
+                options={emitClienteDirectoryOptions}
+                placeholder="Buscar o número"
               />
-            </div>
-            <div>
-              <label htmlFor="reg-pago-hora" className={labelClass}>
-                Hora
-              </label>
-              <input
-                id="reg-pago-hora"
-                type="time"
-                value={hora}
-                onChange={(e) => setHora(e.target.value)}
-                className={inputClass}
-              />
-            </div>
-          </div>
-
-          <div>
-            <label htmlFor="reg-pago-amount" className={labelClass}>
-              Monto (S/)
-            </label>
-            <input
-              id="reg-pago-amount"
-              type="text"
-              inputMode="decimal"
-              placeholder="0.00"
-              value={amount}
-              onChange={(e) => setAmount(e.target.value)}
-              className={inputClass}
-            />
-          </div>
-
-          <div>
-            <span className={labelClass}>Foto del comprobante</span>
-            <div className="mt-1 flex flex-col gap-2 sm:flex-row sm:items-center">
-              <input
-                ref={fileRef}
-                type="file"
-                accept="image/jpeg,image/png,image/webp"
-                onChange={onFileChange}
-                className="text-sm text-gray-700 file:mr-3 file:rounded-lg file:border-0 file:bg-field-dark file:px-3 file:py-2 file:text-sm file:font-semibold file:text-white"
-              />
-              {preview ? (
-                <button type="button" onClick={clearFile} className="text-xs font-semibold text-red-600 hover:underline">
-                  Quitar foto
-                </button>
+              {!phoneOk ? (
+                <p className="text-xs text-gray-500">Selecciona o escribe un WhatsApp válido para continuar.</p>
               ) : null}
-            </div>
-            {preview ? (
-              // eslint-disable-next-line @next/next/no-img-element
-              <img src={preview} alt="" className="mt-2 max-h-36 rounded-lg border border-gray-200 object-contain" />
-            ) : null}
-          </div>
+            </>
+          ) : (
+            <>
+              <div>
+                <label htmlFor="reg-pago-metodo" className={labelClass}>
+                  Método de pago
+                </label>
+                <select
+                  id="reg-pago-metodo"
+                  value={paymentMethod}
+                  onChange={(e) => {
+                    const m = e.target.value as PaymentMethod;
+                    setPaymentMethod(m);
+                    if (m === "efectivo") clearFile();
+                  }}
+                  className={inputClass}
+                >
+                  <option value="efectivo">Efectivo</option>
+                  <option value="digital">Digital (Yape, Plin, transferencia…)</option>
+                </select>
+                <p className="mt-1 text-xs text-gray-500">
+                  En efectivo no hace falta adjuntar foto; en digital la foto es opcional.
+                </p>
+              </div>
+
+              <div>
+                <label htmlFor="reg-pago-name" className={labelClass}>
+                  Nombre (opcional)
+                </label>
+                <input
+                  id="reg-pago-name"
+                  type="text"
+                  value={clientName}
+                  onChange={(e) => setClientName(e.target.value)}
+                  className={inputClass}
+                  autoComplete="off"
+                />
+              </div>
+
+              <div>
+                <label htmlFor="reg-pago-dni" className={labelClass}>
+                  DNI (opcional)
+                </label>
+                <input
+                  id="reg-pago-dni"
+                  type="text"
+                  inputMode="numeric"
+                  placeholder="8 dígitos si lo tiene"
+                  value={dni}
+                  onChange={(e) => setDni(e.target.value.replace(/\D/g, "").slice(0, 8))}
+                  className={inputClass}
+                />
+                {!dniOk ? <p className="mt-1 text-xs text-red-600">Si escribe DNI, deben ser 8 dígitos.</p> : null}
+              </div>
+
+              <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                <div>
+                  <label htmlFor="reg-pago-fecha" className={labelClass}>
+                    Fecha
+                  </label>
+                  <input
+                    id="reg-pago-fecha"
+                    type="date"
+                    value={fecha}
+                    onChange={(e) => setFecha(e.target.value)}
+                    className={inputClass}
+                  />
+                </div>
+                <div>
+                  <label htmlFor="reg-pago-hora" className={labelClass}>
+                    Hora
+                  </label>
+                  <input
+                    id="reg-pago-hora"
+                    type="time"
+                    value={hora}
+                    onChange={(e) => setHora(e.target.value)}
+                    className={inputClass}
+                  />
+                </div>
+              </div>
+
+              <div>
+                <label htmlFor="reg-pago-amount" className={labelClass}>
+                  Monto (S/)
+                </label>
+                <input
+                  id="reg-pago-amount"
+                  type="text"
+                  inputMode="decimal"
+                  placeholder="0.00"
+                  value={amount}
+                  onChange={(e) => setAmount(e.target.value)}
+                  className={inputClass}
+                />
+              </div>
+
+              {paymentMethod === "digital" ? (
+                <div>
+                  <span className={labelClass}>
+                    Foto del comprobante <span className="font-normal normal-case text-gray-400">(opcional)</span>
+                  </span>
+                  <div className="mt-1 flex flex-col gap-2 sm:flex-row sm:items-center">
+                    <input
+                      ref={fileRef}
+                      type="file"
+                      accept="image/jpeg,image/png,image/webp"
+                      onChange={onFileChange}
+                      className="text-sm text-gray-700 file:mr-3 file:rounded-lg file:border-0 file:bg-field-dark file:px-3 file:py-2 file:text-sm file:font-semibold file:text-white"
+                    />
+                    {preview ? (
+                      <button
+                        type="button"
+                        onClick={clearFile}
+                        className="text-xs font-semibold text-red-600 hover:underline"
+                      >
+                        Quitar foto
+                      </button>
+                    ) : null}
+                  </div>
+                  {preview ? (
+                    // eslint-disable-next-line @next/next/no-img-element
+                    <img src={preview} alt="" className="mt-2 max-h-36 rounded-lg border border-gray-200 object-contain" />
+                  ) : null}
+                </div>
+              ) : null}
+            </>
+          )}
         </div>
 
         {error ? (
@@ -282,22 +332,45 @@ export const RegistrarPagoModal = memo(function RegistrarPagoModal({ onClose, on
         ) : null}
 
         <div className="mt-5 flex gap-3 border-t border-gray-100 pt-4">
-          <button
-            type="button"
-            onClick={onClose}
-            disabled={busy}
-            className={`flex ${controlH} flex-1 items-center justify-center rounded-lg border border-gray-300 text-sm font-semibold text-gray-700 hover:bg-gray-50 disabled:opacity-50`}
-          >
-            Cancelar
-          </button>
-          <button
-            type="button"
-            onClick={() => void handleSubmit()}
-            disabled={!canSubmit}
-            className={`flex ${controlH} flex-1 items-center justify-center rounded-lg border border-field-dark bg-field-dark text-sm font-semibold text-white hover:opacity-95 disabled:opacity-50`}
-          >
-            {busy ? "Guardando…" : "Registrar pago"}
-          </button>
+          {flowStep === 1 ? (
+            <>
+              <button
+                type="button"
+                onClick={onClose}
+                disabled={busy}
+                className={`flex ${controlH} flex-1 items-center justify-center rounded-lg border border-gray-300 text-sm font-semibold text-gray-700 hover:bg-gray-50 disabled:opacity-50`}
+              >
+                Cancelar
+              </button>
+              <button
+                type="button"
+                onClick={() => phoneOk && setFlowStep(2)}
+                disabled={!phoneOk || busy}
+                className={`flex ${controlH} flex-1 items-center justify-center rounded-lg border border-field-dark bg-field-dark text-sm font-semibold text-white hover:opacity-95 disabled:opacity-50`}
+              >
+                Continuar
+              </button>
+            </>
+          ) : (
+            <>
+              <button
+                type="button"
+                onClick={() => setFlowStep(1)}
+                disabled={busy}
+                className={`flex ${controlH} flex-1 items-center justify-center rounded-lg border border-gray-300 text-sm font-semibold text-gray-700 hover:bg-gray-50 disabled:opacity-50`}
+              >
+                Atrás
+              </button>
+              <button
+                type="button"
+                onClick={() => void handleSubmit()}
+                disabled={!canSubmit}
+                className={`flex ${controlH} flex-1 items-center justify-center rounded-lg border border-field-dark bg-field-dark text-sm font-semibold text-white hover:opacity-95 disabled:opacity-50`}
+              >
+                {busy ? "Guardando…" : "Registrar pago"}
+              </button>
+            </>
+          )}
         </div>
       </div>
     </div>

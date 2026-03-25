@@ -204,6 +204,7 @@ export function BoletasPage() {
       {miscModalOpen ? (
         <EmitComprobanteModal
           mode="misc"
+          emitUxFromBoletas
           onClose={() => setMiscModalOpen(false)}
           onSuccess={() => {
             void load();

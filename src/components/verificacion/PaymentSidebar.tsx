@@ -12,6 +12,7 @@ import {
   calculateReservationPrice,
   courtConfigsToMap,
   formatDisplayPhone,
+  isValidPeruPhone,
   normalizePeruPhone,
   wspLink,
 } from "@/features/operaciones/utils";
@@ -147,8 +148,7 @@ function transferDateYmd(t: Transfer): string {
 }
 
 // ─── Vista simplificada (1 reserva) ───────────────────────────────────────────
-// Sin tabs. Layout directo: cliente, controles, resumen financiero, RegisterPaymentForm,
-// lista de TransferCard (PAGO | BOLETA ASOCIADA). Soporta paste de boleta con hover.
+// Tab Detalles: cliente, controles, resumen financiero. Registrar pago vive en tab Cobros.
 
 interface SimplifiedPaymentClientData {
   userCustomName?: string;
@@ -175,27 +175,6 @@ interface SimplifiedPaymentClientData {
   cancellingReservation?: boolean;
 }
 
-interface SimplifiedPaymentTransferHandlers {
-  transfers: Transfer[];
-  invoices: Invoice[];
-  loading: boolean;
-  emittingInvoiceId: string | null;
-  attachingInvoiceId: string | null;
-  paymentLoading: boolean;
-  onVerifyTransfer: (transferId: string, currentStatus: boolean) => void;
-  onEmitInvoice: (t: Transfer, p: EmitComprobanteParams) => void;
-  onAttachInvoice: (t: Transfer, f: File) => void;
-  onDetachInvoice: (id: string) => Promise<boolean>;
-  onVoidSunatInvoice?: (invoiceId: string) => Promise<boolean>;
-  onRevokeManualPayment: (id: string) => void;
-  onRegisterPayment: (reservationId: string | null, amount: number, method: PaymentMethod, mediaUrl?: string) => void;
-  onViewImage: (url: string) => void;
-  onHoverTransferChanged: (transferId: string | null) => void;
-  chatId: string;
-  clientDni?: string | null;
-  clientRuc?: string | null;
-}
-
 interface ReservationDetailContentProps {
   reservation: Reservation;
   courtConfigs?: CourtFieldConfig[] | null;
@@ -205,12 +184,9 @@ interface ReservationDetailContentProps {
   onUpdateStatus?: (status: "pending" | "confirmed") => Promise<boolean>;
   onUpdateClientType: (clientType: ClientType) => Promise<boolean>;
   onCancelReservation: () => Promise<boolean>;
-  transferHandlers: SimplifiedPaymentTransferHandlers;
   /** Chips para cambiar de reserva cuando el cliente tiene 2+ reservas esta semana. */
   reservationsForChips?: Reservation[];
   onSelectReservationFromChips?: (r: Reservation) => void;
-  /** Oculta botón Registrar cobro y lista de pagos (para probar UI simplificada). */
-  hidePaymentsSection?: boolean;
 }
 
 function ReservationDetailContent({
@@ -222,10 +198,8 @@ function ReservationDetailContent({
   onUpdateStatus,
   onUpdateClientType,
   onCancelReservation,
-  transferHandlers,
   reservationsForChips,
   onSelectReservationFromChips,
-  hidePaymentsSection = false,
 }: ReservationDetailContentProps) {
   const {
     effectiveDisplayName,
@@ -251,7 +225,6 @@ function ReservationDetailContent({
     statusUpdating,
     cancellingReservation,
   } = clientData;
-  const { paymentLoading, onRegisterPayment } = transferHandlers;
   const configMap = useMemo(() => courtConfigsToMap(courtConfigs), [courtConfigs]);
   const [editingPrice, setEditingPrice] = useState(false);
   const [priceInput, setPriceInput] = useState(String(reservation.total_price ?? 0));
@@ -743,20 +716,6 @@ function ReservationDetailContent({
           </div>
         )}
       </div>
-
-      {/* Cobros viven en el tab «Cobros»; aquí solo formulario legacy si hidePaymentsSection es false */}
-      <div className="min-h-0 flex-1 overflow-y-auto bg-gray-50 p-6">
-        {!hidePaymentsSection && !isCancelled && (
-          <RegisterPaymentFormCobros
-            reservationsForPayment={[reservation]}
-            totalRemaining={remaining}
-            loading={paymentLoading}
-            onSubmit={onRegisterPayment}
-            buttonLabel="Registrar cobro"
-            buttonSubtext={null}
-          />
-        )}
-      </div>
     </div>
   );
 }
@@ -1029,6 +988,10 @@ const CobrosTabContent = memo(function CobrosTabContent({
   onDetachInvoice,
   chatId,
   setViewingImage,
+  paymentLoading,
+  onRegisterPayment,
+  registerPaymentRemaining,
+  registerPaymentClientSummary,
 }: {
   allClientReservations: Reservation[];
   reservation: Reservation;
@@ -1045,6 +1008,10 @@ const CobrosTabContent = memo(function CobrosTabContent({
   onDetachInvoice: (id: string) => Promise<boolean>;
   chatId: string;
   setViewingImage: (src: string) => void;
+  paymentLoading: boolean;
+  onRegisterPayment: (reservationId: string | null, amount: number, method: PaymentMethod, mediaUrl?: string) => void;
+  registerPaymentRemaining: number;
+  registerPaymentClientSummary: string;
 }) {
   const { weekStart, weekEnd } = useMemo(
     () => reservationWeekMonSun(reservation.date || ""),
@@ -1169,6 +1136,24 @@ const CobrosTabContent = memo(function CobrosTabContent({
       */}
 
       <div className="flex-1 space-y-6 overflow-y-auto bg-gray-50 p-6">
+        {reservation.status !== "cancelled" && (
+          <section className="rounded-xl border-2 border-blue-100 bg-white p-4 shadow-sm">
+            <p className="mb-3 text-xs font-bold uppercase tracking-wide text-gray-500">Registrar pago</p>
+            <RegisterPaymentFormCobros
+              reservationsForPayment={[reservation]}
+              totalRemaining={registerPaymentRemaining}
+              loading={paymentLoading}
+              onSubmit={onRegisterPayment}
+              buttonLabel="Registrar pago"
+              presentation="viewportModal"
+              assumeClientFromContext
+              clientSummaryLine={registerPaymentClientSummary || undefined}
+              amountHelperText={`Pendiente en esta reserva: S/ ${registerPaymentRemaining.toFixed(2)}`}
+              allowWithoutReservation={false}
+            />
+          </section>
+        )}
+
         <section className="space-y-2">
           <div className="flex flex-wrap items-center justify-between gap-2">
             <h4 className="text-xs font-bold uppercase tracking-wide text-gray-500">
@@ -1348,6 +1333,33 @@ const PaymentSidebar = memo(function PaymentSidebar({
   const [rucValue, setRucValue] = useState("");
   const [editingName, setEditingName] = useState(false);
   const effectiveDisplayName = displayName ?? reservation.representative_name ?? "";
+
+  const registerPaymentRemaining = useMemo(() => {
+    const configMap = courtConfigsToMap(courtConfigs ?? null);
+    const calculatedPrice =
+      reservation.field && reservation.time_slots
+        ? calculateReservationPrice(reservation.field, reservation.date, reservation.time_slots, configMap)
+        : 0;
+    const totalPrice =
+      reservation.total_price != null && reservation.total_price >= 0
+        ? reservation.total_price
+        : calculatedPrice || 0;
+    const amountPaid = reservation.amount_paid ?? 0;
+    return Math.max(0, totalPrice - amountPaid);
+  }, [reservation, courtConfigs]);
+
+  const registerPaymentClientSummary = useMemo(() => {
+    const raw =
+      reservation.phone_number ||
+      String(reservation.chat_id || "")
+        .replace(/@.*$/, "")
+        .replace(/\D/g, "");
+    const norm = raw ? normalizePeruPhone(raw) : "";
+    const phone = norm && isValidPeruPhone(norm) ? formatDisplayPhone(norm) : "";
+    const name = effectiveDisplayName.trim();
+    return [name, phone].filter(Boolean).join(" · ");
+  }, [reservation.phone_number, reservation.chat_id, effectiveDisplayName]);
+
   const initialNameForEdit = userCustomName ?? effectiveDisplayName;
   const [nameValue, setNameValue] = useState(initialNameForEdit);
   const [, setTick] = useState(0);
@@ -1532,29 +1544,8 @@ const PaymentSidebar = memo(function PaymentSidebar({
             onUpdateStatus={onUpdateStatus}
             onUpdateClientType={onUpdateClientType}
             onCancelReservation={onCancelReservation}
-            transferHandlers={{
-              transfers,
-              invoices,
-              loading,
-              emittingInvoiceId,
-              attachingInvoiceId,
-              paymentLoading,
-              onVerifyTransfer,
-              onEmitInvoice,
-              onAttachInvoice,
-              onDetachInvoice,
-              onVoidSunatInvoice,
-              onRevokeManualPayment,
-              onRegisterPayment,
-              onViewImage: (url) => setViewingImage(url),
-              onHoverTransferChanged: () => {},
-              chatId: reservation.chat_id || reservation.phone_number || "",
-              clientDni: clientDniForEmit || undefined,
-              clientRuc: clientRuc ?? undefined,
-            }}
             reservationsForChips={hasMultipleReservations ? allReservationsThisWeek : undefined}
             onSelectReservationFromChips={hasMultipleReservations ? onSelectReservationFromList : undefined}
-            hidePaymentsSection
           />
         ) : null}
         {activeTab === "cobros" && (
@@ -1574,6 +1565,10 @@ const PaymentSidebar = memo(function PaymentSidebar({
             onDetachInvoice={onDetachInvoice}
             chatId={reservation.chat_id || reservation.phone_number || ""}
             setViewingImage={setViewingImage}
+            paymentLoading={paymentLoading}
+            onRegisterPayment={onRegisterPayment}
+            registerPaymentRemaining={registerPaymentRemaining}
+            registerPaymentClientSummary={registerPaymentClientSummary}
           />
         )}
       </div>

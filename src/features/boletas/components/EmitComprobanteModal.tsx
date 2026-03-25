@@ -50,10 +50,15 @@ export type EmitComprobanteModalTransferProps = {
   attaching?: boolean;
 };
 
+/** Flujo por pasos solo en /boletas (misc): pregunta destinatario antes del resto del formulario. */
+export type EmitComprobanteEmisorContext = "ventas_dia" | "cliente_reservado" | "otro";
+
 export type EmitComprobanteModalMiscProps = {
   mode: "misc";
   onClose: () => void;
   onSuccess: () => void;
+  /** Si true, UX guiada: primero “¿para quién?”; si “cliente reservado”, solo cliente y luego el resto. */
+  emitUxFromBoletas?: boolean;
 };
 
 export type EmitComprobanteModalProps = EmitComprobanteModalTransferProps | EmitComprobanteModalMiscProps;
@@ -64,6 +69,7 @@ function isMiscProps(p: EmitComprobanteModalProps): p is EmitComprobanteModalMis
 
 export const EmitComprobanteModal = memo(function EmitComprobanteModal(props: EmitComprobanteModalProps) {
   const misc = isMiscProps(props);
+  const steppedBoletaUx = misc && Boolean(props.emitUxFromBoletas);
   const store = useStore();
   const clientDni = !misc ? props.clientDni : undefined;
   const clientRuc = !misc ? props.clientRuc : undefined;
@@ -98,6 +104,8 @@ export const EmitComprobanteModal = memo(function EmitComprobanteModal(props: Em
   const [formaPagoCuenta, setFormaPagoCuenta] = useState("");
   const [miscEmitting, setMiscEmitting] = useState(false);
   const [miscError, setMiscError] = useState<string | null>(null);
+
+  const [emisorContext, setEmisorContext] = useState<"" | EmitComprobanteEmisorContext>("");
 
   /** Si el usuario editó el nombre en el CPE, no lo pisan autocompletados (perfil / SUNAT). */
   const nombreComprobanteTouchedRef = useRef(false);
@@ -137,6 +145,44 @@ export const EmitComprobanteModal = memo(function EmitComprobanteModal(props: Em
       })
       .filter((o) => o.phone.replace(/\D/g, "").length >= 9);
   }, [misc, store]);
+
+  const clienteReservadoLinkedUser = useMemo(() => {
+    if (!misc || !panelLinkPhoneNorm || !isValidPeruPhone(panelLinkPhoneNorm)) return undefined;
+    return store
+      .getUsers()
+      .find((u) => normalizePeruPhone(getUserPhone(u) || u.chat_id || "") === panelLinkPhoneNorm);
+  }, [misc, panelLinkPhoneNorm, store]);
+
+  const clienteReservadoReady = Boolean(clienteReservadoLinkedUser);
+
+  const showClienteSolo =
+    steppedBoletaUx && emisorContext === "cliente_reservado" && !clienteReservadoReady;
+  const showFullEmitForm =
+    !steppedBoletaUx ||
+    emisorContext === "ventas_dia" ||
+    emisorContext === "otro" ||
+    (emisorContext === "cliente_reservado" && clienteReservadoReady);
+
+  const showMiscDirectory =
+    misc && (!steppedBoletaUx || emisorContext === "cliente_reservado");
+
+  const applyEmisorContext = useCallback((next: EmitComprobanteEmisorContext) => {
+    setEmisorContext(next);
+    nombreComprobanteTouchedRef.current = false;
+    setPanelLinkPhoneNorm("");
+    setClienteDirectoryInput("");
+    setDniMisc("");
+    setRucMisc("");
+    setFacturaDireccion("");
+    prevCompleteRucRef.current = "";
+    if (next === "ventas_dia") {
+      setClienteEdit("VENTAS DEL DIA");
+      setDescripcionEdit("VENTAS DEL DIA");
+    } else {
+      setClienteEdit("");
+      setDescripcionEdit("");
+    }
+  }, []);
 
   const prevPanelLinkPhoneRef = useRef("");
   useEffect(() => {
@@ -238,6 +284,11 @@ export const EmitComprobanteModal = memo(function EmitComprobanteModal(props: Em
   const docValid = docType === "factura" ? docValidFactura : docValidBoleta;
   const boletaDocIncomplete =
     docType === "boleta" && digitsDoc.length > 0 && digitsDoc.length < 8;
+
+  /** Boleta: el DNI solo aplica desde S/ 700; por debajo no se muestra el campo. */
+  const showDocNumberInput =
+    docType === "factura" ||
+    (docType === "boleta" && amountValid && parsedAmount >= BOLETA_SIN_DOCUMENTO_CLIENTE_MAX_SOLES);
 
   useEffect(() => {
     if (docType !== "factura") {
@@ -402,6 +453,8 @@ export const EmitComprobanteModal = memo(function EmitComprobanteModal(props: Em
   const serieLabel =
     fetchingSerie ? "…" : serieNum ? `${serieNum.serie}-${String(serieNum.next_correlativo).padStart(5, "0")}` : "—";
 
+  const showEmitPrimary = !steppedBoletaUx || showFullEmitForm;
+
   const controlH = "h-10";
   const inputClass = `w-full ${controlH} rounded-lg border border-gray-300 bg-white px-3 text-sm text-gray-900 shadow-sm focus:border-field-dark focus:outline-none focus:ring-1 focus:ring-field-dark/30`;
   const labelClass = "mb-1 block text-xs font-semibold uppercase tracking-wide text-gray-500";
@@ -473,7 +526,35 @@ export const EmitComprobanteModal = memo(function EmitComprobanteModal(props: Em
             <span className="font-mono text-sm font-semibold text-gray-900">{serieLabel}</span>
           </div>
 
-          {misc ? (
+          {steppedBoletaUx ? (
+            <div>
+              <label htmlFor="emit-para-quien" className={labelClass}>
+                ¿Para quién emites esta {docType === "boleta" ? "Boleta" : "Factura"}?
+              </label>
+              <select
+                id="emit-para-quien"
+                value={emisorContext}
+                onChange={(e) => {
+                  const v = e.target.value as "" | EmitComprobanteEmisorContext;
+                  if (v === "") {
+                    setEmisorContext("");
+                    setPanelLinkPhoneNorm("");
+                    setClienteDirectoryInput("");
+                    return;
+                  }
+                  applyEmisorContext(v);
+                }}
+                className={inputClass}
+              >
+                <option value="">Selecciona una opción</option>
+                <option value="ventas_dia">Ventas del día</option>
+                <option value="cliente_reservado">Cliente que ha reservado</option>
+                <option value="otro">Otro</option>
+              </select>
+            </div>
+          ) : null}
+
+          {showClienteSolo ? (
             <EmitClienteDirectoryField
               linkedPhoneNorm={panelLinkPhoneNorm}
               onLinkedPhoneChange={setPanelLinkPhoneNorm}
@@ -483,7 +564,19 @@ export const EmitComprobanteModal = memo(function EmitComprobanteModal(props: Em
             />
           ) : null}
 
-          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+          {showFullEmitForm ? (
+            <>
+              {showMiscDirectory ? (
+                <EmitClienteDirectoryField
+                  linkedPhoneNorm={panelLinkPhoneNorm}
+                  onLinkedPhoneChange={setPanelLinkPhoneNorm}
+                  inputText={clienteDirectoryInput}
+                  onInputTextChange={setClienteDirectoryInput}
+                  options={emitClienteDirectoryOptions}
+                />
+              ) : null}
+
+              <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
             <div>
               <label htmlFor="emit-fecha" className={labelClass}>
                 Fecha
@@ -510,8 +603,10 @@ export const EmitComprobanteModal = memo(function EmitComprobanteModal(props: Em
             </div>
           </div>
 
-          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 sm:items-start">
-            <div>
+          <div
+            className={`grid grid-cols-1 gap-3 sm:items-start ${showDocNumberInput ? "sm:grid-cols-2" : ""}`}
+          >
+            <div className={!showDocNumberInput && docType === "boleta" ? "sm:col-span-2" : undefined}>
               <label htmlFor="emit-cond-venta" className={labelClass}>
                 {FORMA_PAGO_EMISION_LABEL}
               </label>
@@ -528,34 +623,36 @@ export const EmitComprobanteModal = memo(function EmitComprobanteModal(props: Em
                 ))}
               </select>
             </div>
-            <div>
-              <label htmlFor="emit-doc" className={labelClass}>
-                {docType === "factura" ? "RUC" : "DNI"}
-              </label>
-              <input
-                id="emit-doc"
-                type="text"
-                inputMode="numeric"
-                value={docInputValue}
-                onChange={(e) => onDocInputChange(e.target.value)}
-                placeholder={docType === "factura" ? "11 dígitos" : "Opcional"}
-                className={`${inputClass} font-mono`}
-              />
-              {docType === "boleta" && boletaRequiereDniPorMonto && digitsDoc.length === 0 ? (
-                <p className="mt-1 text-xs text-amber-800">
-                  DNI obligatorio para montos desde S/ {BOLETA_SIN_DOCUMENTO_CLIENTE_MAX_SOLES}.
-                </p>
-              ) : null}
-              {docType === "factura" && rucLookup === "loading" ? (
-                <p className="mt-1 text-xs text-gray-500">Buscando razón social…</p>
-              ) : null}
-              {docType === "factura" && rucLookup === "error" && rucLookupMsg ? (
-                <p className="mt-1 text-xs text-amber-800">{mensajeErrorConsultaRuc(rucLookupMsg)}</p>
-              ) : null}
-              {boletaDocIncomplete ? (
-                <p className="mt-1 text-xs text-red-600">El DNI debe tener 8 dígitos.</p>
-              ) : null}
-            </div>
+            {showDocNumberInput ? (
+              <div>
+                <label htmlFor="emit-doc" className={labelClass}>
+                  {docType === "factura" ? "RUC" : "DNI"}
+                </label>
+                <input
+                  id="emit-doc"
+                  type="text"
+                  inputMode="numeric"
+                  value={docInputValue}
+                  onChange={(e) => onDocInputChange(e.target.value)}
+                  placeholder={docType === "factura" ? "11 dígitos" : "Opcional"}
+                  className={`${inputClass} font-mono`}
+                />
+                {docType === "boleta" && boletaRequiereDniPorMonto && digitsDoc.length === 0 ? (
+                  <p className="mt-1 text-xs text-amber-800">
+                    DNI obligatorio para montos desde S/ {BOLETA_SIN_DOCUMENTO_CLIENTE_MAX_SOLES}.
+                  </p>
+                ) : null}
+                {docType === "factura" && rucLookup === "loading" ? (
+                  <p className="mt-1 text-xs text-gray-500">Buscando razón social…</p>
+                ) : null}
+                {docType === "factura" && rucLookup === "error" && rucLookupMsg ? (
+                  <p className="mt-1 text-xs text-amber-800">{mensajeErrorConsultaRuc(rucLookupMsg)}</p>
+                ) : null}
+                {boletaDocIncomplete ? (
+                  <p className="mt-1 text-xs text-red-600">El DNI debe tener 8 dígitos.</p>
+                ) : null}
+              </div>
+            ) : null}
           </div>
 
           {condicionVenta === CONDICION_VENTA_DEPOSITO_CUENTA ? (
@@ -674,6 +771,8 @@ export const EmitComprobanteModal = memo(function EmitComprobanteModal(props: Em
               <p className="mt-1 text-xs text-red-600">Monto inválido.</p>
             ) : null}
           </div>
+            </>
+          ) : null}
         </div>
 
         {misc && miscError ? (
@@ -686,28 +785,32 @@ export const EmitComprobanteModal = memo(function EmitComprobanteModal(props: Em
           <button
             type="button"
             onClick={props.onClose}
-            className={`flex ${controlH} flex-1 items-center justify-center rounded-lg border border-gray-300 text-sm font-semibold text-gray-700 hover:bg-gray-50`}
+            className={`flex ${controlH} items-center justify-center rounded-lg border border-gray-300 text-sm font-semibold text-gray-700 hover:bg-gray-50 ${
+              showEmitPrimary ? "flex-1" : "w-full"
+            }`}
           >
             Cancelar
           </button>
-          <button
-            type="button"
-            onClick={onPrimaryClick}
-            disabled={
-              attaching ||
-              emitting ||
-              !docValid ||
-              !amountValid ||
-              boletaDocIncomplete ||
-              !fechaHoraOk ||
-              !receptorOk ||
-              !descripcionOk ||
-              !depositDetalleOk
-            }
-            className={`flex ${controlH} flex-1 items-center justify-center rounded-lg border border-field-dark bg-field-dark text-sm font-semibold text-white hover:opacity-95 disabled:opacity-50`}
-          >
-            {emitting ? "Emitiendo…" : "Emitir comprobante"}
-          </button>
+          {showEmitPrimary && (
+            <button
+              type="button"
+              onClick={onPrimaryClick}
+              disabled={
+                attaching ||
+                emitting ||
+                !docValid ||
+                !amountValid ||
+                boletaDocIncomplete ||
+                !fechaHoraOk ||
+                !receptorOk ||
+                !descripcionOk ||
+                !depositDetalleOk
+              }
+              className={`flex ${controlH} flex-1 items-center justify-center rounded-lg border border-field-dark bg-field-dark text-sm font-semibold text-white hover:opacity-95 disabled:opacity-50`}
+            >
+              {emitting ? "Emitiendo…" : "Emitir comprobante"}
+            </button>
+          )}
         </div>
       </div>
     </div>
