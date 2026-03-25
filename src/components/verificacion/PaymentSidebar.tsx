@@ -1283,7 +1283,6 @@ const PaymentSidebar = memo(function PaymentSidebar({
   onEmitInvoice,
   onAttachInvoice,
   onDetachInvoice,
-  onVoidSunatInvoice,
   onUpdateDni,
   onUpdateRuc,
   onUpdateName,
