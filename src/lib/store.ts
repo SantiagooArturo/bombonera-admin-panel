@@ -279,6 +279,22 @@ class Store {
     }
   }
 
+  /** Desactiva el bot para todos los usuarios con automation activa (POST bulk + refetch). */
+  async deactivateAutomationForAllUsers(): Promise<{ ok: boolean; updated?: number; error?: string }> {
+    try {
+      const res = await fetch("/api/users/deactivate-automation-bulk", { method: "POST" });
+      const data = (await res.json().catch(() => ({}))) as { success?: boolean; updated?: number; error?: string };
+      if (!res.ok) {
+        return { ok: false, error: typeof data.error === "string" ? data.error : "Error al actualizar" };
+      }
+      await this.fetchUsers();
+      return { ok: true, updated: typeof data.updated === "number" ? data.updated : 0 };
+    } catch (error) {
+      console.error("Error deactivateAutomationForAllUsers:", error);
+      return { ok: false, error: "Error de red" };
+    }
+  }
+
   async resetUser(userId: string) {
     try {
       const res = await fetch("/api/users", {

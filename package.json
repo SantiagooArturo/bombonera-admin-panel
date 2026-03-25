@@ -10,6 +10,7 @@
     "repair:invoice-placeholder-dni": "tsx scripts/strip-placeholder-invoice-dni.ts",
     "migrate:invoice-receptor-names": "tsx scripts/sanitize-invoice-receptor-names.ts",
     "delete:adjustment-transfers": "tsx scripts/delete-manual-adjustment-transfers.ts",
+    "deactivate:user-bots": "tsx scripts/deactivate-all-user-bots.ts",
     "dev": "next dev",
     "build": "next build",
     "seed:court-config": "curl -s -X POST http://localhost:3000/api/court-config/seed",

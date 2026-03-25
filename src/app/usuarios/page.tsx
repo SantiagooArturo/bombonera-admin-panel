@@ -23,8 +23,12 @@ import { formatDisplayPhone, userWhatsAppPhone, wspLink } from "@/features/opera
 
 // ─── Helpers ────────────────────────────────────────────────────────────────
 
-type SortKey = "reservation_count" | "client_type";
+type SortKey = "reservation_count" | "client_type" | "bot";
 type SortDir = "asc" | "desc";
+
+function userBotActivated(u: User): boolean {
+  return u.is_automated ?? true;
+}
 
 const CLIENT_TYPE_ORDER: ClientType[] = [
   "casual",
@@ -94,14 +98,17 @@ function SortHeader({
   label,
   sortKey,
   onSort,
+  className = "",
 }: {
   label: string;
   sortKey: SortKey;
   onSort: (key: SortKey) => void;
+  /** ej. text-center para columna Bot */
+  className?: string;
 }) {
   return (
-    <th className="p-6 text-gray-600 font-bold text-lg">
-      <span className="inline-flex items-center gap-1">
+    <th className={`p-6 text-gray-600 font-bold text-lg ${className}`}>
+      <span className="inline-flex items-center justify-center gap-1">
         {label}
         <button
           type="button"
@@ -147,6 +154,7 @@ function UsuariosContent() {
   );
   const [recurrentReminderEnabled, setRecurrentReminderEnabled] = useState<boolean | null>(null);
   const [recurrentReminderLoading, setRecurrentReminderLoading] = useState(false);
+  const [bulkBotDeactivating, setBulkBotDeactivating] = useState(false);
   useEffect(() => {
     store.fetchUsers();
   }, [store]);
@@ -195,7 +203,8 @@ function UsuariosContent() {
       setSortDir((d) => (d === "asc" ? "desc" : "asc"));
     } else {
       setSortBy(key);
-      setSortDir("asc");
+      /** Bot: primer clic = activados primero (desc). */
+      setSortDir(key === "bot" ? "desc" : "asc");
     }
   };
 
@@ -211,6 +220,24 @@ function UsuariosContent() {
       toast("Error al cambiar estado", "error");
     }
     setTogglingId(null);
+  }
+
+  async function handleDeactivateAllBots() {
+    if (
+      !window.confirm(
+        "¿Desactivar el bot para todos los usuarios que lo tienen activo? Solo actualiza el interruptor en la base de datos; no borra usuarios ni historial."
+      )
+    ) {
+      return;
+    }
+    setBulkBotDeactivating(true);
+    const r = await store.deactivateAutomationForAllUsers();
+    setBulkBotDeactivating(false);
+    if (r.ok) {
+      toast(`Bot desactivado en ${r.updated ?? 0} usuario(s).`, "success");
+    } else {
+      toast(r.error ?? "Error al desactivar", "error");
+    }
   }
 
   async function handleResetUser() {
@@ -283,8 +310,12 @@ function UsuariosContent() {
       let cmp = 0;
       if (sortBy === "reservation_count") {
         cmp = a.reservation_count - b.reservation_count;
-      } else {
+      } else if (sortBy === "client_type") {
         cmp = clientTypeSortValue(a.client_type) - clientTypeSortValue(b.client_type);
+      } else {
+        const sa = userBotActivated(a) ? 1 : 0;
+        const sb = userBotActivated(b) ? 1 : 0;
+        cmp = sa - sb;
       }
       return sortDir === "asc" ? cmp : -cmp;
     });
@@ -301,15 +332,36 @@ function UsuariosContent() {
             Gestiona usuarios, reservas y cobros
           </p>
         </div>
-          <button
-            onClick={() => setAddUserOpen(true)}
-            className="inline-flex items-center gap-2 px-5 py-3 font-semibold rounded-xl bg-bombonera-600 text-white hover:bg-bombonera-700 transition-colors"
-          >
-            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
-            </svg>
-            Añadir usuario
-          </button>
+          <div className="flex flex-wrap items-center gap-2">
+            <button
+              type="button"
+              onClick={() => void handleDeactivateAllBots()}
+              disabled={bulkBotDeactivating || !loaded}
+              className="inline-flex items-center gap-2 px-4 py-3 font-semibold rounded-xl border-2 border-amber-300 bg-amber-50 text-amber-900 hover:bg-amber-100 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              {bulkBotDeactivating ? (
+                <svg className="w-5 h-5 animate-spin" fill="none" viewBox="0 0 24 24" aria-hidden>
+                  <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                  <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
+                </svg>
+              ) : (
+                <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" aria-hidden>
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M18.364 18.364A9 9 0 005.636 5.636m12.728 12.728A9 9 0 015.636 5.636m12.728 12.728L5.636 5.636" />
+                </svg>
+              )}
+              Desactivar para todos
+            </button>
+            <button
+              type="button"
+              onClick={() => setAddUserOpen(true)}
+              className="inline-flex items-center gap-2 px-5 py-3 font-semibold rounded-xl bg-bombonera-600 text-white hover:bg-bombonera-700 transition-colors"
+            >
+              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
+              </svg>
+              Añadir usuario
+            </button>
+          </div>
         </div>
 
         {/* Switch recordatorio recurrentes */}
@@ -467,7 +519,7 @@ function UsuariosContent() {
                     <th className="p-6 text-gray-600 font-bold text-lg">Cliente</th>
                     <SortHeader label="Reservas" sortKey="reservation_count" onSort={handleSort} />
                     <SortHeader label="Tipo de cliente" sortKey="client_type" onSort={handleSort} />
-                    <th className="p-6 text-gray-600 font-bold text-lg text-center">Bot</th>
+                    <SortHeader label="Bot" sortKey="bot" onSort={handleSort} className="text-center" />
                     <th className="p-6 text-gray-600 font-bold text-lg text-center whitespace-nowrap">Pagos</th>
                     <th className="p-6 text-gray-600 font-bold text-lg text-center whitespace-nowrap">
                       Boletas / Facturas
