@@ -519,8 +519,52 @@ export async function POST(request: NextRequest) {
     const persistClienteNum =
       tipoComprobante === "boleta" && clienteTipoDocSunat === "0" ? "" : cleanDoc;
 
-    // 7. PDFs: plantilla del panel (formal + QR) y ticket oficial apisunat, cada uno en Storage.
     const pdfTicketUrl: string | null = pdfPayload.ticket || null;
+
+    // 7a. Firestore inmediato tras SUNAT OK (evita CPE huérfano si falla Storage/PDF después).
+    const repSnapRaw = String(representative_name || "").trim() || clienteName;
+    const repSnap = receptorNombreSnapshot(repSnapRaw);
+    const invoiceDataPhase1: Record<string, unknown> = {
+      reservation_id: isManual ? "manual" : reservation_id,
+      user_id: effectiveUserId,
+      phone_number: effectivePhone || "",
+      cliente_denominacion: clienteName,
+      cliente_numero_de_documento: persistClienteNum,
+      cliente_tipo_documento: clienteTipoDocSunat,
+      representative_name_snapshot: repSnap,
+      file_url: "",
+      file_url_sunat: "",
+      file_url_xml: "",
+      condicion_venta: condicionVenta,
+      ...(formaPagoBancoPersist ? { forma_pago_banco: formaPagoBancoPersist } : {}),
+      ...(formaPagoCuentaPersist ? { forma_pago_cuenta: formaPagoCuentaPersist } : {}),
+      amount: totalAmount,
+      descripcion,
+      court_type: court_type || "",
+      field: field ?? null,
+      date: date || "",
+      time_slots: Array.isArray(time_slots) ? time_slots : [],
+      transfer_id: transfer_id || null,
+      serie: serieSunat,
+      tipo_comprobante: tipoComprobante,
+      correlativo,
+      serie_correlativo: serieCorrelativo,
+      sunat_hash: (payload.hash as string) || null,
+      sunat_estado: (payload.estado as string) || null,
+      sunat_xml: (payload.xml as string) || null,
+      sunat_cdr: (payload.cdr as string) || null,
+      sunat_pdf_ticket: pdfTicketUrl,
+      status: "emitted",
+      created_at: new Date().toISOString(),
+      fecha_emision_ymd: fechaEmision,
+      hora_emision_hms: horaEmision,
+    };
+    if (tipoComprobante === "factura") {
+      invoiceDataPhase1.cliente_direccion = clienteDireccionSunat;
+    }
+    const docRef = await db.collection("invoices").add(invoiceDataPhase1);
+
+    // 7b. PDFs: plantilla del panel (formal + QR) y ticket oficial apisunat, cada uno en Storage.
     const pathFormal = `invoices/${serieCorrelativo}-formal.pdf`;
     const pathSunat = `invoices/${serieCorrelativo}-sunat.pdf`;
     const pathXml = `invoices/${serieCorrelativo}.xml`;
@@ -649,52 +693,20 @@ export async function POST(request: NextRequest) {
       }
     }
 
-    // 8. Guardar metadata en Firestore (todo lo útil para reportes / panel)
-    const repSnapRaw = String(representative_name || "").trim() || clienteName;
-    const repSnap = receptorNombreSnapshot(repSnapRaw);
-    const invoiceData: Record<string, unknown> = {
-      reservation_id: isManual ? "manual" : reservation_id,
-      user_id: effectiveUserId,
-      phone_number: effectivePhone || "",
-      cliente_denominacion: clienteName,
-      cliente_numero_de_documento: persistClienteNum,
-      cliente_tipo_documento: clienteTipoDocSunat,
-      representative_name_snapshot: repSnap,
-      file_url: fileUrl || "",
-      file_url_sunat: fileUrlSunat,
-      file_url_xml: fileUrlXmlStored || "",
-      condicion_venta: condicionVenta,
-      ...(formaPagoBancoPersist ? { forma_pago_banco: formaPagoBancoPersist } : {}),
-      ...(formaPagoCuentaPersist ? { forma_pago_cuenta: formaPagoCuentaPersist } : {}),
-      amount: totalAmount,
-      descripcion,
-      court_type: court_type || "",
-      field: field ?? null,
-      date: date || "",
-      time_slots: Array.isArray(time_slots) ? time_slots : [],
-      transfer_id: transfer_id || null,
-      serie: serieSunat,
-      tipo_comprobante: tipoComprobante,
-      correlativo,
-      serie_correlativo: serieCorrelativo,
-      sunat_hash: (payload.hash as string) || null,
-      sunat_estado: (payload.estado as string) || null,
-      // URLs originales de apisunat por si necesitamos re-descargar
-      sunat_xml: (payload.xml as string) || null,
-      sunat_cdr: (payload.cdr as string) || null,
-      sunat_pdf_ticket: pdfTicketUrl,
-      status: "emitted",
-      created_at: new Date().toISOString(),
-      /** Para regenerar la plantilla PDF con la misma fecha/hora que envió apisunat. */
-      fecha_emision_ymd: fechaEmision,
-      hora_emision_hms: horaEmision,
-    };
-
-    if (tipoComprobante === "factura") {
-      invoiceData.cliente_direccion = clienteDireccionSunat;
+    // 8. Completar URLs de archivos en el documento ya creado (plantilla / apisunat / XML en Storage).
+    try {
+      await docRef.update({
+        file_url: fileUrl || "",
+        file_url_sunat: fileUrlSunat,
+        file_url_xml: fileUrlXmlStored || "",
+      });
+    } catch (updateErr) {
+      console.error(
+        "Emisión SUNAT OK y doc Firestore creado, pero falló update de file_url:",
+        docRef.id,
+        updateErr
+      );
     }
-
-    const docRef = await db.collection("invoices").add(invoiceData);
 
     if (miscEmission && effectiveUserId !== MISC_PANEL_USER_ID) {
       const userPatch: Record<string, unknown> = {};
@@ -729,7 +741,7 @@ export async function POST(request: NextRequest) {
       sunat_estado: payload.estado,
       cliente_denominacion: clienteName,
       cliente_numero_de_documento: persistClienteNum,
-      cliente_tipo_documento: invoiceData.cliente_tipo_documento,
+      cliente_tipo_documento: clienteTipoDocSunat,
       representative_name_snapshot: repSnap,
       descripcion,
       phone_number: effectivePhone || "",

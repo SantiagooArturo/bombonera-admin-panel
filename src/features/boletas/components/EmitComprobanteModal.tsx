@@ -433,7 +433,21 @@ export const EmitComprobanteModal = memo(function EmitComprobanteModal(props: Em
   const attaching = misc ? false : !!props.attaching;
 
   const showTransferSuccess = !misc && transferSuccessInvoice !== null;
-  const showEmittingOverlay = !misc && !showTransferSuccess && (transferSubmitting || emitting);
+  /** Bloqueo total mientras corre POST /api/invoices (misc: local; transfer: modal + padre). */
+  const emissionInProgress = misc
+    ? miscEmitting
+    : !showTransferSuccess && (transferSubmitting || !!props.emitting);
+  const showEmittingOverlay = !showTransferSuccess && emissionInProgress;
+
+  useEffect(() => {
+    if (!emissionInProgress) return;
+    const warn = (e: BeforeUnloadEvent) => {
+      e.preventDefault();
+      e.returnValue = "";
+    };
+    window.addEventListener("beforeunload", warn);
+    return () => window.removeEventListener("beforeunload", warn);
+  }, [emissionInProgress]);
 
   const transferForWsp = !misc ? props.transfer : null;
   const showWspOnSuccess =
@@ -599,8 +613,14 @@ export const EmitComprobanteModal = memo(function EmitComprobanteModal(props: Em
       role="dialog"
       aria-modal="true"
       aria-labelledby="emit-comprobante-title"
+      onClick={() => {
+        if (!emissionInProgress) props.onClose();
+      }}
     >
-      <div className="relative mb-10 w-full max-w-md rounded-2xl border border-gray-200 bg-white p-5 shadow-2xl">
+      <div
+        className="relative mb-10 w-full max-w-md rounded-2xl border border-gray-200 bg-white p-5 shadow-2xl"
+        onClick={(e) => e.stopPropagation()}
+      >
         {showEmittingOverlay ? (
           <div
             className="absolute inset-0 z-20 flex flex-col items-center justify-center gap-3 rounded-2xl bg-white/85 px-6 backdrop-blur-[2px]"
@@ -624,7 +644,7 @@ export const EmitComprobanteModal = memo(function EmitComprobanteModal(props: Em
           <button
             type="button"
             onClick={props.onClose}
-            disabled={!misc && transferSubmitting}
+            disabled={emissionInProgress}
             className="shrink-0 rounded-lg p-1.5 text-gray-400 hover:bg-gray-100 hover:text-gray-700 disabled:opacity-40"
             aria-label="Cerrar"
           >
@@ -920,7 +940,8 @@ export const EmitComprobanteModal = memo(function EmitComprobanteModal(props: Em
           <button
             type="button"
             onClick={props.onClose}
-            className={`flex ${controlH} items-center justify-center rounded-lg border border-gray-300 text-sm font-semibold text-gray-700 hover:bg-gray-50 ${
+            disabled={emissionInProgress}
+            className={`flex ${controlH} items-center justify-center rounded-lg border border-gray-300 text-sm font-semibold text-gray-700 hover:bg-gray-50 disabled:opacity-40 disabled:hover:bg-transparent ${
               showEmitPrimary ? "flex-1" : "w-full"
             }`}
           >
