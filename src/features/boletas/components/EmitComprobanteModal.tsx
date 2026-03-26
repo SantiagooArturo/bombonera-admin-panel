@@ -225,6 +225,17 @@ export const EmitComprobanteModal = memo(function EmitComprobanteModal(props: Em
   const showMiscDirectory =
     misc && (!steppedBoletaUx || emisorContext === "cliente_reservado");
 
+  /**
+   * Boletas guiadas: pestañas, correlativo y resto del CPE solo tras elegir contacto WhatsApp.
+   * Excepciones: «Ventas del día», «Otro», flujo sin pasos o no misc (cobro).
+   */
+  const canShowComprobanteDetailSection =
+    !misc ||
+    !steppedBoletaUx ||
+    emisorContext === "ventas_dia" ||
+    emisorContext === "otro" ||
+    isValidPeruPhone(panelLinkPhoneNorm);
+
   const applyEmisorContext = useCallback((next: EmitComprobanteEmisorContext) => {
     setEmisorContext(next);
     nombreComprobanteTouchedRef.current = false;
@@ -344,10 +355,12 @@ export const EmitComprobanteModal = memo(function EmitComprobanteModal(props: Em
   const boletaDocIncomplete =
     docType === "boleta" && digitsDoc.length > 0 && digitsDoc.length < 8;
 
-  /** Boleta: el DNI solo aplica desde S/ 700; por debajo no se muestra el campo. */
+  /** Boleta misc «Ventas del día»: sin campo DNI (resto de flujos: DNI visible, opcional salvo tope legal). */
+  const hideBoletaDocForVentasDelDia =
+    misc && steppedBoletaUx && emisorContext === "ventas_dia" && docType === "boleta";
+
   const showDocNumberInput =
-    docType === "factura" ||
-    (docType === "boleta" && amountValid && parsedAmount >= BOLETA_SIN_DOCUMENTO_CLIENTE_MAX_SOLES);
+    docType === "factura" || (docType === "boleta" && !hideBoletaDocForVentasDelDia);
 
   useEffect(() => {
     if (docType !== "factura") {
@@ -591,6 +604,52 @@ export const EmitComprobanteModal = memo(function EmitComprobanteModal(props: Em
   const inputClass = `w-full ${controlH} rounded-lg border border-gray-300 bg-white px-3 text-sm text-gray-900 shadow-sm focus:border-field-dark focus:outline-none focus:ring-1 focus:ring-field-dark/30`;
   const labelClass = "mb-1 block text-xs font-semibold uppercase tracking-wide text-gray-500";
 
+  const datosComprobanteTitulo = (
+    <div
+      className="flex flex-col gap-2 pt-1"
+      role="group"
+      aria-label="Datos del comprobante electrónico"
+    >
+      <div className="flex items-center gap-3">
+        <span className="h-px min-w-[1rem] flex-1 bg-gray-200" aria-hidden />
+        <span className="shrink-0 text-center text-[11px] font-semibold uppercase tracking-wide text-gray-500">
+          Datos del comprobante
+        </span>
+        <span className="h-px min-w-[1rem] flex-1 bg-gray-200" aria-hidden />
+      </div>
+    </div>
+  );
+
+  const emitDocTypeTabs = (
+    <div className="flex rounded-lg border border-gray-200 bg-gray-50 p-0.5">
+      <button
+        type="button"
+        onClick={() => setDocType("boleta")}
+        className={`flex h-10 flex-1 items-center justify-center rounded-md text-sm font-semibold transition-colors ${
+          docType === "boleta" ? "bg-white text-gray-900 shadow-sm" : "text-gray-500 hover:text-gray-800"
+        }`}
+      >
+        Boleta
+      </button>
+      <button
+        type="button"
+        onClick={() => setDocType("factura")}
+        className={`flex h-10 flex-1 items-center justify-center rounded-md text-sm font-semibold transition-colors ${
+          docType === "factura" ? "bg-white text-gray-900 shadow-sm" : "text-gray-500 hover:text-gray-800"
+        }`}
+      >
+        Factura
+      </button>
+    </div>
+  );
+
+  const emitProximoNumeroRow = (
+    <div className="flex items-center justify-between gap-2 rounded-lg bg-gray-50 px-3 py-2">
+      <span className="text-xs font-semibold uppercase tracking-wide text-gray-500">Próximo número</span>
+      <span className="font-mono text-sm font-semibold text-gray-900">{serieLabel}</span>
+    </div>
+  );
+
   function onDocInputChange(raw: string) {
     const onlyDigits = raw.replace(/\D/g, "");
     if (misc) {
@@ -613,12 +672,9 @@ export const EmitComprobanteModal = memo(function EmitComprobanteModal(props: Em
       role="dialog"
       aria-modal="true"
       aria-labelledby="emit-comprobante-title"
-      onClick={() => {
-        if (!emissionInProgress) props.onClose();
-      }}
     >
       <div
-        className="relative mb-10 w-full max-w-md rounded-2xl border border-gray-200 bg-white p-5 shadow-2xl"
+        className="relative mb-10 w-full max-w-[33.6rem] rounded-2xl border border-gray-200 bg-white p-5 shadow-2xl"
         onClick={(e) => e.stopPropagation()}
       >
         {showEmittingOverlay ? (
@@ -655,36 +711,10 @@ export const EmitComprobanteModal = memo(function EmitComprobanteModal(props: Em
         </div>
 
         <div className="mt-4 space-y-4">
-          <div className="flex rounded-lg border border-gray-200 bg-gray-50 p-0.5">
-            <button
-              type="button"
-              onClick={() => setDocType("boleta")}
-              className={`flex h-10 flex-1 items-center justify-center rounded-md text-sm font-semibold transition-colors ${
-                docType === "boleta" ? "bg-white text-gray-900 shadow-sm" : "text-gray-500 hover:text-gray-800"
-              }`}
-            >
-              Boleta
-            </button>
-            <button
-              type="button"
-              onClick={() => setDocType("factura")}
-              className={`flex h-10 flex-1 items-center justify-center rounded-md text-sm font-semibold transition-colors ${
-                docType === "factura" ? "bg-white text-gray-900 shadow-sm" : "text-gray-500 hover:text-gray-800"
-              }`}
-            >
-              Factura
-            </button>
-          </div>
-
-          <div className="flex items-center justify-between gap-2 rounded-lg bg-gray-50 px-3 py-2">
-            <span className="text-xs font-semibold uppercase tracking-wide text-gray-500">Próximo número</span>
-            <span className="font-mono text-sm font-semibold text-gray-900">{serieLabel}</span>
-          </div>
-
           {steppedBoletaUx ? (
             <div>
               <label htmlFor="emit-para-quien" className={labelClass}>
-                ¿Para quién emites esta {docType === "boleta" ? "Boleta" : "Factura"}?
+                ¿Para quién emites esta Boleta/Factura?
               </label>
               <select
                 id="emit-para-quien"
@@ -731,19 +761,11 @@ export const EmitComprobanteModal = memo(function EmitComprobanteModal(props: Em
                 />
               ) : null}
 
-              <div
-                className="flex flex-col gap-2 pt-1"
-                role="group"
-                aria-label="Datos del comprobante electrónico"
-              >
-                <div className="flex items-center gap-3">
-                  <span className="h-px min-w-[1rem] flex-1 bg-gray-200" aria-hidden />
-                  <span className="shrink-0 text-center text-[11px] font-semibold uppercase tracking-wide text-gray-500">
-                    Datos del comprobante
-                  </span>
-                  <span className="h-px min-w-[1rem] flex-1 bg-gray-200" aria-hidden />
-                </div>
-              </div>
+              {canShowComprobanteDetailSection ? (
+                <>
+              {datosComprobanteTitulo}
+              {emitDocTypeTabs}
+              {emitProximoNumeroRow}
 
               <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
             <div>
@@ -772,10 +794,95 @@ export const EmitComprobanteModal = memo(function EmitComprobanteModal(props: Em
             </div>
           </div>
 
-          <div
-            className={`grid grid-cols-1 gap-3 sm:items-start ${showDocNumberInput ? "sm:grid-cols-2" : ""}`}
-          >
-            <div className={!showDocNumberInput && docType === "boleta" ? "sm:col-span-2" : undefined}>
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 sm:items-start">
+            <div className={showDocNumberInput ? undefined : "sm:col-span-2"}>
+              <label htmlFor="emit-nombre-cpe" className={labelClass}>
+                Nombre del cliente
+              </label>
+              <input
+                id="emit-nombre-cpe"
+                type="text"
+                value={clienteEdit}
+                onChange={(e) => handleNombreComprobanteChange(e.target.value)}
+                placeholder={
+                  misc
+                    ? docType === "factura"
+                      ? "Razón social en el CPE"
+                      : "Ej. VENTAS DEL DIA"
+                    : "Opcional"
+                }
+                className={inputClass}
+                autoComplete="off"
+              />
+            </div>
+            {showDocNumberInput ? (
+              <div>
+                <label htmlFor="emit-doc" className={labelClass}>
+                  {docType === "factura" ? "RUC" : "DNI"}
+                </label>
+                <input
+                  id="emit-doc"
+                  type="text"
+                  inputMode="numeric"
+                  value={docInputValue}
+                  onChange={(e) => onDocInputChange(e.target.value)}
+                  placeholder={docType === "factura" ? "11 dígitos" : "Opcional (8 dígitos)"}
+                  className={`${inputClass} font-mono`}
+                />
+                {docType === "boleta" && boletaRequiereDniPorMonto && digitsDoc.length === 0 ? (
+                  <p className="mt-1 text-xs text-amber-800">
+                    Para este monto el DNI es obligatorio.
+                  </p>
+                ) : null}
+                {docType === "factura" && rucLookup === "loading" ? (
+                  <p className="mt-1 text-xs text-gray-500">Buscando razón social…</p>
+                ) : null}
+                {docType === "factura" && rucLookup === "error" && rucLookupMsg ? (
+                  <p className="mt-1 text-xs text-amber-800">{mensajeErrorConsultaRuc(rucLookupMsg)}</p>
+                ) : null}
+                {boletaDocIncomplete ? (
+                  <p className="mt-1 text-xs text-red-600">El DNI debe tener 8 dígitos.</p>
+                ) : null}
+              </div>
+            ) : null}
+          </div>
+
+          {docType === "factura" ? (
+            <div>
+              <label htmlFor="emit-dir-factura" className={labelClass}>
+                Dirección fiscal (receptor)
+              </label>
+              <textarea
+                id="emit-dir-factura"
+                value={facturaDireccion}
+                onChange={(e) => setFacturaDireccion(e.target.value)}
+                rows={3}
+                placeholder="Se completa al validar el RUC si SUNAT la devuelve; puedes editarla."
+                className="w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm text-gray-900 shadow-sm focus:border-field-dark focus:outline-none focus:ring-1 focus:ring-field-dark/30"
+              />
+              <p className="mt-1 text-xs text-gray-500">
+                En SUNAT y en el PDF formal. Si la dejas vacía se usará «LIMA».
+              </p>
+            </div>
+          ) : null}
+
+          <div>
+            <label htmlFor="emit-concepto" className={labelClass}>
+              Concepto
+            </label>
+            <input
+              id="emit-concepto"
+              type="text"
+              value={descripcionEdit}
+              onChange={(e) => setDescripcionEdit(e.target.value)}
+              placeholder={misc ? "Ej: Venta del día" : "Ej: Alquiler cancha 9"}
+              className={inputClass}
+              autoComplete="off"
+            />
+          </div>
+
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 sm:items-start">
+            <div>
               <label htmlFor="emit-cond-venta" className={labelClass}>
                 {FORMA_PAGO_EMISION_LABEL}
               </label>
@@ -792,37 +899,30 @@ export const EmitComprobanteModal = memo(function EmitComprobanteModal(props: Em
                 ))}
               </select>
             </div>
-            {showDocNumberInput ? (
-              <div>
-                <label htmlFor="emit-doc" className={labelClass}>
-                  {docType === "factura" ? "RUC" : "DNI"}
-                </label>
-                <input
-                  id="emit-doc"
-                  type="text"
-                  inputMode="numeric"
-                  value={docInputValue}
-                  onChange={(e) => onDocInputChange(e.target.value)}
-                  placeholder={docType === "factura" ? "11 dígitos" : "Opcional"}
-                  className={`${inputClass} font-mono`}
-                />
-                {docType === "boleta" && boletaRequiereDniPorMonto && digitsDoc.length === 0 ? (
-                  <p className="mt-1 text-xs text-amber-800">
-                    DNI obligatorio para montos desde S/ {BOLETA_SIN_DOCUMENTO_CLIENTE_MAX_SOLES}.
-                  </p>
-                ) : null}
-                {docType === "factura" && rucLookup === "loading" ? (
-                  <p className="mt-1 text-xs text-gray-500">Buscando razón social…</p>
-                ) : null}
-                {docType === "factura" && rucLookup === "error" && rucLookupMsg ? (
-                  <p className="mt-1 text-xs text-amber-800">{mensajeErrorConsultaRuc(rucLookupMsg)}</p>
-                ) : null}
-                {boletaDocIncomplete ? (
-                  <p className="mt-1 text-xs text-red-600">El DNI debe tener 8 dígitos.</p>
-                ) : null}
-              </div>
-            ) : null}
+            <div>
+              <label htmlFor="emit-total" className={labelClass}>
+                Total (incl. IGV)
+              </label>
+              <input
+                id="emit-total"
+                type="text"
+                inputMode="decimal"
+                value={amountEdit}
+                onChange={(e) => setAmountEdit(e.target.value.replace(/[^\d.,]/g, ""))}
+                placeholder="0.00"
+                className={`${inputClass} font-mono`}
+              />
+              {!amountValid && amountEdit !== "" ? (
+                <p className="mt-1 text-xs text-red-600">Monto inválido.</p>
+              ) : null}
+            </div>
           </div>
+
+          {hideBoletaDocForVentasDelDia && boletaRequiereDniPorMonto ? (
+            <p className="text-xs text-amber-800">
+              Este monto suele exigir DNI en SUNAT. Si la emisión falla, cambia «Para quién» o reduce el total.
+            </p>
+          ) : null}
 
           {condicionVenta === CONDICION_VENTA_DEPOSITO_CUENTA ? (
             <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
@@ -867,79 +967,8 @@ export const EmitComprobanteModal = memo(function EmitComprobanteModal(props: Em
               ) : null}
             </div>
           ) : null}
-
-          <div>
-            <label htmlFor="emit-nombre-cpe" className={labelClass}>
-              Nombre del cliente
-            </label>
-            <input
-              id="emit-nombre-cpe"
-              type="text"
-              value={clienteEdit}
-              onChange={(e) => handleNombreComprobanteChange(e.target.value)}
-              placeholder={
-                misc
-                  ? docType === "factura"
-                    ? "Razón social en el CPE"
-                    : "Ej. VENTAS DEL DIA"
-                  : "Opcional"
-              }
-              className={inputClass}
-              autoComplete="off"
-            />
-          </div>
-
-          {docType === "factura" ? (
-            <div>
-              <label htmlFor="emit-dir-factura" className={labelClass}>
-                Dirección fiscal (receptor)
-              </label>
-              <textarea
-                id="emit-dir-factura"
-                value={facturaDireccion}
-                onChange={(e) => setFacturaDireccion(e.target.value)}
-                rows={3}
-                placeholder="Se completa al validar el RUC si SUNAT la devuelve; puedes editarla."
-                className="w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm text-gray-900 shadow-sm focus:border-field-dark focus:outline-none focus:ring-1 focus:ring-field-dark/30"
-              />
-              <p className="mt-1 text-xs text-gray-500">
-                En SUNAT y en el PDF formal. Si la dejas vacía se usará «LIMA».
-              </p>
-            </div>
-          ) : null}
-
-          <div>
-            <label htmlFor="emit-concepto" className={labelClass}>
-              Concepto
-            </label>
-            <input
-              id="emit-concepto"
-              type="text"
-              value={descripcionEdit}
-              onChange={(e) => setDescripcionEdit(e.target.value)}
-              placeholder={misc ? "Ej: Venta del día" : "Ej: Alquiler cancha 9"}
-              className={inputClass}
-              autoComplete="off"
-            />
-          </div>
-
-          <div>
-            <label htmlFor="emit-total" className={labelClass}>
-              Total (incl. IGV)
-            </label>
-            <input
-              id="emit-total"
-              type="text"
-              inputMode="decimal"
-              value={amountEdit}
-              onChange={(e) => setAmountEdit(e.target.value.replace(/[^\d.,]/g, ""))}
-              placeholder="0.00"
-              className={`${inputClass} font-mono`}
-            />
-            {!amountValid && amountEdit !== "" ? (
-              <p className="mt-1 text-xs text-red-600">Monto inválido.</p>
-            ) : null}
-          </div>
+                </>
+              ) : null}
             </>
           ) : null}
         </div>
