@@ -35,6 +35,7 @@ import {
 export default function OperacionesPage() {
   const toast = useToastContext();
   const store = useStore();
+  const MIN_OPERATIONS_DATE = "2026-03-01";
 
   const [dayOffset, setDayOffset] = useState(0);
   const [currentSlot, setCurrentSlot] = useState(getCurrentSlot);
@@ -100,6 +101,15 @@ export default function OperacionesPage() {
 
   const selectedDate = useMemo(() => formatDateISO(getDateWithOffset(dayOffset)), [dayOffset]);
   const todayDate = useMemo(() => formatDateISO(new Date()), []);
+  const maxSelectableDate = useMemo(() => formatDateISO(getDateWithOffset(MAX_DAY_OFFSET)), []);
+  const minDayOffset = useMemo(() => {
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    const minDate = new Date(`${MIN_OPERATIONS_DATE}T12:00:00`);
+    minDate.setHours(0, 0, 0, 0);
+    const diffMs = minDate.getTime() - today.getTime();
+    return Math.round(diffMs / (24 * 60 * 60 * 1000));
+  }, [MIN_OPERATIONS_DATE]);
   const availabilityDayOptions = useMemo(
     () => Array.from({ length: MAX_DAY_OFFSET + 1 }, (_, idx) => formatDateISO(getDateWithOffset(idx))),
     []
@@ -109,6 +119,7 @@ export default function OperacionesPage() {
     const date = getDateWithOffset(dayOffset);
     if (dayOffset === 0) return "Hoy";
     if (dayOffset === 1) return "Mañana";
+    if (dayOffset === -1) return "Ayer";
     return date.toLocaleDateString("es-PE", { weekday: "long", day: "numeric", month: "long" });
   }, [dayOffset]);
 
@@ -171,7 +182,7 @@ export default function OperacionesPage() {
       }
 
       if (e.key === "ArrowLeft") {
-        setDayOffset((prev) => Math.max(0, prev - 1));
+        setDayOffset((prev) => Math.max(minDayOffset, prev - 1));
       } else if (e.key === "ArrowRight") {
         setDayOffset((prev) => Math.min(MAX_DAY_OFFSET, prev + 1));
       }
@@ -179,7 +190,7 @@ export default function OperacionesPage() {
 
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
-  }, []);
+  }, [minDayOffset]);
 
   // ── Fetch reservas y bloqueos del día ─────────────────────────────────
 
@@ -474,12 +485,28 @@ export default function OperacionesPage() {
       <div className="-mb-24 md:-mb-8 px-2 md:px-3 py-2 h-[calc(100dvh-12px)] flex flex-col">
         <OperationsHeader
           dayOffset={dayOffset}
+          selectedDateISO={selectedDate}
           selectedDateLabel={selectedDateLabel}
           isToday={isToday}
+          minDayOffset={minDayOffset}
+          minSelectableDateISO={MIN_OPERATIONS_DATE}
           maxDayOffset={MAX_DAY_OFFSET}
-          onPrevDay={() => setDayOffset((prev) => Math.max(0, prev - 1))}
+          maxSelectableDateISO={maxSelectableDate}
+          onPrevDay={() => setDayOffset((prev) => Math.max(minDayOffset, prev - 1))}
           onNextDay={() => setDayOffset((prev) => Math.min(MAX_DAY_OFFSET, prev + 1))}
           onGoToday={() => setDayOffset(0)}
+          onPickDate={(dateISO) => {
+            if (!dateISO) return;
+            const today = new Date();
+            today.setHours(0, 0, 0, 0);
+            const picked = new Date(`${dateISO}T12:00:00`);
+            if (Number.isNaN(picked.getTime())) return;
+            picked.setHours(0, 0, 0, 0);
+            const diffMs = picked.getTime() - today.getTime();
+            const offset = Math.round(diffMs / (24 * 60 * 60 * 1000));
+            const clamped = Math.max(minDayOffset, Math.min(MAX_DAY_OFFSET, offset));
+            setDayOffset(clamped);
+          }}
           onOpenSendAvailability={openSendAvailabilityModal}
           showSendButton={false}
         />
@@ -560,7 +587,7 @@ export default function OperacionesPage() {
             resDate.setHours(0, 0, 0, 0);
             const diffMs = resDate.getTime() - today.getTime();
             const offset = Math.round(diffMs / (24 * 60 * 60 * 1000));
-            const clamped = Math.max(0, Math.min(MAX_DAY_OFFSET, offset));
+            const clamped = Math.max(minDayOffset, Math.min(MAX_DAY_OFFSET, offset));
             setDayOffset(clamped);
             sidebar.open(r);
           }}
