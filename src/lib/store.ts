@@ -8,6 +8,7 @@ import type {
   ClientType,
   EmitComprobanteParams,
 } from "./types";
+import { TRANSFER_ID_EMIT_THEN_REGISTER_PAYMENT } from "@/features/boletas/constants/emitThenRegisterPayment";
 import { normalizePeruPhone, isValidPeruPhone } from "@/features/operaciones/utils";
 
 // API-backed store that syncs with Firebase via Next.js API routes
@@ -700,6 +701,9 @@ class Store {
         ? params.amount
         : (transfer?.amount || reservation.total_price);
 
+      const transferIdForApi =
+        transfer?.id && transfer.id !== TRANSFER_ID_EMIT_THEN_REGISTER_PAYMENT ? transfer.id : undefined;
+
       const body: Record<string, unknown> = {
         reservation_id: reservation.id,
         user_id: reservation.chat_id,
@@ -710,10 +714,10 @@ class Store {
         date: reservation.date,
         time_slots: reservation.time_slots,
         representative_name: reservation.representative_name,
-        transfer_id: transfer?.id,
         tipo_comprobante: params.tipo_comprobante,
         doc_num: params.doc_num,
       };
+      if (transferIdForApi) body.transfer_id = transferIdForApi;
       if (params.cliente_denominacion?.trim()) body.cliente_denominacion = params.cliente_denominacion.trim();
       if (params.descripcion?.trim()) body.descripcion = params.descripcion.trim();
       if (params.fecha_de_emision?.trim()) body.fecha_de_emision = params.fecha_de_emision.trim();
@@ -754,7 +758,7 @@ class Store {
         field: reservation.field ?? null,
         date: reservation.date,
         time_slots: reservation.time_slots,
-        transfer_id: transfer?.id,
+        transfer_id: transferIdForApi ?? null,
         status: "emitted",
         created_at: new Date().toISOString(),
         descripcion: typeof result.descripcion === "string" ? result.descripcion : undefined,
@@ -799,6 +803,25 @@ class Store {
     } catch (error) {
       console.error("Error emitting invoice:", error);
       throw error;
+    }
+  }
+
+  async linkInvoiceToTransfer(invoiceId: string, transferId: string): Promise<boolean> {
+    try {
+      const res = await fetch("/api/invoices", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ invoice_id: invoiceId, transfer_id: transferId }),
+      });
+      if (!res.ok) return false;
+      this.invoices = this.invoices.map((inv) =>
+        inv.id === invoiceId ? { ...inv, transfer_id: transferId } : inv
+      );
+      this.notify();
+      return true;
+    } catch (e) {
+      console.error("Error linking invoice to transfer:", e);
+      return false;
     }
   }
 

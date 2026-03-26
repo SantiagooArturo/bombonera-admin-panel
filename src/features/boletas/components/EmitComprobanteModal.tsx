@@ -763,7 +763,7 @@ export const EmitComprobanteModal = memo(function EmitComprobanteModal(props: Em
 
               {canShowComprobanteDetailSection ? (
                 <>
-              {datosComprobanteTitulo}
+              {misc ? datosComprobanteTitulo : null}
               {emitDocTypeTabs}
               {emitProximoNumeroRow}
 

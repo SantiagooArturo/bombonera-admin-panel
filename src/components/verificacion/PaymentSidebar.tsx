@@ -1726,11 +1726,10 @@ const PaymentSidebar = memo(function PaymentSidebar({
         >
           <div className="w-full max-w-md rounded-2xl border border-gray-200 bg-white p-6 shadow-2xl">
             <h2 id="amount-paid-delta-title" className="text-lg font-bold text-gray-900">
-              Emitir boleta/factura por {" "} 
-              <span className="tabular-nums">S/ {amountPaidDeltaPrompt.delta.toFixed(2)}</span>
+              ¿Emitir comprobante ahora?
             </h2>
             <p className="mt-2 text-sm text-gray-600 leading-relaxed">
-              Registrar cobro automaticamente y emitir boleta?
+              Puedes abrir el emisor ahora o continuar y emitir luego.
             </p>
             <div className="mt-5 flex flex-col gap-2 sm:flex-row-reverse sm:justify-end sm:gap-3">
               <button
@@ -1757,7 +1756,7 @@ const PaymentSidebar = memo(function PaymentSidebar({
                 }}
                 className="rounded-xl border border-gray-300 px-4 py-3 text-sm font-semibold text-gray-800 hover:bg-gray-50 disabled:opacity-50 sm:min-w-[140px]"
               >
-                Cancelar
+                Emitir después
               </button>
             </div>
           </div>

@@ -6,6 +6,7 @@ import { useToastContext } from "@/components/ClientLayout";
 import type { Reservation, Transfer, Invoice, PaymentMethod, ClientType, EmitComprobanteParams } from "@/lib/types";
 import { voidSunatInvoice } from "@/features/boletas/services/voidSunatInvoice";
 import { mergeInvoiceVoided } from "@/features/boletas/utils/mergeInvoiceVoided";
+import { TRANSFER_ID_EMIT_THEN_REGISTER_PAYMENT } from "@/features/boletas/constants/emitThenRegisterPayment";
 import { normalizePeruPhone } from "@/features/operaciones/utils";
 
 interface UsePaymentSidebarOptions {
@@ -292,7 +293,51 @@ export function usePaymentSidebar(options?: UsePaymentSidebarOptions) {
           { id: transfer.id, amount: transfer.amount || 0 },
           { ...params, amount: typeof params.amount === "number" ? params.amount : undefined }
         );
-        const ids = transfers.map((t) => t.id).filter(Boolean);
+
+        if (transfer.id === TRANSFER_ID_EMIT_THEN_REGISTER_PAYMENT) {
+          const billed = invoice.amount;
+          const phoneNumber = String(selectedReservation.phone_number || "").trim();
+          if (phoneNumber) {
+            const pay = await store.processManualPayment(
+              selectedReservation.id,
+              billed,
+              phoneNumber,
+              "digital"
+            );
+            if (pay?.success && pay.transfer_id) {
+              await store.linkInvoiceToTransfer(invoice.id, pay.transfer_id);
+              if (pay.new_amount_paid != null) {
+                const patch: Partial<Reservation> = {
+                  amount_paid: pay.new_amount_paid,
+                  amount_paid_manual: true,
+                  confirmed: true,
+                };
+                if (selectedReservation.status === "pending") {
+                  patch.status = "confirmed";
+                }
+                const rid = selectedReservation.id;
+                setAllClientReservations((prev) =>
+                  prev.map((r) => (r.id === rid ? { ...r, ...patch } : r))
+                );
+                setAllReservationsThisWeek((prev) =>
+                  prev.map((r) => (r.id === rid ? { ...r, ...patch } : r))
+                );
+                setSelectedReservation((prev) => (prev ? { ...prev, ...patch } : prev));
+                options?.onReservationUpdated?.(rid, patch);
+              }
+            }
+          }
+        }
+
+        const chatKey =
+          String(
+            selectedReservation.chat_id || selectedReservation.phone_number || ""
+          ).replace(/\D/g, "") || selectedReservation.phone_number || "";
+        const newTransfers = await store.fetchTransfersByChatId(
+          chatKey || selectedReservation.phone_number || ""
+        );
+        setTransfers(newTransfers || []);
+        const ids = (newTransfers || []).map((t) => t.id).filter(Boolean);
         const newInvoices = ids.length > 0 ? await store.fetchInvoicesByTransferIds(ids) : [];
         setInvoices(newInvoices || []);
 
@@ -322,7 +367,7 @@ export function usePaymentSidebar(options?: UsePaymentSidebarOptions) {
         setEmittingInvoiceId(null);
       }
     },
-    [store, toast, selectedReservation, transfers, userNames.last_dni, userNames.last_ruc]
+    [store, toast, selectedReservation, userNames.last_dni, userNames.last_ruc, options]
   );
 
   const handleUpdateName = useCallback(async (name: string) => {
@@ -591,45 +636,21 @@ export function usePaymentSidebar(options?: UsePaymentSidebarOptions) {
           ok = await persistDirectAmountPaid(id, amountPaid);
         } else {
           const phoneNumber = String(resSnapshot?.phone_number || selectedReservation?.phone_number || "").trim();
-          if (!phoneNumber) {
-            toast("Falta teléfono del cliente para registrar el cobro", "error");
-            ok = await persistDirectAmountPaid(id, amountPaid);
-          } else {
-            try {
-              const result = await store.processManualPayment(id, delta, phoneNumber, "digital");
-              if (!result?.success || !result.transfer_id) {
-                toast("No se pudo registrar el cobro. Se guardará solo el monto como ajuste.", "error");
-                ok = await persistDirectAmountPaid(id, amountPaid);
-              } else {
-                const newPaidFromServer = result.new_amount_paid ?? amountPaid;
-                const patch: Partial<Reservation> = {
-                  amount_paid: newPaidFromServer,
-                  amount_paid_manual: true,
-                  confirmed: true,
-                };
-                if (resSnapshot?.status === "pending") {
-                  patch.status = "confirmed";
-                }
-                setAllClientReservations((prev) => prev.map((r) => (r.id === id ? { ...r, ...patch } : r)));
-                setAllReservationsThisWeek((prev) => prev.map((r) => (r.id === id ? { ...r, ...patch } : r)));
-                setSelectedReservation((prev) => (prev?.id === id ? { ...prev, ...patch } : prev));
-                options?.onReservationUpdated?.(id, patch);
-
-                const chatKey = resSnapshot?.chat_id || resSnapshot?.phone_number || phoneNumber || "";
-                const newTransfers = await store.fetchTransfersByChatId(chatKey);
-                setTransfers(newTransfers || []);
-                const transfer = (newTransfers || []).find((t) => t.id === result.transfer_id);
-                if (transfer) {
-                  setPendingEmitFromAmountEdit(transfer);
-                }
-                toast(`Cobro registrado: S/ ${delta.toFixed(2)}. Completa la emisión en el formulario.`, "success");
-                ok = true;
-              }
-            } catch {
-              toast("Error al registrar cobro", "error");
-              ok = await persistDirectAmountPaid(id, amountPaid);
-            }
-          }
+          setPendingEmitFromAmountEdit({
+            id: TRANSFER_ID_EMIT_THEN_REGISTER_PAYMENT,
+            amount: delta,
+            phone_number: phoneNumber,
+            recipient_name: null,
+            transaction_date: null,
+            operation_id: null,
+            reservation_id: id,
+            status: "partial",
+            source: "manual",
+            payment_method: "digital",
+            created_at: new Date().toISOString(),
+            chat_id: resSnapshot?.chat_id ?? resSnapshot?.phone_number ?? null,
+          });
+          ok = true;
         }
         return ok;
       } finally {
@@ -637,7 +658,7 @@ export function usePaymentSidebar(options?: UsePaymentSidebarOptions) {
         setPaymentLoading(false);
       }
     },
-    [selectedReservation, allClientReservations, options, toast, store, persistDirectAmountPaid]
+    [selectedReservation, allClientReservations, persistDirectAmountPaid]
   );
 
   const handleUpdateAmountPaid = useCallback(

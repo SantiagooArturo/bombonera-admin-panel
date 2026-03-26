@@ -157,7 +157,7 @@ export default function SlotActionModal({
           ) : (
             <div className="space-y-3">
               <EditablePhoneSelect
-                label="WhatsApp"
+                label="Contacto de WhatsApp"
                 value={manualPhone}
                 onChange={onManualPhoneChange}
                 options={phoneOptions}

@@ -771,6 +771,56 @@ export async function POST(request: NextRequest) {
   }
 }
 
+// ── PATCH: Vincular comprobante ya emitido a un pago manual (p. ej. emitir primero, registrar cobro después) ──
+
+export async function PATCH(request: NextRequest) {
+  try {
+    const db = getDb();
+    const body = await request.json();
+    const invoiceId = typeof body.invoice_id === "string" ? body.invoice_id.trim() : "";
+    const transferId = typeof body.transfer_id === "string" ? body.transfer_id.trim() : "";
+    if (!invoiceId || !transferId) {
+      return NextResponse.json({ error: "Se requiere invoice_id y transfer_id" }, { status: 400 });
+    }
+
+    const invRef = db.collection("invoices").doc(invoiceId);
+    const trRef = db.collection("transfers").doc(transferId);
+    const [invSnap, trSnap] = await Promise.all([invRef.get(), trRef.get()]);
+
+    if (!invSnap.exists) {
+      return NextResponse.json({ error: "Comprobante no encontrado" }, { status: 404 });
+    }
+    if (!trSnap.exists) {
+      return NextResponse.json({ error: "Pago no encontrado" }, { status: 404 });
+    }
+
+    const inv = invSnap.data() || {};
+    const tr = trSnap.data() || {};
+    const existing = inv.transfer_id;
+    if (existing != null && String(existing).trim() !== "") {
+      if (String(existing) === transferId) {
+        return NextResponse.json({ success: true, idempotent: true });
+      }
+      return NextResponse.json({ error: "El comprobante ya tiene otro pago vinculado" }, { status: 409 });
+    }
+
+    const resId = String(inv.reservation_id || "");
+    const trResId = tr.reservation_id != null && tr.reservation_id !== "" ? String(tr.reservation_id) : "";
+    if (resId && resId !== "manual" && trResId && trResId !== resId) {
+      return NextResponse.json(
+        { error: "La reserva del comprobante no coincide con la del pago" },
+        { status: 400 }
+      );
+    }
+
+    await invRef.update({ transfer_id: transferId });
+    return NextResponse.json({ success: true });
+  } catch (error) {
+    console.error("PATCH invoice:", error);
+    return NextResponse.json({ error: "Error al vincular comprobante" }, { status: 500 });
+  }
+}
+
 // ── DELETE: Desvincular boleta adjuntada manualmente ─────────────────────────
 
 export async function DELETE(request: NextRequest) {
