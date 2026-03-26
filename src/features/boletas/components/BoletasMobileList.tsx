@@ -13,6 +13,7 @@ import {
 } from "../utils/invoiceTableColumns";
 import { invoicePlantillaPdfHref } from "../utils/invoicePdfLinks";
 import { IconOpenInNewTab, SerieCorrelativoCell } from "./boletasSharedUi";
+import { isSunatEstadoRechazado } from "../utils/sunatEstadoUi";
 
 type BoletasMobileListProps = {
   rows: Invoice[];
@@ -75,6 +76,7 @@ export function BoletasMobileList({
           (invSt === "" && Boolean(String(inv.serie_correlativo || "").trim()));
         const canVoidRow = emittedLike && Boolean(String(inv.serie_correlativo || "").trim());
         const isVoidedRow = invSt === "voided";
+        const sunatRechazado = isSunatEstadoRechazado(inv.sunat_estado);
         const recText = invoiceReceptorOnly(inv) || "—";
         const descText = invoiceDescripcionOnly(inv) || "—";
         const canSend = Boolean(invoicePlantillaPdfHref(inv) || inv.file_url?.trim());
@@ -85,11 +87,18 @@ export function BoletasMobileList({
         return (
           <li
             key={inv.id}
-            className="rounded-xl border border-gray-200 bg-white p-4 shadow-sm"
+            className={`rounded-xl border p-4 shadow-sm ${
+              sunatRechazado ? "border-red-300 bg-red-50" : "border-gray-200 bg-white"
+            }`}
           >
             <div className="flex items-start justify-between gap-3">
               <div className="min-w-0 flex-1 font-mono text-sm font-semibold text-gray-900">
                 <SerieCorrelativoCell value={inv.serie_correlativo} />
+                {sunatRechazado ? (
+                  <span className="mt-1 inline-block rounded-md bg-red-200 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-red-900">
+                    Rechazado SUNAT
+                  </span>
+                ) : null}
                 {isFactura ? (
                   <span className="mt-1 inline-block rounded-md bg-violet-100 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-violet-800">
                     Factura

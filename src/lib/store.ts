@@ -772,6 +772,10 @@ class Store {
             : "boleta",
         serie_correlativo:
           typeof result.serie_correlativo === "string" ? result.serie_correlativo : undefined,
+        sunat_estado:
+          typeof result.sunat_estado === "string" && result.sunat_estado.trim()
+            ? result.sunat_estado.trim()
+            : undefined,
         condicion_venta:
           typeof result.condicion_venta === "string" ? result.condicion_venta : params.condicion_venta?.trim(),
         forma_pago_banco:

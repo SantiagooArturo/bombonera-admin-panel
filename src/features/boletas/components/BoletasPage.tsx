@@ -24,6 +24,7 @@ import { invoiceMatchesSearch } from "../utils/invoiceMatchesSearch";
 import { BoletasDevCounterPanel } from "./BoletasDevCounterPanel";
 import { BoletasMobileList } from "./BoletasMobileList";
 import { IconOpenInNewTab, SerieCorrelativoCell } from "./boletasSharedUi";
+import { isSunatEstadoRechazado } from "../utils/sunatEstadoUi";
 
 type ComprobanteTab = "todos" | "boletas" | "facturas";
 
@@ -328,13 +329,28 @@ export function BoletasPage() {
                     (invSt === "" && Boolean(String(inv.serie_correlativo || "").trim()));
                   const canVoidRow = emittedLike && Boolean(String(inv.serie_correlativo || "").trim());
                   const isVoidedRow = invSt === "voided";
+                  const sunatRechazado = isSunatEstadoRechazado(inv.sunat_estado);
                   const recText = invoiceReceptorOnly(inv) || "—";
                   const descText = invoiceDescripcionOnly(inv) || "—";
                   return (
-                    <tr key={inv.id} className={idx % 2 === 0 ? "bg-white" : "bg-gray-50/60"}>
+                    <tr
+                      key={inv.id}
+                      className={
+                        sunatRechazado
+                          ? "bg-red-50"
+                          : idx % 2 === 0
+                            ? "bg-white"
+                            : "bg-gray-50/60"
+                      }
+                    >
                       <td className="border-t border-gray-100 px-2 py-5 align-top font-mono text-xs text-gray-900 lg:px-3 xl:px-3.5 xl:text-sm">
                         <div className="flex flex-col gap-0.5">
                           <SerieCorrelativoCell value={inv.serie_correlativo} />
+                          {sunatRechazado ? (
+                            <span className="w-fit rounded bg-red-200 px-2 py-1 text-[10px] font-bold uppercase tracking-wide text-red-900 xl:text-xs">
+                              Rechazado SUNAT
+                            </span>
+                          ) : null}
                           {isFactura ? (
                             <span className="w-fit rounded bg-violet-100 px-2 py-1 text-[10px] font-semibold leading-none text-violet-800 xl:text-xs">
                               Factura

@@ -239,6 +239,7 @@ export interface Invoice {
    * Útil si faltaba cliente_denominacion en datos viejos o para auditoría.
    */
   representative_name_snapshot?: string;
+  /** SUNAT / apisunat tras emisión o anulación: ACEPTADO | PENDIENTE | RECHAZADO (mayúsculas al guardar desde API). */
   sunat_estado?: string | null;
   /** ISO si se anuló vía apisunat (comunicación de baja / resumen diario). */
   voided_at?: string;

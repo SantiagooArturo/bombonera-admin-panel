@@ -70,6 +70,13 @@ function isDuplicateError(message?: string): boolean {
   return !!message?.toLowerCase().includes("fue emitido anteriormente");
 }
 
+/** Estado del CPE en respuesta apisunat: ACEPTADO | PENDIENTE | RECHAZADO. */
+function normalizeSunatEstadoFromPayload(raw: unknown): string | null {
+  if (typeof raw !== "string") return null;
+  const t = raw.trim();
+  return t.length > 0 ? t.toUpperCase() : null;
+}
+
 /** Lee el siguiente correlativo sin consumirlo (solo lectura). */
 async function peekNextCorrelativo(
   db: FirebaseFirestore.Firestore,
@@ -513,6 +520,7 @@ export async function POST(request: NextRequest) {
 
     const payload = (emitData.payload || {}) as Record<string, unknown>;
     const pdfPayload = (payload.pdf || {}) as Record<string, string>;
+    const sunatEstadoNorm = normalizeSunatEstadoFromPayload(payload.estado);
 
     const serieCorrelativo = `${serieSunat}-${correlativo}`;
     /** En panel no guardamos "0" cuando SUNAT va sin documento del cliente (boleta con total menor a S/ 700). */
@@ -550,7 +558,7 @@ export async function POST(request: NextRequest) {
       correlativo,
       serie_correlativo: serieCorrelativo,
       sunat_hash: (payload.hash as string) || null,
-      sunat_estado: (payload.estado as string) || null,
+      sunat_estado: sunatEstadoNorm,
       sunat_xml: (payload.xml as string) || null,
       sunat_cdr: (payload.cdr as string) || null,
       sunat_pdf_ticket: pdfTicketUrl,
@@ -738,7 +746,7 @@ export async function POST(request: NextRequest) {
       file_url_sunat: fileUrlSunat,
       file_url_xml: fileUrlXmlStored || "",
       serie_correlativo: serieCorrelativo,
-      sunat_estado: payload.estado,
+      sunat_estado: sunatEstadoNorm,
       cliente_denominacion: clienteName,
       cliente_numero_de_documento: persistClienteNum,
       cliente_tipo_documento: clienteTipoDocSunat,
