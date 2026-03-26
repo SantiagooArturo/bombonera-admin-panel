@@ -17,6 +17,7 @@ import {
   invoiceTelefonoDisplay,
 } from "../utils/invoiceTableColumns";
 import { fetchAllInvoices } from "../services/fetchInvoices";
+import { syncPendingInvoiceStatuses } from "../services/syncPendingInvoiceStatuses";
 import { voidSunatInvoice } from "../services/voidSunatInvoice";
 import { EmitComprobanteModal } from "./EmitComprobanteModal";
 import { invoicePlantillaPdfHref } from "../utils/invoicePdfLinks";
@@ -25,17 +26,68 @@ import { invoiceMatchesSearch } from "../utils/invoiceMatchesSearch";
 import { BoletasDevCounterPanel } from "./BoletasDevCounterPanel";
 import { BoletasMobileList } from "./BoletasMobileList";
 import { IconOpenInNewTab, SerieCorrelativoCell } from "./boletasSharedUi";
-import { isSunatEstadoRechazado } from "../utils/sunatEstadoUi";
 import { ExportExcelModal } from "./ExportExcelModal";
 import type { ExportInvoiceKind } from "../utils/exportInvoicesExcel";
 
 type ComprobanteTab = "todos" | "boletas" | "facturas";
+type InvoiceStatusFilter = "all" | "aprobado" | "pendiente" | "anulado" | "rechazado";
+type DateRangeFilter = "historico" | "mes_actual" | "ultimos_30_dias";
+
+function getInvoiceUiStatus(inv: Invoice): Exclude<InvoiceStatusFilter, "all"> {
+  const invStatus = String(inv.status || "").trim().toLowerCase();
+  if (invStatus === "voided") return "anulado";
+  const st = String(inv.sunat_estado || "").trim().toUpperCase();
+  if (st === "ACEPTADO") return "aprobado";
+  if (st === "PENDIENTE" || st === "ANULANDO") return "pendiente";
+  return "rechazado";
+}
+
+function getSunatBadgeMeta(inv: Invoice): {
+  label: string;
+  className: string;
+  tone: "green" | "yellow" | "red" | "gray";
+} {
+  const invStatus = String(inv.status || "").trim().toLowerCase();
+  if (invStatus === "voided") {
+    return {
+      label: "Anulado",
+      className:
+        "w-fit rounded bg-gray-200 px-2 py-1 text-[10px] font-bold uppercase tracking-wide text-gray-800 xl:text-xs whitespace-nowrap",
+      tone: "gray",
+    };
+  }
+  const st = String(inv.sunat_estado || "").trim().toUpperCase();
+  if (st === "ACEPTADO") {
+    return {
+      label: "Aprobado SUNAT",
+      className:
+        "w-fit rounded bg-emerald-100 px-2 py-1 text-[10px] font-bold uppercase tracking-wide text-emerald-800 xl:text-xs whitespace-nowrap",
+      tone: "green",
+    };
+  }
+  if (st === "PENDIENTE" || st === "ANULANDO") {
+    return {
+      label: "Pendiente SUNAT",
+      className:
+        "w-fit rounded bg-amber-100 px-2 py-1 text-[10px] font-bold uppercase tracking-wide text-amber-800 xl:text-xs whitespace-nowrap",
+      tone: "yellow",
+    };
+  }
+  return {
+    label: "No aprobado",
+    className:
+      "w-fit rounded bg-red-200 px-2 py-1 text-[10px] font-bold uppercase tracking-wide text-red-900 xl:text-xs whitespace-nowrap",
+    tone: "red",
+  };
+}
 
 export function BoletasPage() {
   const store = useStore();
   const toast = useToastContext();
   const searchParams = useSearchParams();
-  const [tab, setTab] = useState<ComprobanteTab>("todos");
+  const [tipoFilter, setTipoFilter] = useState<ComprobanteTab>("todos");
+  const [statusFilter, setStatusFilter] = useState<InvoiceStatusFilter>("all");
+  const [dateRangeFilter, setDateRangeFilter] = useState<DateRangeFilter>("historico");
   const [invoices, setInvoices] = useState<Invoice[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -47,6 +99,7 @@ export function BoletasPage() {
   const [searchQuery, setSearchQuery] = useState(() => searchParams.get("search")?.trim() ?? "");
   /** Evita depender de `didStart` tras setState (Strict Mode / batching puede dejar la petición sin ejecutar). */
   const wspSendInFlightRef = useRef<Set<string>>(new Set());
+  const didSyncPendingRef = useRef(false);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -66,22 +119,80 @@ export function BoletasPage() {
     void load();
   }, [load]);
 
+  useEffect(() => {
+    if (didSyncPendingRef.current) return;
+    didSyncPendingRef.current = true;
+    void (async () => {
+      try {
+        const result = await syncPendingInvoiceStatuses();
+        if (result.updated > 0) {
+          await load();
+        }
+      } catch (e) {
+        console.warn("[Boletas] No se pudo sincronizar estados pendientes:", e);
+      }
+    })();
+  }, [load]);
+
+  useEffect(() => {
+    if (loading) return;
+    const counts = invoices.reduce(
+      (acc, inv) => {
+        const st = String(inv.sunat_estado || "").trim().toUpperCase();
+        if (!st) {
+          acc.sinCampo += 1;
+        } else if (st === "ACEPTADO") {
+          acc.aprobadas += 1;
+        } else if (st === "RECHAZADO") {
+          acc.rechazadas += 1;
+        } else if (st === "PENDIENTE" || st === "ANULANDO") {
+          acc.pendientes += 1;
+        } else {
+          acc.sinCampo += 1;
+        }
+        return acc;
+      },
+      { aprobadas: 0, rechazadas: 0, pendientes: 0, sinCampo: 0 }
+    );
+
+    console.log(
+      `[Boletas][SUNAT] aprobadas=${counts.aprobadas} rechazadas=${counts.rechazadas} pendientes=${counts.pendientes} sin_campo=${counts.sinCampo}`
+    );
+  }, [invoices, loading]);
+
   const searchedInvoices = useMemo(
     () => invoices.filter((inv) => invoiceMatchesSearch(inv, searchQuery)),
     [invoices, searchQuery]
   );
 
   const rows = useMemo(() => {
-    if (tab === "todos") return searchedInvoices;
-    if (tab === "facturas") return searchedInvoices.filter((i) => i.tipo_comprobante === "factura");
-    return searchedInvoices.filter((i) => i.tipo_comprobante !== "factura");
-  }, [searchedInvoices, tab]);
+    const now = new Date();
+    const startToday = new Date(now);
+    startToday.setHours(0, 0, 0, 0);
+    const startRange = new Date(startToday);
+    if (dateRangeFilter === "mes_actual") {
+      startRange.setDate(1);
+    } else if (dateRangeFilter === "ultimos_30_dias") {
+      startRange.setDate(startRange.getDate() - 29);
+    }
 
-  const counts = useMemo(() => {
-    const facturas = searchedInvoices.filter((i) => i.tipo_comprobante === "factura").length;
-    const boletas = searchedInvoices.length - facturas;
-    return { todos: searchedInvoices.length, boletas, facturas };
-  }, [searchedInvoices]);
+    return searchedInvoices.filter((inv) => {
+      if (tipoFilter === "facturas" && inv.tipo_comprobante !== "factura") return false;
+      if (tipoFilter === "boletas" && inv.tipo_comprobante === "factura") return false;
+
+      if (statusFilter !== "all" && getInvoiceUiStatus(inv) !== statusFilter) return false;
+
+      if (dateRangeFilter !== "historico") {
+        const dRaw = String(inv.fecha_emision_ymd || inv.created_at || "").trim();
+        const d = dRaw ? new Date(dRaw.length === 10 ? `${dRaw}T12:00:00` : dRaw) : null;
+        if (!d || Number.isNaN(d.getTime())) return false;
+        d.setHours(0, 0, 0, 0);
+        if (d < startRange || d > startToday) return false;
+      }
+
+      return true;
+    });
+  }, [searchedInvoices, tipoFilter, statusFilter, dateRangeFilter]);
 
   const sendWsp = useCallback(async (inv: Invoice) => {
     const id = inv.id;
@@ -175,22 +286,7 @@ export function BoletasPage() {
     [toast, load]
   );
 
-  const tabBtn = (id: ComprobanteTab, label: string, count: number) => (
-    <button
-      type="button"
-      role="tab"
-      aria-selected={tab === id}
-      onClick={() => setTab(id)}
-      className={`flex-1 rounded-md px-2 py-3 text-sm font-bold transition-colors sm:px-3 ${
-        tab === id ? "bg-white text-gray-900 shadow-sm" : "text-gray-600 hover:text-gray-900"
-      }`}
-    >
-      {label}
-      <span className="pl-4 tabular-nums text-xs font-semibold opacity-70">({count})</span>
-    </button>
-  );
-
-  const excelDefaultKind: ExportInvoiceKind = tab === "facturas" ? "factura" : "boleta";
+  const excelDefaultKind: ExportInvoiceKind = tipoFilter === "facturas" ? "factura" : "boleta";
 
   return (
     <div className="mx-auto w-full max-w-[min(100%,120rem)] px-3 py-8 sm:px-4 md:px-5 lg:px-6 xl:px-8 2xl:px-10">
@@ -258,12 +354,45 @@ export function BoletasPage() {
         />
       </div>
 
-      <div className="mb-6 rounded-xl border border-gray-200 bg-gray-100 p-1 shadow-sm">
-        <div className="flex gap-1" role="tablist" aria-label="Tipo de comprobante">
-          {tabBtn("todos", "Todos", counts.todos)}
-          {tabBtn("boletas", "Boletas", counts.boletas)}
-          {tabBtn("facturas", "Facturas", counts.facturas)}
-        </div>
+      <div className="mb-6 grid grid-cols-1 gap-3 rounded-xl border border-gray-200 bg-white p-4 shadow-sm md:grid-cols-3">
+        <label className="flex flex-col gap-1">
+          <span className="text-xs font-semibold uppercase tracking-wide text-gray-500">Tipo (Boleta o factura)</span>
+          <select
+            value={tipoFilter}
+            onChange={(e) => setTipoFilter(e.target.value as ComprobanteTab)}
+            className="h-10 rounded-lg border border-gray-300 bg-white px-3 text-sm text-gray-900 focus:border-field-dark focus:outline-none focus:ring-1 focus:ring-field-dark/25"
+          >
+            <option value="todos">Todos</option>
+            <option value="boletas">Boletas</option>
+            <option value="facturas">Facturas</option>
+          </select>
+        </label>
+        <label className="flex flex-col gap-1">
+          <span className="text-xs font-semibold uppercase tracking-wide text-gray-500">Estado SUNAT</span>
+          <select
+            value={statusFilter}
+            onChange={(e) => setStatusFilter(e.target.value as InvoiceStatusFilter)}
+            className="h-10 rounded-lg border border-gray-300 bg-white px-3 text-sm text-gray-900 focus:border-field-dark focus:outline-none focus:ring-1 focus:ring-field-dark/25"
+          >
+            <option value="all">Todos</option>
+            <option value="aprobado">Aprobado</option>
+            <option value="rechazado">Rechazado</option>
+            <option value="pendiente">Pendiente</option>
+            <option value="anulado">Anulado</option>
+          </select>
+        </label>
+        <label className="flex flex-col gap-1">
+          <span className="text-xs font-semibold uppercase tracking-wide text-gray-500">Rango</span>
+          <select
+            value={dateRangeFilter}
+            onChange={(e) => setDateRangeFilter(e.target.value as DateRangeFilter)}
+            className="h-10 rounded-lg border border-gray-300 bg-white px-3 text-sm text-gray-900 focus:border-field-dark focus:outline-none focus:ring-1 focus:ring-field-dark/25"
+          >
+            <option value="historico">Histórico</option>
+            <option value="mes_actual">Mes actual</option>
+            <option value="ultimos_30_dias">Últimos 30 días</option>
+          </select>
+        </label>
       </div>
 
       {error ? (
@@ -287,7 +416,7 @@ export function BoletasPage() {
         <div className="overflow-x-auto">
           <table className="w-full min-w-[min(100%,64rem)] table-fixed border-collapse text-sm lg:min-w-0">
             <colgroup>
-              <col className="w-[9%]" />
+              <col style={{ width: "9.5rem" }} />
               <col className="w-[11%]" />
               <col />
               <col style={{ width: "5.75rem" }} />
@@ -357,28 +486,24 @@ export function BoletasPage() {
                     (invSt === "" && Boolean(String(inv.serie_correlativo || "").trim()));
                   const canVoidRow = emittedLike && Boolean(String(inv.serie_correlativo || "").trim());
                   const isVoidedRow = invSt === "voided";
-                  const sunatRechazado = isSunatEstadoRechazado(inv.sunat_estado);
+                  const sunatBadge = getSunatBadgeMeta(inv);
                   const recText = invoiceReceptorOnly(inv) || "—";
                   const descText = invoiceDescripcionOnly(inv) || "—";
                   return (
                     <tr
                       key={inv.id}
                       className={
-                        sunatRechazado
+                        sunatBadge.tone === "red"
                           ? "bg-red-50"
                           : idx % 2 === 0
                             ? "bg-white"
                             : "bg-gray-50/60"
                       }
                     >
-                      <td className="border-t border-gray-100 px-2 py-5 align-top font-mono text-xs text-gray-900 lg:px-3 xl:px-3.5 xl:text-sm">
-                        <div className="flex flex-col gap-0.5">
+                      <td className="border-t border-gray-100 px-2 py-5 align-top font-mono text-xs text-gray-900 lg:px-2.5 xl:px-3 xl:text-sm">
+                        <div className="flex flex-col items-center gap-1 text-center">
                           <SerieCorrelativoCell value={inv.serie_correlativo} />
-                          {sunatRechazado ? (
-                            <span className="w-fit rounded bg-red-200 px-2 py-1 text-[10px] font-bold uppercase tracking-wide text-red-900 xl:text-xs">
-                              Rechazado SUNAT
-                            </span>
-                          ) : null}
+                          <span className={sunatBadge.className}>{sunatBadge.label}</span>
                           {isFactura ? (
                             <span className="w-fit rounded bg-violet-100 px-2 py-1 text-[10px] font-semibold leading-none text-violet-800 xl:text-xs">
                               Factura
