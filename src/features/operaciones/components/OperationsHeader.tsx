@@ -8,7 +8,7 @@ type OperationsHeaderProps = {
   minDayOffset?: number;
   minSelectableDateISO?: string;
   maxSelectableDateISO?: string;
-  maxDayOffset: number;
+  maxDayOffset?: number;
   onPrevDay: () => void;
   onNextDay: () => void;
   onGoToday: () => void;
@@ -34,6 +34,7 @@ export default function OperationsHeader({
   showSendButton = true,
 }: OperationsHeaderProps) {
   const prevDisabled = typeof minDayOffset === "number" ? dayOffset <= minDayOffset : false;
+  const nextDisabled = typeof maxDayOffset === "number" ? dayOffset >= maxDayOffset : false;
   return (
     <div className="mb-2 shrink-0">
       <div className="flex flex-wrap items-center justify-between gap-2">
@@ -53,7 +54,7 @@ export default function OperationsHeader({
           </span>
           <button
             onClick={onNextDay}
-            disabled={dayOffset >= maxDayOffset}
+            disabled={nextDisabled}
             className="p-2 rounded-lg border border-gray-200 hover:bg-gray-100 disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
             aria-label="Día siguiente"
           >

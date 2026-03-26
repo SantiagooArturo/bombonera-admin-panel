@@ -14,6 +14,7 @@ import OperationsHeader from "@/features/operaciones/components/OperationsHeader
 import SlotActionModal from "@/features/operaciones/components/SlotActionModal";
 import UnblockModal from "@/features/operaciones/components/UnblockModal";
 import SendAvailabilityModal from "@/features/operaciones/components/SendAvailabilityModal";
+import { printAvailabilitySheet } from "@/features/operaciones/utils/printAvailabilitySheet";
 import {
   BLOCK_REASONS,
   FIELD_TO_COURT_TYPE,
@@ -101,7 +102,6 @@ export default function OperacionesPage() {
 
   const selectedDate = useMemo(() => formatDateISO(getDateWithOffset(dayOffset)), [dayOffset]);
   const todayDate = useMemo(() => formatDateISO(new Date()), []);
-  const maxSelectableDate = useMemo(() => formatDateISO(getDateWithOffset(MAX_DAY_OFFSET)), []);
   const minDayOffset = useMemo(() => {
     const today = new Date();
     today.setHours(0, 0, 0, 0);
@@ -184,7 +184,7 @@ export default function OperacionesPage() {
       if (e.key === "ArrowLeft") {
         setDayOffset((prev) => Math.max(minDayOffset, prev - 1));
       } else if (e.key === "ArrowRight") {
-        setDayOffset((prev) => Math.min(MAX_DAY_OFFSET, prev + 1));
+        setDayOffset((prev) => prev + 1);
       }
     }
 
@@ -456,6 +456,16 @@ export default function OperacionesPage() {
     }
   }
 
+  function handlePrintAvailability() {
+    const ok = printAvailabilitySheet({
+      date: selectedDate,
+      reservations,
+    });
+    if (!ok) {
+      toast("No se pudo abrir la vista de impresión. Revisa si tu navegador bloqueó la ventana emergente.", "error");
+    }
+  }
+
   function openSendAvailabilityModal() {
     setAvailabilityPhone("");
     setAvailabilityDates([todayDate]);
@@ -476,12 +486,22 @@ export default function OperacionesPage() {
 
   return (
     <ClientLayout>
-      <button
-        onClick={openSendAvailabilityModal}
-        className="fixed top-3 right-3 md:top-4 md:right-4 z-30 px-3 md:px-4 py-2 rounded-xl bg-emerald-600 text-white font-semibold text-sm hover:bg-emerald-700 shadow-lg transition-colors whitespace-nowrap"
-      >
-        Enviar disponibilidad
-      </button>
+      <div className="fixed top-3 right-3 md:top-4 md:right-4 z-30 flex items-center gap-2">
+        <button
+          onClick={handlePrintAvailability}
+          disabled={loading}
+          className="px-3 md:px-4 py-2 rounded-xl bg-white border border-gray-300 text-gray-800 font-semibold text-sm hover:bg-gray-50 shadow-lg transition-colors whitespace-nowrap disabled:opacity-50 disabled:cursor-not-allowed"
+        >
+          Imprimir disponibilidad
+        </button>
+        <button
+          onClick={openSendAvailabilityModal}
+          disabled={loading}
+          className="px-3 md:px-4 py-2 rounded-xl bg-emerald-600 text-white font-semibold text-sm hover:bg-emerald-700 shadow-lg transition-colors whitespace-nowrap disabled:opacity-50 disabled:cursor-not-allowed"
+        >
+          Enviar disponibilidad
+        </button>
+      </div>
       <div className="-mb-24 md:-mb-8 px-2 md:px-3 py-2 h-[calc(100dvh-12px)] flex flex-col">
         <OperationsHeader
           dayOffset={dayOffset}
@@ -490,10 +510,8 @@ export default function OperacionesPage() {
           isToday={isToday}
           minDayOffset={minDayOffset}
           minSelectableDateISO={MIN_OPERATIONS_DATE}
-          maxDayOffset={MAX_DAY_OFFSET}
-          maxSelectableDateISO={maxSelectableDate}
           onPrevDay={() => setDayOffset((prev) => Math.max(minDayOffset, prev - 1))}
-          onNextDay={() => setDayOffset((prev) => Math.min(MAX_DAY_OFFSET, prev + 1))}
+          onNextDay={() => setDayOffset((prev) => prev + 1)}
           onGoToday={() => setDayOffset(0)}
           onPickDate={(dateISO) => {
             if (!dateISO) return;
@@ -504,7 +522,7 @@ export default function OperacionesPage() {
             picked.setHours(0, 0, 0, 0);
             const diffMs = picked.getTime() - today.getTime();
             const offset = Math.round(diffMs / (24 * 60 * 60 * 1000));
-            const clamped = Math.max(minDayOffset, Math.min(MAX_DAY_OFFSET, offset));
+            const clamped = Math.max(minDayOffset, offset);
             setDayOffset(clamped);
           }}
           onOpenSendAvailability={openSendAvailabilityModal}
