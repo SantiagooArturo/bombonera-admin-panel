@@ -16,7 +16,7 @@ function currentMonthYmdPrefix(): string {
 }
 
 function monthLabelEs(month: string): string {
-  const [y, m] = month.split("-");
+  const [y] = month.split("-");
   const d = new Date(`${month}-01T12:00:00`);
   const monthName = d.toLocaleDateString("es-PE", { month: "long" });
   return `${monthName} ${y}`;
@@ -64,7 +64,7 @@ export function ExportExcelModal({
         months.add(`${y}-${m}`);
       }
     }
-    return [...months].sort((a, b) => (a > b ? -1 : 1));
+    return Array.from(months).sort((a, b) => (a > b ? -1 : 1));
   }, [invoices]);
 
   if (!open) return null;

@@ -132,14 +132,22 @@ export async function exportInvoicesExcel(params: {
 
   const XLSX = await import("xlsx");
   const wb = XLSX.utils.book_new();
-  const publicRows = rows.map(({ _date: _omit, ...r }) => r);
+  const publicRows = rows.map((row) => {
+    const copy = { ...row };
+    delete copy._date;
+    return copy;
+  });
   const wsAll = XLSX.utils.json_to_sheet(publicRows);
   XLSX.utils.book_append_sheet(wb, wsAll, "Todos");
 
   for (const wd of WEEKDAY_SHEETS) {
     const dayRows = rows
       .filter((r) => r._date && r._date.getDay() === wd.jsDay)
-      .map(({ _date: _omit, ...rest }) => rest);
+      .map((row) => {
+        const copy = { ...row };
+        delete copy._date;
+        return copy;
+      });
     const wsDay = XLSX.utils.json_to_sheet(dayRows);
     XLSX.utils.book_append_sheet(wb, wsDay, wd.name);
   }
