@@ -16,6 +16,18 @@ type ExportRow = {
   Estado: "Anulado" | "Vigente";
 };
 
+function toPublicRow(row: ExportRow & { _date: Date | null }): ExportRow {
+  return {
+    Fecha: row.Fecha,
+    "Prefijo/Serie": row["Prefijo/Serie"],
+    Codigo: row.Codigo,
+    "DNI/RUC cliente": row["DNI/RUC cliente"],
+    "Nombre cliente": row["Nombre cliente"],
+    Monto: row.Monto,
+    Estado: row.Estado,
+  };
+}
+
 const WEEKDAY_SHEETS: Array<{ name: string; jsDay: number }> = [
   { name: "Lunes", jsDay: 1 },
   { name: "Martes", jsDay: 2 },
@@ -132,22 +144,14 @@ export async function exportInvoicesExcel(params: {
 
   const XLSX = await import("xlsx");
   const wb = XLSX.utils.book_new();
-  const publicRows = rows.map((row) => {
-    const copy = { ...row };
-    delete copy._date;
-    return copy;
-  });
+  const publicRows = rows.map(toPublicRow);
   const wsAll = XLSX.utils.json_to_sheet(publicRows);
   XLSX.utils.book_append_sheet(wb, wsAll, "Todos");
 
   for (const wd of WEEKDAY_SHEETS) {
     const dayRows = rows
       .filter((r) => r._date && r._date.getDay() === wd.jsDay)
-      .map((row) => {
-        const copy = { ...row };
-        delete copy._date;
-        return copy;
-      });
+      .map(toPublicRow);
     const wsDay = XLSX.utils.json_to_sheet(dayRows);
     XLSX.utils.book_append_sheet(wb, wsDay, wd.name);
   }
