@@ -118,7 +118,7 @@ export const EmitComprobanteModal = memo(function EmitComprobanteModal(props: Em
 
   /** Vincular factura/boleta misc en Firestore a un usuario del panel (opcional). */
   const [panelLinkPhoneNorm, setPanelLinkPhoneNorm] = useState("");
-  /** Texto del buscador de cliente (independiente del número vinculado). */
+  /** Texto del buscador de contacto WhatsApp (independiente del número vinculado). */
   const [clienteDirectoryInput, setClienteDirectoryInput] = useState("");
 
   const [docType, setDocType] = useState<"boleta" | "factura">("boleta");
@@ -731,6 +731,20 @@ export const EmitComprobanteModal = memo(function EmitComprobanteModal(props: Em
                 />
               ) : null}
 
+              <div
+                className="flex flex-col gap-2 pt-1"
+                role="group"
+                aria-label="Datos del comprobante electrónico"
+              >
+                <div className="flex items-center gap-3">
+                  <span className="h-px min-w-[1rem] flex-1 bg-gray-200" aria-hidden />
+                  <span className="shrink-0 text-center text-[11px] font-semibold uppercase tracking-wide text-gray-500">
+                    Datos del comprobante
+                  </span>
+                  <span className="h-px min-w-[1rem] flex-1 bg-gray-200" aria-hidden />
+                </div>
+              </div>
+
               <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
             <div>
               <label htmlFor="emit-fecha" className={labelClass}>
@@ -856,7 +870,7 @@ export const EmitComprobanteModal = memo(function EmitComprobanteModal(props: Em
 
           <div>
             <label htmlFor="emit-nombre-cpe" className={labelClass}>
-              Nombre en el comprobante
+              Nombre del cliente
             </label>
             <input
               id="emit-nombre-cpe"

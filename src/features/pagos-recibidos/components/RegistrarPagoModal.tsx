@@ -185,7 +185,6 @@ export const RegistrarPagoModal = memo(function RegistrarPagoModal({ onClose, on
         <div className="mt-4 space-y-4">
           {flowStep === 1 ? (
             <>
-              <p className={labelClass}>Cliente</p>
               <EmitClienteDirectoryField
                 linkedPhoneNorm={phoneNorm}
                 onLinkedPhoneChange={setPhoneNorm}

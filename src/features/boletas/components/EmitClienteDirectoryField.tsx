@@ -36,12 +36,12 @@ type EmitClienteDirectoryFieldProps = {
 };
 
 /**
- * Buscador de cliente del directorio para emitir comprobante.
+ * Buscador de contacto (WhatsApp) del directorio para emitir comprobante o registrar pago.
  * El teléfono vinculado solo cambia al elegir de la lista, al vaciar el campo o al escribir un número válido solo-números.
  * Editar el texto con letras no borra el vínculo previo.
  */
 export function EmitClienteDirectoryField({
-  label = "Cliente",
+  label = "Contacto de WhatsApp",
   linkedPhoneNorm,
   onLinkedPhoneChange,
   inputText,
