@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getDb } from "@/lib/firebase-admin";
+import { FieldValue } from "firebase-admin/firestore";
 import { parseSerieCorrelativoSunat } from "@/features/boletas/utils/parseSerieCorrelativoSunat";
 import { apisunatApiBaseFromDocumentsUrl } from "@/features/boletas/utils/apisunatBaseUrl";
 
@@ -142,10 +143,61 @@ export async function POST(request: NextRequest) {
       sunat_estado: estado,
     });
 
+    // Regla negocio: al anular, eliminar el pago vinculado solo si no tiene imagen de comprobante.
+    // (efectivo o digital sin evidencia subida)
+    let removedTransfer = false;
+    const transferId =
+      typeof inv.transfer_id === "string" ? inv.transfer_id.trim() : "";
+    if (transferId) {
+      try {
+        const transferRef = db.collection("transfers").doc(transferId);
+        const transferSnap = await transferRef.get();
+        if (transferSnap.exists) {
+          const transferData = transferSnap.data() || {};
+          const mediaUrl = String(transferData.media_url || "").trim();
+          if (!mediaUrl) {
+            const amountToRefund = Number(transferData.amount || 0);
+            const reservationId =
+              transferData.reservation_id != null && String(transferData.reservation_id).trim()
+                ? String(transferData.reservation_id).trim()
+                : null;
+
+            await transferRef.delete();
+            removedTransfer = true;
+
+            if (reservationId && amountToRefund > 0) {
+              const resRef = db.collection("reservations").doc(reservationId);
+              await db.runTransaction(async (t) => {
+                const resDoc = await t.get(resRef);
+                if (!resDoc.exists) return;
+                const resData = resDoc.data() || {};
+                const currentAmountPaid = Number(resData.amount_paid || 0);
+                const newAmountPaid = Math.max(0, currentAmountPaid - amountToRefund);
+                const patch: Record<string, unknown> = { amount_paid: newAmountPaid };
+                if (resData.status === "pending" && newAmountPaid > 0) {
+                  patch.status = "confirmed";
+                }
+                if (newAmountPaid === 0) {
+                  patch.confirmed = resData.status === "confirmed";
+                  if (resData.status !== "confirmed") {
+                    patch.confirmed_at = FieldValue.delete();
+                  }
+                }
+                t.update(resRef, patch);
+              });
+            }
+          }
+        }
+      } catch (cleanupError) {
+        console.warn("void invoice: no se pudo limpiar pago vinculado", cleanupError);
+      }
+    }
+
     return NextResponse.json({
       success: true,
       message: typeof data.message === "string" ? data.message : undefined,
       sunat_estado: estado,
+      removed_transfer: removedTransfer,
     });
   } catch (e) {
     console.error("void invoice:", e);

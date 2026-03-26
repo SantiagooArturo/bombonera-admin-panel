@@ -49,7 +49,12 @@ export async function GET() {
       };
     });
 
-    return NextResponse.json(list);
+    return NextResponse.json(list, {
+      headers: {
+        // Edge cache corto para listar usuarios sin golpear Firestore en cada navegación.
+        "Cache-Control": "public, s-maxage=30, stale-while-revalidate=300",
+      },
+    });
   } catch (error) {
     console.error("Error fetching users:", error);
     return NextResponse.json(

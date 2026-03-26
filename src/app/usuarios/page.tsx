@@ -108,7 +108,9 @@ function SortHeader({
   className?: string;
 }) {
   return (
-    <th className={`p-6 text-gray-600 font-bold text-lg ${className}`}>
+    <th
+      className={`px-4 py-4 text-left text-xs font-bold uppercase tracking-wide text-gray-600 lg:px-5 ${className}`}
+    >
       <span className="inline-flex items-center justify-center gap-1">
         {label}
         <button
@@ -139,8 +141,9 @@ function UsuariosContent() {
   const searchParams = useSearchParams();
   const users = store.getUsers();
   const loaded = store.isLoaded("users");
-  const [sortBy, setSortBy] = useState<SortKey | null>(null);
-  const [sortDir, setSortDir] = useState<SortDir>("asc");
+  const [sortBy, setSortBy] = useState<SortKey | null>("reservation_count");
+  const [sortDir, setSortDir] = useState<SortDir>("desc");
+  const [devMode, setDevMode] = useState(false);
   const [togglingId, setTogglingId] = useState<string | null>(null);
   const [updatingClientType, setUpdatingClientType] = useState<string | null>(null);
   const [editingNameId, setEditingNameId] = useState<string | null>(null);
@@ -162,8 +165,30 @@ function UsuariosContent() {
     label: string;
   } | null>(null);
   useEffect(() => {
-    store.fetchUsers();
-  }, [store]);
+    const readDevMode = () => {
+      try {
+        const raw = window.localStorage.getItem("devMode");
+        setDevMode(raw === "true" || raw === "1");
+      } catch {
+        setDevMode(false);
+      }
+    };
+    readDevMode();
+    window.addEventListener("storage", readDevMode);
+    return () => window.removeEventListener("storage", readDevMode);
+  }, []);
+
+  useEffect(() => {
+    if (!loaded) {
+      void store.fetchUsers();
+      return;
+    }
+    // SWR simple: muestra lista ya cargada y refresca en segundo plano.
+    const refreshId = window.setTimeout(() => {
+      void store.fetchUsers();
+    }, 0);
+    return () => window.clearTimeout(refreshId);
+  }, [store, loaded]);
 
   useEffect(() => {
     fetch("/api/settings")
@@ -209,8 +234,8 @@ function UsuariosContent() {
       setSortDir((d) => (d === "asc" ? "desc" : "asc"));
     } else {
       setSortBy(key);
-      /** Bot: primer clic = activados primero (desc). */
-      setSortDir(key === "bot" ? "desc" : "asc");
+      /** Bot y reservas: primer clic descendente. */
+      setSortDir(key === "bot" || key === "reservation_count" ? "desc" : "asc");
     }
   };
 
@@ -309,10 +334,6 @@ function UsuariosContent() {
     if (filterClientType !== "all") list = list.filter((u) => u.client_type === filterClientType);
 
     list = [...list].sort((a, b) => {
-      const ha = needsAttention(a) ? 0 : 1;
-      const hb = needsAttention(b) ? 0 : 1;
-      if (ha !== hb) return ha - hb;
-
       if (!sortBy) return 0;
       let cmp = 0;
       if (sortBy === "reservation_count") {
@@ -324,10 +345,16 @@ function UsuariosContent() {
         const sb = userBotActivated(b) ? 1 : 0;
         cmp = sa - sb;
       }
-      return sortDir === "asc" ? cmp : -cmp;
+      if (cmp !== 0) return sortDir === "asc" ? cmp : -cmp;
+      const ha = needsAttention(a) ? 0 : 1;
+      const hb = needsAttention(b) ? 0 : 1;
+      if (ha !== hb) return ha - hb;
+      return 0;
     });
     return list;
   }, [filteredUsers, sortBy, sortDir, filterNeedsHelp, filterClientType]);
+
+  const tableColSpan = devMode ? 7 : 6;
 
   return (
     <ClientLayout>
@@ -340,24 +367,26 @@ function UsuariosContent() {
           </p>
         </div>
           <div className="flex flex-wrap items-center gap-2">
-            <button
-              type="button"
-              onClick={() => void handleDeactivateAllBots()}
-              disabled={bulkBotDeactivating || !loaded}
-              className="inline-flex items-center gap-2 px-4 py-3 font-semibold rounded-xl border-2 border-amber-300 bg-amber-50 text-amber-900 hover:bg-amber-100 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-            >
-              {bulkBotDeactivating ? (
-                <svg className="w-5 h-5 animate-spin" fill="none" viewBox="0 0 24 24" aria-hidden>
-                  <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
-                  <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
-                </svg>
-              ) : (
-                <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" aria-hidden>
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M18.364 18.364A9 9 0 005.636 5.636m12.728 12.728A9 9 0 015.636 5.636m12.728 12.728L5.636 5.636" />
-                </svg>
-              )}
-              Desactivar para todos
-            </button>
+            {devMode ? (
+              <button
+                type="button"
+                onClick={() => void handleDeactivateAllBots()}
+                disabled={bulkBotDeactivating || !loaded}
+                className="inline-flex items-center gap-2 px-4 py-3 font-semibold rounded-xl border-2 border-amber-300 bg-amber-50 text-amber-900 hover:bg-amber-100 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                {bulkBotDeactivating ? (
+                  <svg className="w-5 h-5 animate-spin" fill="none" viewBox="0 0 24 24" aria-hidden>
+                    <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                    <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
+                  </svg>
+                ) : (
+                  <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" aria-hidden>
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M18.364 18.364A9 9 0 005.636 5.636m12.728 12.728A9 9 0 015.636 5.636m12.728 12.728L5.636 5.636" />
+                  </svg>
+                )}
+                Desactivar para todos
+              </button>
+            ) : null}
             <button
               type="button"
               onClick={() => setAddUserOpen(true)}
@@ -372,38 +401,40 @@ function UsuariosContent() {
         </div>
 
         {/* Switch recordatorio recurrentes */}
-        <div className="mb-6 flex items-center justify-between gap-4 p-4 rounded-xl border-2 border-gray-200 bg-white">
-          <div>
-            <p className="font-semibold text-gray-900">Recordatorio a clientes recurrentes</p>
-            <p className="text-sm text-gray-500 mt-0.5">
-              Si está desactivado, no se envían recordatorios a clientes recurrentes (solo a quienes tienen bot activado).
-            </p>
-          </div>
-          <button
-            type="button"
-            role="switch"
-            aria-checked={recurrentReminderEnabled ?? false}
-            disabled={recurrentReminderLoading || recurrentReminderEnabled === null}
-            onClick={handleToggleRecurrentReminder}
-            className={`relative inline-flex h-7 w-12 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors focus:outline-none focus:ring-2 focus:ring-bombonera-500 focus:ring-offset-2 disabled:opacity-50 disabled:cursor-not-allowed ${
-              recurrentReminderEnabled === null
-                ? "bg-gray-300"
-                : recurrentReminderEnabled
-                  ? "bg-bombonera-600"
-                  : "bg-gray-200"
-            }`}
-          >
-            <span
-              className={`pointer-events-none inline-block h-6 w-6 transform rounded-full bg-white shadow ring-0 transition ${
+        {devMode ? (
+          <div className="mb-6 flex items-center justify-between gap-4 p-4 rounded-xl border-2 border-gray-200 bg-white">
+            <div>
+              <p className="font-semibold text-gray-900">Recordatorio a clientes recurrentes</p>
+              <p className="text-sm text-gray-500 mt-0.5">
+                Si está desactivado, no se envían recordatorios a clientes recurrentes (solo a quienes tienen bot activado).
+              </p>
+            </div>
+            <button
+              type="button"
+              role="switch"
+              aria-checked={recurrentReminderEnabled ?? false}
+              disabled={recurrentReminderLoading || recurrentReminderEnabled === null}
+              onClick={handleToggleRecurrentReminder}
+              className={`relative inline-flex h-7 w-12 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors focus:outline-none focus:ring-2 focus:ring-bombonera-500 focus:ring-offset-2 disabled:opacity-50 disabled:cursor-not-allowed ${
                 recurrentReminderEnabled === null
-                  ? "translate-x-3 opacity-70"
+                  ? "bg-gray-300"
                   : recurrentReminderEnabled
-                    ? "translate-x-5"
-                    : "translate-x-1"
+                    ? "bg-bombonera-600"
+                    : "bg-gray-200"
               }`}
-            />
-          </button>
-        </div>
+            >
+              <span
+                className={`pointer-events-none inline-block h-6 w-6 transform rounded-full bg-white shadow ring-0 transition ${
+                  recurrentReminderEnabled === null
+                    ? "translate-x-3 opacity-70"
+                    : recurrentReminderEnabled
+                      ? "translate-x-5"
+                      : "translate-x-1"
+                }`}
+              />
+            </button>
+          </div>
+        ) : null}
 
         <AddUserModal
           open={addUserOpen}
@@ -508,36 +539,51 @@ function UsuariosContent() {
           </div>
         </div>
 
-        {!loaded ? (
-          <div className="flex items-center justify-center py-20">
-            <div className="text-body-lg text-gray-400 font-medium">Cargando usuarios...</div>
-          </div>
-        ) : (
-          <>
-            <p className="text-body text-gray-500 mb-4 font-medium">
+        <p className="text-body text-gray-500 mb-4 font-medium">
+          {!loaded ? (
+            "Cargando usuarios…"
+          ) : (
+            <>
               {sortedUsers.length} usuario{sortedUsers.length !== 1 ? "s" : ""}{" "}
               {search ? "encontrado" : ""}{sortedUsers.length !== 1 && search ? "s" : ""}
-            </p>
+            </>
+          )}
+        </p>
 
-            <div className="overflow-x-auto">
-              <table className="w-full text-left border-collapse">
-                <thead>
-                  <tr className="bg-gray-50 border-b border-gray-200">
-                    <th className="p-6 text-gray-600 font-bold text-lg">Cliente</th>
-                    <SortHeader label="Reservas" sortKey="reservation_count" onSort={handleSort} />
-                    <SortHeader label="Tipo de cliente" sortKey="client_type" onSort={handleSort} />
+        <div className="overflow-hidden rounded-xl border border-gray-200 bg-white shadow-sm">
+          <div className="overflow-x-auto">
+            <table className="w-full min-w-[min(100%,64rem)] border-collapse text-sm lg:min-w-0">
+              <thead>
+                <tr className="border-b border-gray-200 bg-gray-50 text-left">
+                  <th className="px-4 py-4 text-left text-xs font-bold uppercase tracking-wide text-gray-600 lg:px-5">
+                    Cliente
+                  </th>
+                  <SortHeader label="Reservas" sortKey="reservation_count" onSort={handleSort} />
+                  <SortHeader label="Tipo de cliente" sortKey="client_type" onSort={handleSort} />
+                  {devMode ? (
                     <SortHeader label="Bot" sortKey="bot" onSort={handleSort} className="text-center" />
-                    <th className="p-6 text-gray-600 font-bold text-lg text-center whitespace-nowrap">Pagos</th>
-                    <th className="p-6 text-gray-600 font-bold text-lg text-center whitespace-nowrap">
-                      Boletas / Facturas
-                    </th>
-                    <th className="p-6 text-gray-600 font-bold text-lg text-center">Acciones</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {sortedUsers.length === 0 ? (
+                  ) : null}
+                  <th className="px-4 py-4 text-center text-xs font-bold uppercase tracking-wide text-gray-600 whitespace-nowrap lg:px-5">
+                    Pagos
+                  </th>
+                  <th className="px-4 py-4 text-center text-xs font-bold uppercase tracking-wide text-gray-600 whitespace-nowrap lg:px-5">
+                    Boletas / Facturas
+                  </th>
+                  <th className="px-4 py-4 text-center text-xs font-bold uppercase tracking-wide text-gray-600 lg:px-5">
+                    Acciones
+                  </th>
+                </tr>
+              </thead>
+              <tbody>
+                  {!loaded ? (
                     <tr>
-                      <td colSpan={7} className="p-12 text-center text-lg text-gray-400">
+                      <td colSpan={tableColSpan} className="px-4 py-12 text-center text-sm text-gray-400">
+                        Cargando…
+                      </td>
+                    </tr>
+                  ) : sortedUsers.length === 0 ? (
+                    <tr>
+                      <td colSpan={tableColSpan} className="px-4 py-12 text-center text-lg text-gray-400">
                         {search ? "No se encontraron usuarios" : "No hay usuarios en la colección"}
                       </td>
                     </tr>
@@ -661,9 +707,10 @@ function UsuariosContent() {
                                 <option value="sospechoso_fraude">Peligro de fraude</option>
                               </select>
                             </td>
-                          <td className="p-6 text-center">
+                          {devMode ? (
+                            <td className="p-6 text-center">
                               <button
-                              onClick={() => {
+                                onClick={() => {
                                   const botOn = user.is_automated ?? true;
                                   if (botOn) {
                                     void handleToggleAutomation(user.id, true);
@@ -686,19 +733,20 @@ function UsuariosContent() {
                                   });
                                 }}
                                 disabled={togglingId === user.id}
-                              className={`relative inline-flex h-7 w-12 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none disabled:opacity-50 ${
-                                (user.is_automated ?? true) ? "bg-green-500" : "bg-gray-300"
-                              }`}
-                              role="switch"
-                              aria-checked={user.is_automated ?? true}
-                            >
-                              <span
-                                className={`pointer-events-none inline-block h-6 w-6 transform rounded-full bg-white shadow-md ring-0 transition duration-200 ease-in-out ${
-                                  (user.is_automated ?? true) ? "translate-x-5" : "translate-x-0"
+                                className={`relative inline-flex h-7 w-12 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none disabled:opacity-50 ${
+                                  (user.is_automated ?? true) ? "bg-green-500" : "bg-gray-300"
                                 }`}
-                              />
-                            </button>
-                          </td>
+                                role="switch"
+                                aria-checked={user.is_automated ?? true}
+                              >
+                                <span
+                                  className={`pointer-events-none inline-block h-6 w-6 transform rounded-full bg-white shadow-md ring-0 transition duration-200 ease-in-out ${
+                                    (user.is_automated ?? true) ? "translate-x-5" : "translate-x-0"
+                                  }`}
+                                />
+                              </button>
+                            </td>
+                          ) : null}
                           <td className="p-6 text-center align-middle">
                             {wa ? (
                               <CooldownNewTabLink
@@ -781,9 +829,8 @@ function UsuariosContent() {
                   )}
                 </tbody>
               </table>
-            </div>
-          </>
-        )}
+          </div>
+        </div>
       </div>
 
       <ActivateChatbotConfirmModal

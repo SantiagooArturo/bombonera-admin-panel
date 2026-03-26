@@ -155,8 +155,8 @@ function VerificacionContent() {
                                     <th className="p-6 text-gray-600 font-bold text-lg">Reserva</th>
                                     <th className="p-6 text-gray-600 font-bold text-lg">Cliente</th>
                                     <th className="p-6 text-gray-600 font-bold text-lg">Pagos</th>
-                                    <th className="p-6 text-gray-600 font-bold text-lg text-center">Comprobante</th>
                                     <th className="p-6 text-gray-600 font-bold text-lg text-center">Estado</th>
+                                    <th className="p-6 text-gray-600 font-bold text-lg text-center">Editar</th>
                                 </tr>
                             </thead>
                             <tbody>
@@ -225,14 +225,6 @@ function VerificacionContent() {
                                             </div>
                                         </td>
                                         <td className="p-6 text-center">
-                                            <button
-                                                onClick={() => sidebar.open(res)}
-                                                className="bg-blue-600 hover:bg-blue-700 text-white font-bold py-3 px-6 rounded-xl text-base shadow-md transition-transform active:scale-95"
-                                            >
-                                                Ver Pagos
-                                            </button>
-                                        </td>
-                                        <td className="p-6 text-center">
                                             <span
                                                 className={`inline-block px-4 py-2 rounded-lg font-bold text-sm ${res.status === "confirmed"
                                                     ? "bg-green-100 text-green-700"
@@ -243,6 +235,14 @@ function VerificacionContent() {
                                             >
                                                 {STATUS_LABELS[res.status]}
                                             </span>
+                                        </td>
+                                        <td className="p-6 text-center">
+                                            <button
+                                                onClick={() => sidebar.open(res)}
+                                                className="bg-field-dark hover:opacity-95 text-white font-bold py-3 px-6 rounded-xl text-base shadow-md transition-transform active:scale-95"
+                                            >
+                                                Editar
+                                            </button>
                                         </td>
                                     </tr>
                                 );
