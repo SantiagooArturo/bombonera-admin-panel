@@ -133,6 +133,23 @@ function formatReservationTime(reservation: Reservation) {
   return `${formatHour12(start)} – ${formatHour12(`${lastHour}:00`)}`;
 }
 
+function formatHour12CompactFromHour(hour24: number): string {
+  const isPm = hour24 >= 12;
+  const hour12 = hour24 % 12 || 12;
+  return `${hour12}${isPm ? "pm" : "am"}`;
+}
+
+function formatReservationRangeCompact(reservation: Reservation): string {
+  if (!reservation.time_slots?.length) return "—";
+  const startHour = Number.parseInt(String(reservation.time_slots[0]).split(":")[0] || "0", 10);
+  const lastHourRaw = Number.parseInt(
+    String(reservation.time_slots[reservation.time_slots.length - 1]).split(":")[0] || "0",
+    10
+  );
+  const endHour = lastHourRaw + 1;
+  return `${formatHour12CompactFromHour(startHour)} a ${formatHour12CompactFromHour(endHour)}`;
+}
+
 function addDaysYmd(ymd: string, days: number): string {
   const d = new Date(ymd + "T12:00:00");
   d.setDate(d.getDate() + days);
@@ -1533,6 +1550,19 @@ const PaymentSidebar = memo(function PaymentSidebar({
   }, [pendingEmitFromAmountEdit, onClearPendingEmitFromAmountEdit]);
 
   const hasMultipleReservations = allReservationsThisWeek.length > 1;
+  const emitInitialDescripcion = useMemo(() => {
+    const canchaLabel = reservation.field ? `cancha ${reservation.field}` : "reserva";
+    const rango = formatReservationRangeCompact(reservation);
+    const projectedRemaining = Math.max(
+      0,
+      registerPaymentRemaining - Math.max(0, Number(emitModalTransfer?.amount || 0))
+    );
+    const remainingLabel =
+      projectedRemaining <= 0
+        ? "cancelado"
+        : `resta ${Number.isInteger(projectedRemaining) ? projectedRemaining : projectedRemaining.toFixed(2)}`;
+    return `Alquiler ${canchaLabel} ${reservation.date} de ${rango} ${remainingLabel}`;
+  }, [reservation, registerPaymentRemaining, emitModalTransfer?.amount]);
 
   return (
     <>
@@ -1702,11 +1732,7 @@ const PaymentSidebar = memo(function PaymentSidebar({
           transfer={emitModalTransfer}
           clientDni={clientDniForEmit || undefined}
           clientRuc={clientRuc ?? undefined}
-          initialDescripcion={
-            reservation.field
-              ? `Alquiler cancha ${reservation.field} · ${reservation.date}`
-              : `Reserva · ${reservation.date}`
-          }
+          initialDescripcion={emitInitialDescripcion}
           initialCliente={displayName ?? reservation.representative_name ?? ""}
           onClose={() => setEmitModalTransfer(null)}
           onEmitInvoice={onEmitInvoice}
