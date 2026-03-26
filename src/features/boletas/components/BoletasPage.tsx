@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useSearchParams } from "next/navigation";
+import { DocumentArrowDownIcon } from "@heroicons/react/24/outline";
 import type { Invoice } from "@/lib/types";
 import { useStore } from "@/lib/hooks";
 import { useToastContext } from "@/components/ClientLayout";
@@ -25,6 +26,8 @@ import { BoletasDevCounterPanel } from "./BoletasDevCounterPanel";
 import { BoletasMobileList } from "./BoletasMobileList";
 import { IconOpenInNewTab, SerieCorrelativoCell } from "./boletasSharedUi";
 import { isSunatEstadoRechazado } from "../utils/sunatEstadoUi";
+import { ExportExcelModal } from "./ExportExcelModal";
+import type { ExportInvoiceKind } from "../utils/exportInvoicesExcel";
 
 type ComprobanteTab = "todos" | "boletas" | "facturas";
 
@@ -40,6 +43,7 @@ export function BoletasPage() {
   const [wspError, setWspError] = useState<Record<string, string>>({});
   const [voidingInvoiceId, setVoidingInvoiceId] = useState<string | null>(null);
   const [miscModalOpen, setMiscModalOpen] = useState(false);
+  const [excelModalOpen, setExcelModalOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState(() => searchParams.get("search")?.trim() ?? "");
   /** Evita depender de `didStart` tras setState (Strict Mode / batching puede dejar la petición sin ejecutar). */
   const wspSendInFlightRef = useRef<Set<string>>(new Set());
@@ -186,19 +190,31 @@ export function BoletasPage() {
     </button>
   );
 
+  const excelDefaultKind: ExportInvoiceKind = tab === "facturas" ? "factura" : "boleta";
+
   return (
     <div className="mx-auto w-full max-w-[min(100%,120rem)] px-3 py-8 sm:px-4 md:px-5 lg:px-6 xl:px-8 2xl:px-10">
       <div className="mb-6 flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
         <div>
           <h1 className="text-xl font-bold text-gray-900 md:text-2xl">Boletas y facturas emitidas</h1>
         </div>
-        <button
-          type="button"
-          onClick={() => setMiscModalOpen(true)}
-          className="shrink-0 rounded-xl bg-field-dark px-5 py-3 text-sm font-bold text-white shadow-sm hover:opacity-95"
-        >
-          Emitir boleta / factura
-        </button>
+        <div className="flex flex-wrap items-center gap-2">
+          <button
+            type="button"
+            onClick={() => setExcelModalOpen(true)}
+            className="shrink-0 inline-flex items-center gap-2 rounded-xl border border-gray-300 bg-white px-5 py-3 text-sm font-bold text-gray-800 shadow-sm hover:bg-gray-50"
+          >
+            <DocumentArrowDownIcon className="h-5 w-5 text-emerald-700" />
+            Exportar Excel
+          </button>
+          <button
+            type="button"
+            onClick={() => setMiscModalOpen(true)}
+            className="shrink-0 rounded-xl bg-field-dark px-5 py-3 text-sm font-bold text-white shadow-sm hover:opacity-95"
+          >
+            Emitir boleta / factura
+          </button>
+        </div>
       </div>
 
       <BoletasDevCounterPanel />
@@ -214,6 +230,18 @@ export function BoletasPage() {
           }}
         />
       ) : null}
+      <ExportExcelModal
+        open={excelModalOpen}
+        onClose={() => setExcelModalOpen(false)}
+        invoices={invoices}
+        defaultKind={excelDefaultKind}
+        onSuccess={(count, fileName) => {
+          toast(`Excel generado (${count} filas): ${fileName}`, "success");
+        }}
+        onError={(message) => {
+          toast(message, "error");
+        }}
+      />
 
       <div className="mb-6">
         <label htmlFor="boletas-search" className="sr-only">
