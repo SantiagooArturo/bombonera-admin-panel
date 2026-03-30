@@ -2,7 +2,10 @@ import { NextRequest, NextResponse } from "next/server";
 import { getDb, getStorageBucket } from "@/lib/firebase-admin";
 import { randomUUID } from "crypto";
 import { getCourtLabelForReservation } from "@/lib/court-config-server";
-import { BOLETA_SIN_DOCUMENTO_CLIENTE_MAX_SOLES } from "@/features/boletas/constants/sunat";
+import {
+  BOLETA_SIN_DOCUMENTO_CLIENTE_MAX_SOLES,
+  SUNAT_BOLETA_SIN_DNI_CLIENTE_NUM_PLACEHOLDER,
+} from "@/features/boletas/constants/sunat";
 import {
   normalizeCondicionVentaInput,
   normalizeFormaPagoDepositoFields,
@@ -293,6 +296,8 @@ export async function POST(request: NextRequest) {
     let cleanDoc = String(doc_num || "").replace(/\D/g, "");
     /** Código catálogo SUNAT 06 enviado a apisunat. */
     let clienteTipoDocSunat: string;
+    /** Boleta sin DNI informado (monto menor a S/700): placeholder solo en el POST a apisunat. */
+    let boletaUsesPlaceholderDni = false;
 
     if (miscEmission) {
       const denom = typeof clienteOverride === "string" ? clienteOverride.trim() : "";
@@ -319,8 +324,9 @@ export async function POST(request: NextRequest) {
               { status: 400 }
             );
           }
-          cleanDoc = "0";
-          clienteTipoDocSunat = "0";
+          cleanDoc = SUNAT_BOLETA_SIN_DNI_CLIENTE_NUM_PLACEHOLDER;
+          clienteTipoDocSunat = "1";
+          boletaUsesPlaceholderDni = true;
         } else {
           return NextResponse.json(
             {
@@ -348,8 +354,9 @@ export async function POST(request: NextRequest) {
               { status: 400 }
             );
           }
-          cleanDoc = "0";
-          clienteTipoDocSunat = "0";
+          cleanDoc = SUNAT_BOLETA_SIN_DNI_CLIENTE_NUM_PLACEHOLDER;
+          clienteTipoDocSunat = "1";
+          boletaUsesPlaceholderDni = true;
         } else {
           return NextResponse.json(
             {
@@ -523,9 +530,10 @@ export async function POST(request: NextRequest) {
     const sunatEstadoNorm = normalizeSunatEstadoFromPayload(payload.estado);
 
     const serieCorrelativo = `${serieSunat}-${correlativo}`;
-    /** En panel no guardamos "0" cuando SUNAT va sin documento del cliente (boleta con total menor a S/ 700). */
     const persistClienteNum =
-      tipoComprobante === "boleta" && clienteTipoDocSunat === "0" ? "" : cleanDoc;
+      tipoComprobante === "boleta" && boletaUsesPlaceholderDni ? "" : cleanDoc;
+    const persistClienteTipoDoc =
+      tipoComprobante === "boleta" && boletaUsesPlaceholderDni ? "0" : clienteTipoDocSunat;
 
     const pdfTicketUrl: string | null = pdfPayload.ticket || null;
 
@@ -538,7 +546,7 @@ export async function POST(request: NextRequest) {
       phone_number: effectivePhone || "",
       cliente_denominacion: clienteName,
       cliente_numero_de_documento: persistClienteNum,
-      cliente_tipo_documento: clienteTipoDocSunat,
+      cliente_tipo_documento: persistClienteTipoDoc,
       representative_name_snapshot: repSnap,
       file_url: "",
       file_url_sunat: "",
@@ -642,7 +650,7 @@ export async function POST(request: NextRequest) {
         formaPagoCuenta: formaPagoCuentaPersist || undefined,
         qrImageDataUrl: qrDataUrl,
         receptorNombre: clienteName,
-        clienteTipoDocumento: clienteTipoDocSunat,
+        clienteTipoDocumento: persistClienteTipoDoc,
         clienteNumeroDocumento: persistClienteNum || undefined,
         descripcion,
         totalConIgv: totalAmount,
@@ -749,7 +757,7 @@ export async function POST(request: NextRequest) {
       sunat_estado: sunatEstadoNorm,
       cliente_denominacion: clienteName,
       cliente_numero_de_documento: persistClienteNum,
-      cliente_tipo_documento: clienteTipoDocSunat,
+      cliente_tipo_documento: persistClienteTipoDoc,
       representative_name_snapshot: repSnap,
       descripcion,
       phone_number: effectivePhone || "",
