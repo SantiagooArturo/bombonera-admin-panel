@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useCallback, useMemo } from "react";
+import { useState, useEffect, useCallback, useMemo, useRef } from "react";
 import ReactDOM from "react-dom";
 import { useStore } from "@/lib/hooks";
 import { useToastContext } from "@/components/ClientLayout";
@@ -50,6 +50,7 @@ export default function UserPaymentsDrawer({ user, onClose, onUserUpdated }: Use
   const [loading, setLoading] = useState(true);
   const [paymentLoading, setPaymentLoading] = useState(false);
   const [emittingId, setEmittingId] = useState<string | null>(null);
+  const emitInvoiceInFlightRef = useRef(false);
   const [showManualModal, setShowManualModal] = useState(false);
   const [emitTransferTarget, setEmitTransferTarget] = useState<Transfer | null>(null);
   const [manualPrefill, setManualPrefill] = useState<{ amount: number; descripcion?: string } | null>(null);
@@ -286,6 +287,10 @@ export default function UserPaymentsDrawer({ user, onClose, onUserUpdated }: Use
 
   const handleEmitInvoice = useCallback(
     async (transfer: Transfer & { id: string }, params: EmitComprobanteParams): Promise<Invoice | null> => {
+      if (emitInvoiceInFlightRef.current) {
+        return null;
+      }
+      emitInvoiceInFlightRef.current = true;
       if (transfer.id === "manual") {
         setEmittingId("manual");
         try {
@@ -301,6 +306,7 @@ export default function UserPaymentsDrawer({ user, onClose, onUserUpdated }: Use
         } catch (e) {
           toast(e instanceof Error ? e.message : "Error al emitir", "error");
         } finally {
+          emitInvoiceInFlightRef.current = false;
           setEmittingId(null);
         }
         return null;
@@ -308,6 +314,7 @@ export default function UserPaymentsDrawer({ user, onClose, onUserUpdated }: Use
 
       const resId = transfer.reservation_id;
       if (!resId) {
+        emitInvoiceInFlightRef.current = false;
         setEmitTransferTarget(null);
         setManualPrefill({ amount: params.amount ?? transfer.amount ?? 0, descripcion: params.descripcion });
         setShowManualModal(true);
@@ -343,6 +350,7 @@ export default function UserPaymentsDrawer({ user, onClose, onUserUpdated }: Use
         toast(e instanceof Error ? e.message : "Error al emitir", "error");
         return null;
       } finally {
+        emitInvoiceInFlightRef.current = false;
         setEmittingId(null);
       }
     },

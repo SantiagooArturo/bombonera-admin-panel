@@ -35,6 +35,8 @@ export function usePaymentSidebar(options?: UsePaymentSidebarOptions) {
   const [invoices, setInvoices] = useState<Invoice[]>([]);
   const [loadingData, setLoadingData] = useState(false);
   const [emittingInvoiceId, setEmittingInvoiceId] = useState<string | null>(null);
+  /** Evita doble POST /api/invoices si el modal dispara onEmitInvoice dos veces antes del re-render. */
+  const emitInvoiceInFlightRef = useRef(false);
   const [attachingInvoiceId, setAttachingInvoiceId] = useState<string | null>(null);
   const [paymentLoading, setPaymentLoading] = useState(false);
   /** Tras registrar cobro desde edición de «Pagado», abrir emisor de comprobante en el sidebar. */
@@ -286,6 +288,10 @@ export function usePaymentSidebar(options?: UsePaymentSidebarOptions) {
         toast("No hay reserva seleccionada", "error");
         return null;
       }
+      if (emitInvoiceInFlightRef.current) {
+        return null;
+      }
+      emitInvoiceInFlightRef.current = true;
       setEmittingInvoiceId(transfer.id);
       try {
         const invoice = await store.emitInvoice(
@@ -364,6 +370,7 @@ export function usePaymentSidebar(options?: UsePaymentSidebarOptions) {
         toast(msg, "error");
         return null;
       } finally {
+        emitInvoiceInFlightRef.current = false;
         setEmittingInvoiceId(null);
       }
     },

@@ -152,6 +152,11 @@ export const EmitComprobanteModal = memo(function EmitComprobanteModal(props: Em
   const [wspSendStatus, setWspSendStatus] = useState<"idle" | "sending" | "sent" | "error">("idle");
   const [wspSendError, setWspSendError] = useState<string | null>(null);
   const wspSendInFlightRef = useRef(false);
+  /**
+   * Evita doble emisión SUNAT: dos clics (o Enter+doble clic) antes del re-render
+   * ven aún `transferSubmitting`/`miscEmitting` en false; el ref se actualiza en el mismo tick.
+   */
+  const invoicePostInFlightRef = useRef(false);
   const [emitPreviewLightboxSrc, setEmitPreviewLightboxSrc] = useState<string | null>(null);
 
   const [emisorContext, setEmisorContext] = useState<"" | EmitComprobanteEmisorContext>("");
@@ -179,6 +184,7 @@ export const EmitComprobanteModal = memo(function EmitComprobanteModal(props: Em
     if (transferIdForReset == null) return;
     setTransferSuccessInvoice(null);
     setTransferSubmitting(false);
+    invoicePostInFlightRef.current = false;
     setWspSendStatus("idle");
     setWspSendError(null);
     setEmitPreviewLightboxSrc(null);
@@ -537,6 +543,8 @@ export const EmitComprobanteModal = memo(function EmitComprobanteModal(props: Em
 
   async function handleMiscSubmit() {
     if (!misc || !canSubmit) return;
+    if (invoicePostInFlightRef.current) return;
+    invoicePostInFlightRef.current = true;
     setMiscError(null);
     setMiscEmitting(true);
     try {
@@ -567,12 +575,15 @@ export const EmitComprobanteModal = memo(function EmitComprobanteModal(props: Em
       props.onSuccess();
       props.onClose();
     } finally {
+      invoicePostInFlightRef.current = false;
       setMiscEmitting(false);
     }
   }
 
   async function handleTransferSubmit() {
     if (misc || !canSubmit) return;
+    if (invoicePostInFlightRef.current) return;
+    invoicePostInFlightRef.current = true;
     setTransferSubmitting(true);
     try {
       const inv = await props.onEmitInvoice(props.transfer, {
@@ -589,6 +600,7 @@ export const EmitComprobanteModal = memo(function EmitComprobanteModal(props: Em
       });
       if (inv) setTransferSuccessInvoice(inv);
     } finally {
+      invoicePostInFlightRef.current = false;
       setTransferSubmitting(false);
     }
   }
