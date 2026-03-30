@@ -21,6 +21,7 @@ import { WHATSAPP_ICON_PATH as WSP_ICON_PATH } from "@/features/operaciones/what
 import { anchorPropsForHref } from "@/lib/internal-href";
 import { RegisterPaymentFormCobros } from "./RegisterPaymentFormCobros";
 import type { AmountPaidDeltaPrompt } from "./usePaymentSidebar";
+import { useToastContext } from "@/components/ClientLayout";
 
 // ─── Props ───────────────────────────────────────────────────────────────────
 
@@ -215,6 +216,11 @@ interface ReservationDetailContentProps {
   /** Chips para cambiar de reserva cuando el cliente tiene 2+ reservas esta semana. */
   reservationsForChips?: Reservation[];
   onSelectReservationFromChips?: (r: Reservation) => void;
+  attendanceReminderLabel: string | null;
+  attendanceReminderFetching: boolean;
+  attendanceReminderSending: boolean;
+  canSendAttendanceReminder: boolean;
+  onSendAttendanceReminder: () => void;
 }
 
 function ReservationDetailContent({
@@ -229,6 +235,11 @@ function ReservationDetailContent({
   onCancelReservation,
   reservationsForChips,
   onSelectReservationFromChips,
+  attendanceReminderLabel,
+  attendanceReminderFetching,
+  attendanceReminderSending,
+  canSendAttendanceReminder,
+  onSendAttendanceReminder,
 }: ReservationDetailContentProps) {
   const {
     effectiveDisplayName,
@@ -350,9 +361,10 @@ function ReservationDetailContent({
 
   return (
     <div className="flex flex-col h-full">
-      {/* Datos del cliente */}
-      <div className="px-6 py-4 border-b border-gray-200 bg-white shrink-0 space-y-4">
-        <div className="flex flex-col space-y-1">
+      {/* Datos del cliente (pt-10: mismo ritmo visual que la separación hacia Total/Pagado). */}
+      <div className="px-6 border-b border-gray-200 bg-white shrink-0 space-y-4 pt-6 pb-4">
+        <div className="flex flex-col gap-4 md:grid md:grid-cols-[minmax(0,1fr)_minmax(0,13rem)] md:items-start md:gap-x-6">
+          <div className="flex min-w-0 flex-col space-y-1">
             {onUpdateName && editingName ? (
               <div className="flex flex-col gap-1">
                 <div className="flex items-center gap-2">
@@ -501,36 +513,8 @@ function ReservationDetailContent({
             )}
           </div>
 
-        {/* Controles: fila horizontal */}
-        <div className="flex flex-wrap items-end gap-4 pt-2 border-t border-gray-100">
-          <div className="min-w-[140px] flex-1">
-            <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1">Estado de Reserva</label>
-            {onUpdateStatus && (reservation.status === "pending" || reservation.status === "confirmed") ? (
-              statusUpdating ? (
-                <div className="h-[42px] w-full rounded-xl border-2 border-gray-200 bg-gray-100 animate-pulse" />
-              ) : (
-                <select
-                  value={reservation.status}
-                  disabled={statusUpdating}
-                  onChange={(e) => {
-                    const next = e.target.value as "pending" | "confirmed";
-                    if (next === reservation.status) return;
-                    void onUpdateStatus(next);
-                  }}
-                  className="w-full rounded-xl border-2 border-gray-200 bg-gray-50 px-3 py-2.5 text-sm font-bold text-gray-800 focus:border-blue-500 focus:outline-none disabled:opacity-60"
-                >
-                  <option value="pending">{STATUS_LABELS.pending}</option>
-                  <option value="confirmed">{STATUS_LABELS.confirmed}</option>
-                </select>
-              )
-            ) : (
-              <div className="rounded-xl border-2 border-gray-200 bg-gray-50 px-3 py-2.5 text-sm font-bold text-gray-800">
-                {STATUS_LABELS[reservation.status as ReservationStatus] ?? reservation.status}
-              </div>
-            )}
-          </div>
-          <div className="min-w-[140px] flex-1">
-            <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1">Tipo de cliente</label>
+          <div className="flex min-w-0 w-full flex-col md:w-auto">
+            <label className="mb-1 block text-xs font-semibold uppercase tracking-wide text-gray-500">Tipo de cliente</label>
             {clientTypeLoading ? (
               <div className="h-[42px] w-full rounded-xl border-2 border-gray-200 bg-gray-100 animate-pulse" />
             ) : (
@@ -550,19 +534,79 @@ function ReservationDetailContent({
               </select>
             )}
           </div>
-          {!isCancelled && (
+        </div>
+
+        {/* Móvil: filas 1–2 estado, 3–4 recordatorio, 5 cancelar. md: 2 filas × 3 col; col3 fila1 vacía para alinear botón rojo. */}
+        <div
+          className={`grid grid-cols-1 gap-y-4 border-t border-gray-100 pt-2 md:gap-x-6 md:gap-y-2 ${isCancelled ? "md:grid-cols-2" : "md:grid-cols-3"}`}
+        >
+          <label className="col-start-1 row-start-1 block text-xs font-semibold uppercase tracking-wide text-gray-500 md:col-start-1 md:row-start-1">
+            Estado de Reserva
+          </label>
+          <label className="col-start-1 row-start-3 block text-xs font-semibold uppercase tracking-wide leading-snug text-gray-500 md:col-start-2 md:row-start-1">
+            Pedir confirmación de asistencia
+          </label>
+          {!isCancelled ? (
+            <div className="hidden min-h-0 md:col-start-3 md:row-start-1 md:block" aria-hidden />
+          ) : null}
+
+          <div className="col-start-1 row-start-2 min-w-0 md:col-start-1 md:row-start-2">
+            {onUpdateStatus && (reservation.status === "pending" || reservation.status === "confirmed") ? (
+              statusUpdating ? (
+                <div className="h-[42px] w-full shrink-0 rounded-xl border-2 border-gray-200 bg-gray-100 animate-pulse" />
+              ) : (
+                <select
+                  value={reservation.status}
+                  disabled={statusUpdating}
+                  onChange={(e) => {
+                    const next = e.target.value as "pending" | "confirmed";
+                    if (next === reservation.status) return;
+                    void onUpdateStatus(next);
+                  }}
+                  className="h-[42px] w-full rounded-xl border-2 border-gray-200 bg-gray-50 px-3 py-2.5 text-sm font-bold text-gray-800 focus:border-blue-500 focus:outline-none disabled:opacity-60"
+                >
+                  <option value="pending">{STATUS_LABELS.pending}</option>
+                  <option value="confirmed">{STATUS_LABELS.confirmed}</option>
+                </select>
+              )
+            ) : (
+              <div className="flex min-h-[42px] items-center rounded-xl border-2 border-gray-200 bg-gray-50 px-3 py-2.5 text-sm font-bold text-gray-800">
+                {STATUS_LABELS[reservation.status as ReservationStatus] ?? reservation.status}
+              </div>
+            )}
+          </div>
+          <div className="col-start-1 row-start-4 flex min-w-0 flex-col gap-1 md:col-start-2 md:row-start-2">
             <button
+              type="button"
+              onClick={onSendAttendanceReminder}
+              disabled={isCancelled || !canSendAttendanceReminder || attendanceReminderSending}
+              title="Pedir confirmación de asistencia"
+              className="inline-flex h-[42px] w-full shrink-0 items-center justify-center gap-2 rounded-xl bg-emerald-600 px-3 text-sm font-bold text-white shadow-sm hover:bg-emerald-700 disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              <svg className="h-5 w-5 shrink-0" fill="currentColor" viewBox="0 0 24 24" aria-hidden>
+                <path d={WSP_ICON_PATH} />
+              </svg>
+              {attendanceReminderSending ? "Enviando…" : "Enviar recordatorio"}
+            </button>
+            {!attendanceReminderFetching && attendanceReminderLabel ? (
+              <p className="text-[11px] leading-snug text-gray-500">{attendanceReminderLabel}</p>
+            ) : null}
+          </div>
+          {!isCancelled ? (
+            <button
+              type="button"
               onClick={onCancelReservation}
               disabled={cancellingReservation}
-              className="px-4 py-2.5 rounded-xl font-bold text-sm transition-all disabled:opacity-50 bg-red-600 text-white shadow-sm hover:bg-red-700 shrink-0"
+              title="Cancelar reserva"
+              className="col-start-1 row-start-5 h-[42px] w-full shrink-0 rounded-xl bg-red-600 px-4 text-sm font-bold text-white shadow-sm transition-all hover:bg-red-700 disabled:opacity-50 md:col-start-3 md:row-start-2"
             >
               {cancellingReservation ? "Cancelando..." : "Cancelar reserva"}
             </button>
-          )}
+          ) : null}
         </div>
 
         {/* Resumen financiero: Total, Pagado, Deuda */}
-        <div className="mt-6 pt-4 border-t border-gray-100 grid grid-cols-3 gap-4">
+        <div className="mt-10 pt-6 border-t border-gray-100 grid grid-cols-3 gap-4">
           <div className="bg-gray-50 rounded-xl px-4 py-3 text-center">
             <p className="text-xs font-medium text-gray-400 uppercase">Total</p>
             {onUpdatePrice && !isCancelled && editingPrice ? (
@@ -1442,6 +1486,69 @@ const PaymentSidebar = memo(function PaymentSidebar({
   amountPaidDeltaPrompt = null,
   onResolveAmountPaidDeltaPrompt,
 }: PaymentSidebarProps) {
+  const toast = useToastContext();
+  const [attendanceReminderLabel, setAttendanceReminderLabel] = useState<string | null>(null);
+  const [attendanceReminderFetching, setAttendanceReminderFetching] = useState(false);
+  const [attendanceReminderSending, setAttendanceReminderSending] = useState(false);
+
+  const canSendAttendanceReminder = useMemo(() => {
+    if (reservation.status === "cancelled") return false;
+    const p = String(reservation.phone_number || "").replace(/\D/g, "");
+    if (p.length >= 9) return true;
+    const c = String(reservation.chat_id || "").replace(/\D/g, "");
+    return c.length >= 9;
+  }, [reservation.phone_number, reservation.chat_id, reservation.status]);
+
+  const fetchAttendanceReminder = useCallback(async () => {
+    setAttendanceReminderFetching(true);
+    try {
+      const res = await fetch(
+        `/api/reservation-attendance-reminders?reservation_id=${encodeURIComponent(reservation.id)}`
+      );
+      const data = (await res.json().catch(() => ({}))) as { last?: { display_label?: string } };
+      if (res.ok && typeof data?.last?.display_label === "string") {
+        setAttendanceReminderLabel(data.last.display_label);
+      } else {
+        setAttendanceReminderLabel(null);
+      }
+    } catch {
+      setAttendanceReminderLabel(null);
+    } finally {
+      setAttendanceReminderFetching(false);
+    }
+  }, [reservation.id]);
+
+  const handleSendAttendanceReminder = useCallback(async () => {
+    if (reservation.status !== "pending") {
+      if (
+        !window.confirm(
+          "La reserva no está en estado pendiente. ¿Seguro que deseas enviar el mensaje de confirmación de asistencia?"
+        )
+      ) {
+        return;
+      }
+    }
+    setAttendanceReminderSending(true);
+    try {
+      const res = await fetch("/api/reservation-attendance-reminders", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ reservation_id: reservation.id }),
+      });
+      const data = (await res.json().catch(() => ({}))) as { error?: string };
+      if (!res.ok) {
+        toast(typeof data?.error === "string" ? data.error : "No se pudo enviar el mensaje", "error");
+        return;
+      }
+      toast("Mensaje enviado por WhatsApp", "success");
+      await fetchAttendanceReminder();
+    } catch {
+      toast("No se pudo enviar el mensaje", "error");
+    } finally {
+      setAttendanceReminderSending(false);
+    }
+  }, [reservation.id, reservation.status, fetchAttendanceReminder, toast]);
+
   /** DNI para boleta: reserva con 8 dígitos válidos, si no perfil usuario (last_dni). */
   const clientDniForEmit = useMemo(() => {
     const r = String(reservation.dni ?? "").replace(/\D/g, "").slice(0, 8);
@@ -1548,6 +1655,11 @@ const PaymentSidebar = memo(function PaymentSidebar({
     setActiveTab("cobros");
     onClearPendingEmitFromAmountEdit?.();
   }, [pendingEmitFromAmountEdit, onClearPendingEmitFromAmountEdit]);
+
+  useEffect(() => {
+    if (activeTab !== "detalles") return;
+    void fetchAttendanceReminder();
+  }, [activeTab, fetchAttendanceReminder]);
 
   const hasMultipleReservations = allReservationsThisWeek.length > 1;
   const emitInitialDescripcion = useMemo(() => {
@@ -1700,6 +1812,11 @@ const PaymentSidebar = memo(function PaymentSidebar({
             onCancelReservation={onCancelReservation}
             reservationsForChips={hasMultipleReservations ? allReservationsThisWeek : undefined}
             onSelectReservationFromChips={hasMultipleReservations ? onSelectReservationFromList : undefined}
+            attendanceReminderLabel={attendanceReminderLabel}
+            attendanceReminderFetching={attendanceReminderFetching}
+            attendanceReminderSending={attendanceReminderSending}
+            canSendAttendanceReminder={canSendAttendanceReminder}
+            onSendAttendanceReminder={handleSendAttendanceReminder}
           />
         ) : null}
         {activeTab === "cobros" && (
