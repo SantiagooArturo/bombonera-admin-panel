@@ -468,7 +468,9 @@ export default function OperacionesPage() {
 
   function openSendAvailabilityModal() {
     setAvailabilityPhone("");
-    setAvailabilityDates([todayDate]);
+    // Usar por defecto la fecha actualmente seleccionada en la vista de operaciones,
+    // en lugar de forzar siempre "hoy".
+    setAvailabilityDates([selectedDate]);
     setSendAvailabilityOpen(true);
   }
 
