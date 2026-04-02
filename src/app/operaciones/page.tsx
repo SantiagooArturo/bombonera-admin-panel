@@ -98,7 +98,12 @@ export default function OperacionesPage() {
   }, [store]);
 
   /** Usuarios ordenados; se actualiza cuando el store cambia (p. ej. al editar tipo de cliente). */
-  const users = [...store.getUsers()].sort((a, b) => getUserName(a).localeCompare(getUserName(b), "es"));
+  const users = [...store.getUsers()].sort((a, b) => {
+    const timeA = (a.last_interaction_at || a.created_at) ? new Date(a.last_interaction_at || a.created_at!).getTime() : 0;
+    const timeB = (b.last_interaction_at || b.created_at) ? new Date(b.last_interaction_at || b.created_at!).getTime() : 0;
+    if (timeA !== timeB) return timeB - timeA;
+    return getUserName(a).localeCompare(getUserName(b), "es");
+  });
 
   const selectedDate = useMemo(() => formatDateISO(getDateWithOffset(dayOffset)), [dayOffset]);
   const todayDate = useMemo(() => formatDateISO(new Date()), []);

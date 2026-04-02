@@ -725,7 +725,9 @@ export async function POST(request: NextRequest) {
     }
 
     if (miscEmission && effectiveUserId !== MISC_PANEL_USER_ID) {
-      const userPatch: Record<string, unknown> = {};
+      const userPatch: Record<string, unknown> = {
+        last_interaction_at: new Date().toISOString(),
+      };
       if (tipoComprobante === "boleta") {
         const d = String(persistClienteNum || "").replace(/\D/g, "");
         if (d.length === 8) userPatch.last_dni = d;

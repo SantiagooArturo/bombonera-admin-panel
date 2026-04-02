@@ -156,6 +156,8 @@ export interface User {
   last_representative_name?: string;
   /** Último DNI usado al crear reserva o emitir boleta. */
   last_dni?: string;
+  /** Timestamp de la última interacción (mensaje enviado/recibido o reserva). Usado para ordenar la lista de contactos. */
+  last_interaction_at?: string;
   /** Último RUC usado al emitir factura. */
   last_ruc?: string;
   /** Última dirección fiscal usada en factura (panel / SUNAT), para autocompletar. */
@@ -173,6 +175,8 @@ export interface User {
   needs_help?: boolean;
   /** Razón por la que se solicitó ayuda humana. */
   help_reason?: string;
+  /** Fecha de registro inicial en el sistema. */
+  created_at?: string;
 }
 
 export const CLIENT_TYPE_LABELS: Record<ClientType, string> = {

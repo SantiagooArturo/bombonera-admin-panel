@@ -204,6 +204,8 @@ export async function POST(request: NextRequest) {
         is_automated: true,
         needs_help: false,
         help_reason: null,
+        /** Marcar interacción inicial. */
+        last_interaction_at: new Date().toISOString(),
       });
     } else {
       const userData = userDoc.data() || {};
@@ -214,6 +216,7 @@ export async function POST(request: NextRequest) {
       if (!userData.last_dni && cleanDni) {
         updates.last_dni = cleanDni;
       }
+      updates.last_interaction_at = new Date().toISOString();
       if (Object.keys(updates).length > 0) {
         await userRef.update(updates);
       }

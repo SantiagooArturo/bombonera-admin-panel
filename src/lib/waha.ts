@@ -134,5 +134,15 @@ export async function sendWhatsAppMessage(chatId: string, text: string) {
     throw new Error(`WAHA error: ${res.status} - ${error}`);
   }
 
+  // Marcar interacción en Firestore (manual fallback)
+  try {
+    const db = getDb();
+    await db.collection("users").doc(resolved.firebaseId).set({
+      last_interaction_at: new Date().toISOString()
+    }, { merge: true });
+  } catch (e) {
+    console.warn(`No se pudo actualizar last_interaction_at para ${resolved.firebaseId}:`, e);
+  }
+
   return res.json();
 }
