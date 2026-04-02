@@ -10,6 +10,8 @@ export type EmitClienteDirectoryOption = {
   name: string;
   /** Texto para filtrar (incluye alias; sin emojis). */
   searchText: string;
+  /** URL de la foto de perfil en Firebase Storage o Proxy. */
+  picture?: string;
 };
 
 function hasLetters(s: string) {
@@ -144,10 +146,28 @@ export function EmitClienteDirectoryField({
                 onInputTextChange(o.name);
                 setOpen(false);
               }}
-              className="w-full border-b border-gray-100 px-3 py-2 text-left last:border-b-0 hover:bg-blue-50"
+              className="w-full border-b border-gray-100 px-3 py-2 text-left last:border-b-0 hover:bg-blue-50 flex items-center gap-3"
             >
-              <p className="truncate text-sm font-semibold text-gray-800">{o.name}</p>
-              <p className="font-mono text-xs tabular-nums text-gray-500">{formatDisplayPhone(o.phone)}</p>
+              <div className="h-8 w-8 rounded-full bg-gray-200 flex-shrink-0 overflow-hidden flex items-center justify-center border border-gray-100 shadow-sm">
+                {o.picture ? (
+                  <img
+                    src={o.picture}
+                    alt={o.name}
+                    className="h-full w-full object-cover"
+                    onError={(e) => {
+                      (e.target as HTMLImageElement).src = "";
+                    }}
+                  />
+                ) : (
+                  <svg className="h-5 w-5 text-gray-400" fill="currentColor" viewBox="0 0 24 24">
+                    <path d="M12 12c1.7 0 3-1.3 3-3s-1.3-3-3-3-3 1.3-3 3 1.3 3 3 3zm0 2c-2.7 0-8 1.3-8 4v2h16v-2c0-2.7-5.3-4-8-4z" />
+                  </svg>
+                )}
+              </div>
+              <div className="min-w-0 flex-1">
+                <p className="truncate text-sm font-semibold text-gray-800">{o.name}</p>
+                <p className="font-mono text-xs tabular-nums text-gray-500">{formatDisplayPhone(o.phone)}</p>
+              </div>
             </button>
           ))}
         </div>

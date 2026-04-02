@@ -197,8 +197,13 @@ export const EmitComprobanteModal = memo(function EmitComprobanteModal(props: Em
 
   const emitClienteDirectoryOptions = useMemo(() => {
     if (!misc) return [];
-    return store
-      .getUsers()
+    const sortedUsers = [...store.getUsers()].sort((a, b) => {
+      const timeA = (a.last_interaction_at || a.created_at) ? new Date(a.last_interaction_at || a.created_at!).getTime() || 0 : 0;
+      const timeB = (b.last_interaction_at || b.created_at) ? new Date(b.last_interaction_at || b.created_at!).getTime() || 0 : 0;
+      if (timeA !== timeB) return timeB - timeA;
+      return getUserName(a).localeCompare(getUserName(b), "es");
+    });
+    return sortedUsers
       .map((u) => {
         const raw = getUserPhone(u);
         const names = [u.custom_name, u.contact_name, u.push_name].filter(Boolean) as string[];
@@ -206,7 +211,12 @@ export const EmitComprobanteModal = memo(function EmitComprobanteModal(props: Em
         const rawLabel = (names.length > 0 ? names.join(" ") : getUserName(u)).trim();
         const name = stripEmojis(rawLabel).replace(/\s+/g, " ").trim() || "Cliente";
         const searchText = name.toLowerCase();
-        return { phone: normalized, name, searchText };
+        return {
+          phone: normalized,
+          name,
+          searchText,
+          picture: u.profile_picture || `/api/chats/picture?chat_id=${u.chat_id}`,
+        };
       })
       .filter((o) => o.phone.replace(/\D/g, "").length >= 9);
   }, [misc, store]);
