@@ -99,11 +99,23 @@ export default function OperacionesPage() {
 
   /** Usuarios ordenados; se actualiza cuando el store cambia (p. ej. al editar tipo de cliente). */
   const users = [...store.getUsers()].sort((a, b) => {
-    const timeA = (a.last_interaction_at || a.created_at) ? new Date(a.last_interaction_at || a.created_at!).getTime() : 0;
-    const timeB = (b.last_interaction_at || b.created_at) ? new Date(b.last_interaction_at || b.created_at!).getTime() : 0;
+    const timeA = (a.last_interaction_at || a.created_at) ? new Date(a.last_interaction_at || a.created_at!).getTime() || 0 : 0;
+    const timeB = (b.last_interaction_at || b.created_at) ? new Date(b.last_interaction_at || b.created_at!).getTime() || 0 : 0;
     if (timeA !== timeB) return timeB - timeA;
-    return getUserName(a).localeCompare(getUserName(b), "es");
+    // Fallback: Si no hay tiempos, preferir que los "vacíos" o "." vayan al final si no tienen nombre real
+    const nameA = getUserName(a);
+    const nameB = getUserName(b);
+    return nameA.localeCompare(nameB, "es");
   });
+
+  useEffect(() => {
+    if (users.length > 0) {
+      console.log("📊 [Sorting Debug] Top 5 contactos por recencia:");
+      users.slice(0, 5).forEach((u, i) => {
+        console.log(`${i + 1}. ${getUserName(u)} - Last: ${u.last_interaction_at || "Sin fecha"}`);
+      });
+    }
+  }, [users]);
 
   const selectedDate = useMemo(() => formatDateISO(getDateWithOffset(dayOffset)), [dayOffset]);
   const todayDate = useMemo(() => formatDateISO(new Date()), []);
@@ -148,6 +160,7 @@ export default function OperacionesPage() {
             name: getUserName(u),
             searchText: names.length > 0 ? names.join(" ") : undefined,
             dni: (u.last_dni || "").replace(/\D/g, "").slice(0, 8),
+            picture: u.profile_picture || `/api/chats/picture?chat_id=${u.chat_id}`,
           };
         })
         .filter((u) => u.phone.length >= 9),

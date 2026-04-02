@@ -177,6 +177,8 @@ export interface User {
   help_reason?: string;
   /** Fecha de registro inicial en el sistema. */
   created_at?: string;
+  /** URL de la foto de perfil en Firebase Storage. */
+  profile_picture?: string;
 }
 
 export const CLIENT_TYPE_LABELS: Record<ClientType, string> = {

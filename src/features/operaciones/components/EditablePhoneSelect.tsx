@@ -8,6 +8,8 @@ export type PhoneOption = {
   name: string;
   /** Texto para buscar (ej: custom_name + contact_name + push_name). Si no se pasa, se usa name. */
   searchText?: string;
+  /** URL de la foto de perfil del chat. */
+  picture?: string;
 };
 
 function isOnlyDigits(s: string) {
@@ -160,12 +162,32 @@ export default function EditablePhoneSelect({
                 onChange(normalized);
                 setOpen(false);
               }}
-              className={`w-full text-left px-3 py-2 border-b border-gray-100 last:border-b-0 ${optionActive}`}
+              className={`w-full text-left px-3 py-2 border-b border-gray-100 last:border-b-0 ${optionActive} flex items-center gap-3`}
             >
-              <p className="text-sm font-semibold text-gray-800 truncate">{o.name}</p>
-              {!hidePhoneInList ? (
-                <p className="text-xs text-gray-500">{formatDisplayPhone(o.phone)}</p>
-              ) : null}
+              {/* Foto de perfil redondeada */}
+              <div className="h-8 w-8 rounded-full bg-gray-200 flex-shrink-0 overflow-hidden flex items-center justify-center border border-gray-100 shadow-sm">
+                {o.picture ? (
+                  <img
+                    src={o.picture}
+                    alt={o.name}
+                    className="h-full w-full object-cover"
+                    onError={(e) => {
+                      (e.target as HTMLImageElement).src = "";
+                    }}
+                  />
+                ) : (
+                  <svg className="h-5 w-5 text-gray-400" fill="currentColor" viewBox="0 0 24 24">
+                    <path d="M12 12c1.7 0 3-1.3 3-3s-1.3-3-3-3-3 1.3-3 3 1.3 3 3 3zm0 2c-2.7 0-8 1.3-8 4v2h16v-2c0-2.7-5.3-4-8-4z" />
+                  </svg>
+                )}
+              </div>
+
+              <div className="min-w-0 flex-1">
+                <p className="text-sm font-semibold text-gray-800 truncate">{o.name}</p>
+                {!hidePhoneInList ? (
+                  <p className="text-xs text-gray-500">{formatDisplayPhone(o.phone)}</p>
+                ) : null}
+              </div>
             </button>
           ))}
         </div>

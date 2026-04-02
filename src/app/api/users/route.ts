@@ -46,6 +46,17 @@ export async function GET() {
         is_automated: typeof isAutomated === "boolean" ? isAutomated : true,
         needs_help: typeof needsHelp === "boolean" ? needsHelp : false,
         help_reason: typeof helpReason === "string" ? helpReason : undefined,
+        last_interaction_at: data.last_interaction_at?.toDate
+          ? data.last_interaction_at.toDate().toISOString()
+          : typeof data.last_interaction_at === "string"
+            ? data.last_interaction_at
+            : undefined,
+        created_at: data.created_at?.toDate
+          ? data.created_at.toDate().toISOString()
+          : typeof data.created_at === "string"
+            ? data.created_at
+            : undefined,
+        profile_picture: typeof data.profile_picture === "string" ? data.profile_picture : undefined,
       };
     });
 
