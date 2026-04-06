@@ -118,7 +118,7 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: "La reserva no tiene teléfono/chat para WhatsApp" }, { status: 400 });
     }
 
-    const message = buildAttendanceConfirmationMessage(date);
+    const message = typeof body?.message === "string" ? body.message.trim() : buildAttendanceConfirmationMessage(date);
 
     await sendWhatsAppMessage(phoneRaw, message);
 

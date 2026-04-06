@@ -22,6 +22,7 @@ import { anchorPropsForHref } from "@/lib/internal-href";
 import { RegisterPaymentFormCobros } from "./RegisterPaymentFormCobros";
 import type { AmountPaidDeltaPrompt } from "./usePaymentSidebar";
 import { useToastContext } from "@/components/ClientLayout";
+import { buildAttendanceConfirmationMessage } from "@/lib/buildAttendanceConfirmationMessage";
 
 // ─── Props ───────────────────────────────────────────────────────────────────
 
@@ -101,6 +102,93 @@ function ImageViewer({ src, onClose }: { src: string; onClose: () => void }) {
         className="max-w-full max-h-[90vh] object-contain rounded-lg shadow-2xl"
         onClick={(e) => e.stopPropagation()}
       />
+    </div>
+  );
+}
+
+// ─── Modal Recordatorio Asistencia ───────────────────────────────────────────
+
+function AttendanceReminderModal({
+  message,
+  onMessageChange,
+  onSend,
+  onClose,
+  sending,
+}: {
+  message: string;
+  onMessageChange: (v: string) => void;
+  onSend: () => void;
+  onClose: () => void;
+  sending: boolean;
+}) {
+  return (
+    <div
+      className="fixed inset-0 z-[10070] flex items-center justify-center bg-black/60 p-4 backdrop-blur-[1px]"
+      role="dialog"
+      aria-modal="true"
+      onClick={onClose}
+    >
+      <div
+        className="relative w-full max-w-md rounded-2xl bg-white p-6 shadow-2xl animate-in fade-in zoom-in duration-200"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className="mb-4 flex items-center justify-between">
+          <h3 className="text-lg font-bold text-gray-900 text-center">Confirmar Recordatorio</h3>
+          <button
+            onClick={onClose}
+            className="rounded-lg p-1 text-gray-400 hover:bg-gray-100 hover:text-gray-700 transition-colors"
+            title="Cerrar"
+          >
+            <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+            </svg>
+          </button>
+        </div>
+        
+        <p className="mb-3 text-sm font-medium text-gray-500">
+          Mensaje sugerido (se puede editar):
+        </p>
+        
+        <textarea
+          value={message}
+          onChange={(e) => onMessageChange(e.target.value)}
+          className="w-full min-h-[120px] rounded-xl border-2 border-gray-100 bg-gray-50 p-4 text-sm font-medium text-gray-800 focus:border-emerald-500 focus:outline-none focus:ring-4 focus:ring-emerald-500/10 transition-all resize-none"
+          placeholder="Escribe el mensaje aquí..."
+          autoFocus
+        />
+
+        <div className="mt-6 flex flex-col gap-3">
+          <button
+            onClick={onSend}
+            disabled={sending || !message.trim()}
+            className="inline-flex h-[48px] w-full items-center justify-center gap-2 rounded-xl bg-emerald-600 px-4 text-base font-bold text-white shadow-lg shadow-emerald-600/20 hover:bg-emerald-700 active:scale-[0.98] transition-all disabled:opacity-50 disabled:pointer-events-none"
+          >
+            {sending ? (
+              <>
+                <svg className="animate-spin h-5 w-5 text-white" fill="none" viewBox="0 0 24 24">
+                  <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                  <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                </svg>
+                Enviando recordatorio...
+              </>
+            ) : (
+              <>
+                <svg className="h-5 w-5" fill="currentColor" viewBox="0 0 24 24">
+                  <path d={WSP_ICON_PATH} />
+                </svg>
+                Enviar por WhatsApp
+              </>
+            )}
+          </button>
+          <button
+            onClick={onClose}
+            disabled={sending}
+            className="h-[44px] w-full text-sm font-bold text-gray-500 hover:text-gray-700 transition-colors"
+          >
+            Cancelar
+          </button>
+        </div>
+      </div>
     </div>
   );
 }
@@ -1490,6 +1578,8 @@ const PaymentSidebar = memo(function PaymentSidebar({
   const [attendanceReminderLabel, setAttendanceReminderLabel] = useState<string | null>(null);
   const [attendanceReminderFetching, setAttendanceReminderFetching] = useState(false);
   const [attendanceReminderSending, setAttendanceReminderSending] = useState(false);
+  const [isReminderModalOpen, setIsReminderModalOpen] = useState(false);
+  const [reminderMessage, setReminderMessage] = useState("");
 
   const canSendAttendanceReminder = useMemo(() => {
     if (reservation.status === "cancelled") return false;
@@ -1518,22 +1608,19 @@ const PaymentSidebar = memo(function PaymentSidebar({
     }
   }, [reservation.id]);
 
-  const handleSendAttendanceReminder = useCallback(async () => {
-    if (reservation.status !== "pending") {
-      if (
-        !window.confirm(
-          "La reserva no está en estado pendiente. ¿Seguro que deseas enviar el mensaje de confirmación de asistencia?"
-        )
-      ) {
-        return;
-      }
-    }
+  const handleSendAttendanceReminder = useCallback(async (msg?: string) => {
+    // Si viene de un modal (msg presente) o no
+    const messageToSend = typeof msg === "string" ? msg.trim() : "";
+
     setAttendanceReminderSending(true);
     try {
       const res = await fetch("/api/reservation-attendance-reminders", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ reservation_id: reservation.id }),
+        body: JSON.stringify({ 
+          reservation_id: reservation.id,
+          message: messageToSend || undefined
+        }),
       });
       const data = (await res.json().catch(() => ({}))) as { error?: string };
       if (!res.ok) {
@@ -1541,6 +1628,7 @@ const PaymentSidebar = memo(function PaymentSidebar({
         return;
       }
       toast("Mensaje enviado por WhatsApp", "success");
+      setIsReminderModalOpen(false);
       await fetchAttendanceReminder();
     } catch {
       toast("No se pudo enviar el mensaje", "error");
@@ -1548,6 +1636,12 @@ const PaymentSidebar = memo(function PaymentSidebar({
       setAttendanceReminderSending(false);
     }
   }, [reservation.id, reservation.status, fetchAttendanceReminder, toast]);
+
+  const handleOpenReminderModal = useCallback(() => {
+    const suggested = buildAttendanceConfirmationMessage(reservation.date);
+    setReminderMessage(suggested);
+    setIsReminderModalOpen(true);
+  }, [reservation.status, reservation.date]);
 
   /** DNI para boleta: reserva con 8 dígitos válidos, si no perfil usuario (last_dni). */
   const clientDniForEmit = useMemo(() => {
@@ -1678,6 +1772,15 @@ const PaymentSidebar = memo(function PaymentSidebar({
 
   return (
     <>
+      {isReminderModalOpen && (
+        <AttendanceReminderModal
+          message={reminderMessage}
+          onMessageChange={setReminderMessage}
+          onSend={() => void handleSendAttendanceReminder(reminderMessage)}
+          onClose={() => setIsReminderModalOpen(false)}
+          sending={attendanceReminderSending}
+        />
+      )}
       {/* Backdrop (sin blur para mejor rendimiento) */}
       <div className="fixed inset-0 z-40 bg-black/40" onClick={onClose} />
 
@@ -1816,7 +1919,7 @@ const PaymentSidebar = memo(function PaymentSidebar({
             attendanceReminderFetching={attendanceReminderFetching}
             attendanceReminderSending={attendanceReminderSending}
             canSendAttendanceReminder={canSendAttendanceReminder}
-            onSendAttendanceReminder={handleSendAttendanceReminder}
+            onSendAttendanceReminder={handleOpenReminderModal}
           />
         ) : null}
         {activeTab === "cobros" && (
