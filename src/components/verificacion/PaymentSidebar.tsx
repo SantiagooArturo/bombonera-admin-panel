@@ -212,6 +212,7 @@ function formatHour12(hourStr: string): string {
   if (h === 0) return "12:00 am";
   if (h < 12) return `${h}:00 am`;
   if (h === 12) return "12:00 pm";
+  if (h === 23) return "10:50 pm";
   return `${h - 12}:00 pm`;
 }
 
@@ -223,9 +224,10 @@ function formatReservationTime(reservation: Reservation) {
 }
 
 function formatHour12CompactFromHour(hour24: number): string {
+  if (hour24 === 23) return "10:50 pm";
   const isPm = hour24 >= 12;
   const hour12 = hour24 % 12 || 12;
-  return `${hour12}${isPm ? "pm" : "am"}`;
+  return `${hour12} ${isPm ? "pm" : "am"}`;
 }
 
 function formatReservationRangeCompact(reservation: Reservation): string {

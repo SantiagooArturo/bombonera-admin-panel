@@ -59,10 +59,11 @@ function formatHour12(hourStr: string): string {
   const parts = hourStr.split(":");
   const h = parseInt(parts[0] || "0");
   const m = parseInt(parts[1] || "0");
-  if (h === 0) return m === 0 ? "12am" : `12:${String(m).padStart(2, "0")}am`;
-  if (h < 12) return m === 0 ? `${h}am` : `${h}:${String(m).padStart(2, "0")}am`;
-  if (h === 12) return m === 0 ? "12pm" : `12:${String(m).padStart(2, "0")}pm`;
-  return m === 0 ? `${h - 12}pm` : `${h - 12}:${String(m).padStart(2, "0")}pm`;
+  if (h === 0) return m === 0 ? "12 am" : `12:${String(m).padStart(2, "0")} am`;
+  if (h < 12) return m === 0 ? `${h} am` : `${h}:${String(m).padStart(2, "0")} am`;
+  if (h === 12) return m === 0 ? "12 pm" : `12:${String(m).padStart(2, "0")} pm`;
+  if (h === 23 && m === 0) return "10:50 pm";
+  return m === 0 ? `${h - 12} pm` : `${h - 12}:${String(m).padStart(2, "0")} pm`;
 }
 
 /**
