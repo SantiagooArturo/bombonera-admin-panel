@@ -6,12 +6,12 @@ import { calculateReservationPrice, type CourtConfigMap } from "@/features/opera
 /**
  * Obtiene el mapa de configuración de canchas.
  */
-async function getCourtConfigMap(db: any): Promise<CourtConfigMap> {
+async function getCourtConfigMap(db: FirebaseFirestore.Firestore): Promise<CourtConfigMap> {
   const snap = await db.collection("court_config").get();
   const map: CourtConfigMap = {} as CourtConfigMap;
   for (let f = 1; f <= 12; f++) {
-    const doc = snap.docs.find((d: any) => d.id === courtConfigDocId(f));
-    const data = doc?.data();
+    const doc = snap.docs.find((d) => d.id === courtConfigDocId(f));
+    const data = doc?.data() as Record<string, unknown> | undefined;
     map[f] = getFullFieldConfig(f, data);
   }
   return map;
@@ -80,10 +80,11 @@ export async function POST() {
       skipped: skippedCount,
       total_checked: snapshot.size
     });
-  } catch (error: any) {
+  } catch (error: unknown) {
+    const errorMessage = error instanceof Error ? error.message : String(error);
     console.error("Error updating reservation prices:", error);
     return NextResponse.json(
-      { error: "Error al actualizar precios", detail: error.message },
+      { error: "Error al actualizar precios", detail: errorMessage },
       { status: 500 }
     );
   }

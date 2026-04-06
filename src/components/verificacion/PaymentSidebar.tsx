@@ -1637,13 +1637,13 @@ const PaymentSidebar = memo(function PaymentSidebar({
     } finally {
       setAttendanceReminderSending(false);
     }
-  }, [reservation.id, reservation.status, fetchAttendanceReminder, toast]);
+  }, [reservation.id, fetchAttendanceReminder, toast]);
 
   const handleOpenReminderModal = useCallback(() => {
     const suggested = buildAttendanceConfirmationMessage(reservation.date);
     setReminderMessage(suggested);
     setIsReminderModalOpen(true);
-  }, [reservation.status, reservation.date]);
+  }, [reservation.date]);
 
   /** DNI para boleta: reserva con 8 dígitos válidos, si no perfil usuario (last_dni). */
   const clientDniForEmit = useMemo(() => {

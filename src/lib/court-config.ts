@@ -63,7 +63,7 @@ export const FIELD_9_DEFAULTS: Partial<CourtFieldConfig> = {
 /**
  * Obtiene la configuración completa para un campo, mezclando data de Firestore con defaults.
  */
-export function getFullFieldConfig(field: number, data?: any): CourtFieldConfig {
+export function getFullFieldConfig(field: number, data?: Record<string, unknown>): CourtFieldConfig {
   const overrides = field === 9 ? FIELD_9_DEFAULTS : {};
   const base = {
     ...DEFAULT_FIELD_CONFIG,
@@ -71,7 +71,7 @@ export function getFullFieldConfig(field: number, data?: any): CourtFieldConfig 
     field,
   };
 
-  const getNum = (val: any, fallback: number) => {
+  const getNum = (val: unknown, fallback: number) => {
     if (typeof val === "number") return val;
     if (typeof val === "string" && val.trim() !== "") {
       const p = parseFloat(val);
@@ -82,17 +82,17 @@ export function getFullFieldConfig(field: number, data?: any): CourtFieldConfig 
 
   return {
     field,
-    image_url: data?.image_url ?? base.image_url,
-    court_size: data?.court_size ?? base.court_size,
-    court_size_other: data?.court_size_other ?? base.court_size_other,
+    image_url: (data?.image_url as string) ?? base.image_url,
+    court_size: (data?.court_size as CourtSize) ?? base.court_size,
+    court_size_other: (data?.court_size_other as string) ?? base.court_size_other,
     price_day_weekday: getNum(data?.price_day_weekday, base.price_day_weekday),
     price_day_weekend: getNum(data?.price_day_weekend, base.price_day_weekend),
     price_day_holiday: getNum(data?.price_day_holiday, base.price_day_holiday),
     price_night_weekday: getNum(data?.price_night_weekday, base.price_night_weekday),
     price_night_weekend: getNum(data?.price_night_weekend, base.price_night_weekend),
     price_night_holiday: getNum(data?.price_night_holiday, base.price_night_holiday),
-    description: data?.description ?? base.description,
-    block_booking: data?.block_booking ?? base.block_booking,
+    description: (data?.description as string) ?? base.description,
+    block_booking: (data?.block_booking as boolean) ?? base.block_booking,
   };
 }
 
