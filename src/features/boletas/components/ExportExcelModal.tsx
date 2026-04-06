@@ -7,6 +7,7 @@ import {
   type ExportInvoiceKind,
   type ExportInvoicePeriod,
 } from "@/features/boletas/utils/exportInvoicesExcel";
+import { invoiceIsVigenteForExport } from "@/features/boletas/utils/invoiceUiStatus";
 
 function currentMonthYmdPrefix(): string {
   const d = new Date();
@@ -49,7 +50,7 @@ export function ExportExcelModal({
   const monthOptions = useMemo(() => {
     const months = new Set<string>();
     months.add(currentMonthYmdPrefix());
-    for (const inv of invoices) {
+    for (const inv of invoices.filter(invoiceIsVigenteForExport)) {
       const ymd = String(inv.fecha_emision_ymd || "").trim();
       if (/^\d{4}-\d{2}-\d{2}$/.test(ymd)) {
         months.add(ymd.slice(0, 7));

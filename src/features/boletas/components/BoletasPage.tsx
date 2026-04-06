@@ -28,19 +28,11 @@ import { BoletasMobileList } from "./BoletasMobileList";
 import { IconOpenInNewTab, SerieCorrelativoCell } from "./boletasSharedUi";
 import { ExportExcelModal } from "./ExportExcelModal";
 import type { ExportInvoiceKind } from "../utils/exportInvoicesExcel";
+import { getInvoiceUiStatus } from "../utils/invoiceUiStatus";
 
 type ComprobanteTab = "todos" | "boletas" | "facturas";
-type InvoiceStatusFilter = "all" | "aprobado" | "pendiente" | "anulado" | "rechazado";
+type InvoiceStatusFilter = "all" | ReturnType<typeof getInvoiceUiStatus>;
 type DateRangeFilter = "historico" | "mes_actual" | "ultimos_30_dias";
-
-function getInvoiceUiStatus(inv: Invoice): Exclude<InvoiceStatusFilter, "all"> {
-  const invStatus = String(inv.status || "").trim().toLowerCase();
-  if (invStatus === "voided") return "anulado";
-  const st = String(inv.sunat_estado || "").trim().toUpperCase();
-  if (st === "ACEPTADO") return "aprobado";
-  if (st === "PENDIENTE" || st === "ANULANDO") return "pendiente";
-  return "rechazado";
-}
 
 function getSunatBadgeMeta(inv: Invoice): {
   label: string;

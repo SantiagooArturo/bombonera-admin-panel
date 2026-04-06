@@ -1,4 +1,5 @@
 import type { Invoice } from "@/lib/types";
+import { invoiceIsVigenteForExport } from "./invoiceUiStatus";
 import { sanitizeReceptorNombre } from "./sanitizeReceptorNombre";
 
 export type ExportInvoiceKind = "boleta" | "factura";
@@ -13,7 +14,6 @@ type ExportRow = {
   "DNI/RUC cliente": string;
   "Nombre cliente": string;
   Monto: number;
-  Estado: "Anulado" | "Vigente";
 };
 
 function toPublicRow(row: ExportRow & { _date: Date | null }): ExportRow {
@@ -24,7 +24,6 @@ function toPublicRow(row: ExportRow & { _date: Date | null }): ExportRow {
     "DNI/RUC cliente": row["DNI/RUC cliente"],
     "Nombre cliente": row["Nombre cliente"],
     Monto: row.Monto,
-    Estado: row.Estado,
   };
 }
 
@@ -112,7 +111,6 @@ function buildRows(invoices: Invoice[]): Array<ExportRow & { _date: Date | null 
       "DNI/RUC cliente": getClientDoc(inv),
       "Nombre cliente": getClientName(inv),
       Monto: Number(inv.amount || 0),
-      Estado: String(inv.status || "").trim() === "voided" ? "Anulado" : "Vigente",
       _date: d,
     };
   });
@@ -122,6 +120,10 @@ function filterByKind(invoices: Invoice[], kind: ExportInvoiceKind): Invoice[] {
   return invoices.filter((inv) =>
     kind === "factura" ? inv.tipo_comprobante === "factura" : inv.tipo_comprobante !== "factura"
   );
+}
+
+function filterVigenteForExport(invoices: Invoice[]): Invoice[] {
+  return invoices.filter(invoiceIsVigenteForExport);
 }
 
 function filterByPeriod(invoices: Invoice[], period: ExportInvoicePeriod): Invoice[] {
@@ -139,7 +141,7 @@ export async function exportInvoicesExcel(params: {
   period: ExportInvoicePeriod;
 }): Promise<{ count: number; fileName: string }> {
   const { invoices, kind, period } = params;
-  const filtered = filterByPeriod(filterByKind(invoices, kind), period);
+  const filtered = filterByPeriod(filterByKind(filterVigenteForExport(invoices), kind), period);
   const rows = buildRows(filtered).sort((a, b) => (a.Fecha < b.Fecha ? -1 : a.Fecha > b.Fecha ? 1 : 0));
 
   const XLSX = await import("xlsx");
