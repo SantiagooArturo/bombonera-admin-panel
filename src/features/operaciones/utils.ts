@@ -1,6 +1,6 @@
 import { TIME_SLOTS, type Reservation, type User } from "@/lib/types";
 import { isHoliday } from "@/lib/feriados-peru";
-import type { CourtFieldConfig } from "@/lib/court-config";
+import { type CourtFieldConfig, getFullFieldConfig } from "@/lib/court-config";
 
 export const MAX_DAY_OFFSET = 14;
 
@@ -181,25 +181,16 @@ export function calculateReservationPrice(
   const isWeekend = day === 0 || day === 6;
   const isHolidayDate = isHoliday(dateStr);
 
-  const cfg = configMap?.[field];
-
+  const cfg = configMap?.[field] ?? getFullFieldConfig(field);
   let total = 0;
   for (const slot of time_slots) {
     const hour = parseInt(slot.split(":")[0], 10);
     const isNight = hour >= 18;
 
-    if (cfg) {
-      if (isNight) {
-        total += isHolidayDate ? cfg.price_night_holiday : isWeekend ? cfg.price_night_weekend : cfg.price_night_weekday;
-      } else {
-        total += isHolidayDate ? cfg.price_day_holiday : isWeekend ? cfg.price_day_weekend : cfg.price_day_weekday;
-      }
+    if (isNight) {
+      total += isHolidayDate ? cfg.price_night_holiday : isWeekend ? cfg.price_night_weekend : cfg.price_night_weekday;
     } else {
-      if (field === 9) {
-        total += isNight ? 60 : 40;
-      } else {
-        total += isNight ? 100 : isWeekend ? 80 : 70;
-      }
+      total += isHolidayDate ? cfg.price_day_holiday : isWeekend ? cfg.price_day_weekend : cfg.price_day_weekday;
     }
   }
   return total;

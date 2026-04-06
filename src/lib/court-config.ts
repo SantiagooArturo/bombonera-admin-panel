@@ -60,6 +60,42 @@ export const FIELD_9_DEFAULTS: Partial<CourtFieldConfig> = {
   price_night_holiday: 60,
 };
 
+/**
+ * Obtiene la configuración completa para un campo, mezclando data de Firestore con defaults.
+ */
+export function getFullFieldConfig(field: number, data?: any): CourtFieldConfig {
+  const overrides = field === 9 ? FIELD_9_DEFAULTS : {};
+  const base = {
+    ...DEFAULT_FIELD_CONFIG,
+    ...overrides,
+    field,
+  };
+
+  const getNum = (val: any, fallback: number) => {
+    if (typeof val === "number") return val;
+    if (typeof val === "string" && val.trim() !== "") {
+      const p = parseFloat(val);
+      return isNaN(p) ? fallback : p;
+    }
+    return fallback;
+  };
+
+  return {
+    field,
+    image_url: data?.image_url ?? base.image_url,
+    court_size: data?.court_size ?? base.court_size,
+    court_size_other: data?.court_size_other ?? base.court_size_other,
+    price_day_weekday: getNum(data?.price_day_weekday, base.price_day_weekday),
+    price_day_weekend: getNum(data?.price_day_weekend, base.price_day_weekend),
+    price_day_holiday: getNum(data?.price_day_holiday, base.price_day_holiday),
+    price_night_weekday: getNum(data?.price_night_weekday, base.price_night_weekday),
+    price_night_weekend: getNum(data?.price_night_weekend, base.price_night_weekend),
+    price_night_holiday: getNum(data?.price_night_holiday, base.price_night_holiday),
+    description: data?.description ?? base.description,
+    block_booking: data?.block_booking ?? base.block_booking,
+  };
+}
+
 /** Obtiene la etiqueta de cabecera para un campo según su configuración. */
 export function getCourtSizeLabel(cfg: CourtFieldConfig): string {
   if (cfg.court_size === "otro" && cfg.court_size_other?.trim()) {

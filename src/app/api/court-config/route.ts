@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getDb } from "@/lib/firebase-admin";
-import { courtConfigDocId, type CourtFieldConfig } from "@/lib/court-config";
+import { courtConfigDocId, type CourtFieldConfig, getFullFieldConfig } from "@/lib/court-config";
 
 const COLLECTION = "court_config";
 
@@ -14,20 +14,7 @@ export async function GET() {
     for (let f = 1; f <= 12; f++) {
       const doc = snapshot.docs.find((d) => d.id === courtConfigDocId(f));
       const data = doc?.data();
-      configs.push({
-        field: f,
-        image_url: data?.image_url ?? "",
-        court_size: (data?.court_size as CourtFieldConfig["court_size"]) ?? (f === 9 ? "5 vs 5" : "6 vs 6"),
-        court_size_other: data?.court_size_other ?? "",
-        price_day_weekday: data?.price_day_weekday ?? (f === 9 ? 40 : 70),
-        price_day_weekend: data?.price_day_weekend ?? (f === 9 ? 40 : 80),
-        price_day_holiday: data?.price_day_holiday ?? (f === 9 ? 40 : 80),
-        price_night_weekday: data?.price_night_weekday ?? (f === 9 ? 60 : 100),
-        price_night_weekend: data?.price_night_weekend ?? (f === 9 ? 60 : 100),
-        price_night_holiday: data?.price_night_holiday ?? (f === 9 ? 60 : 100),
-        description: data?.description ?? "",
-        block_booking: data?.block_booking ?? false,
-      });
+      configs.push(getFullFieldConfig(f, data));
     }
     return NextResponse.json(configs);
   } catch (error) {
@@ -59,6 +46,8 @@ export async function PATCH(request: NextRequest) {
       "price_night_weekend",
       "price_night_holiday",
       "description",
+      "court_size",
+      "court_size_other",
       "block_booking",
     ];
 

@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getDb } from "@/lib/firebase-admin";
-import { courtConfigDocId } from "@/lib/court-config";
+import { courtConfigDocId, getFullFieldConfig } from "@/lib/court-config";
 import {
   calculateReservationPrice,
   normalizePeruPhone,
@@ -74,36 +74,11 @@ function dayIdFromDate(dateStr: string): string {
 async function getCourtConfigMap(db: FirebaseFirestore.Firestore): Promise<CourtConfigMap> {
   const snap = await db.collection("court_config").get();
   const map: CourtConfigMap = {} as CourtConfigMap;
-  const defaults: Record<number, CourtConfigMap[number]> = {
-    9: {
-      price_day_weekday: 40,
-      price_day_weekend: 40,
-      price_day_holiday: 40,
-      price_night_weekday: 60,
-      price_night_weekend: 60,
-      price_night_holiday: 60,
-    },
-  };
-  const std = {
-    price_day_weekday: 70,
-    price_day_weekend: 80,
-    price_day_holiday: 80,
-    price_night_weekday: 100,
-    price_night_weekend: 100,
-    price_night_holiday: 100,
-  };
+
   for (let f = 1; f <= 12; f++) {
     const doc = snap.docs.find((d) => d.id === courtConfigDocId(f));
     const data = doc?.data();
-    const base = defaults[f] ?? std;
-    map[f] = {
-      price_day_weekday: (typeof data?.price_day_weekday === "number" ? data.price_day_weekday : base.price_day_weekday),
-      price_day_weekend: (typeof data?.price_day_weekend === "number" ? data.price_day_weekend : base.price_day_weekend),
-      price_day_holiday: (typeof data?.price_day_holiday === "number" ? data.price_day_holiday : base.price_day_holiday),
-      price_night_weekday: (typeof data?.price_night_weekday === "number" ? data.price_night_weekday : base.price_night_weekday),
-      price_night_weekend: (typeof data?.price_night_weekend === "number" ? data.price_night_weekend : base.price_night_weekend),
-      price_night_holiday: (typeof data?.price_night_holiday === "number" ? data.price_night_holiday : base.price_night_holiday),
-    };
+    map[f] = getFullFieldConfig(f, data);
   }
   return map;
 }
