@@ -5,7 +5,11 @@ import { sanitizeReceptorNombre } from "./sanitizeReceptorNombre";
 export type ExportInvoiceKind = "boleta" | "factura";
 export type ExportInvoicePeriod =
   | { mode: "historico" }
-  | { mode: "mes"; month: string }; // YYYY-MM
+  | { mode: "mes"; month: string } // YYYY-MM
+  | { mode: "rango"; desde: string; hasta: string }; // YYYY-MM-DD inclusive
+
+/** No se exportan comprobantes con fecha de emisión anterior a este día (inclusive desde aquí). */
+export const EXPORT_INCLUSIVE_MIN_YMD = "2026-03-23" as const;
 
 type ExportRow = {
   Fecha: string;
@@ -27,15 +31,86 @@ function toPublicRow(row: ExportRow & { _date: Date | null }): ExportRow {
   };
 }
 
-const WEEKDAY_SHEETS: Array<{ name: string; jsDay: number }> = [
-  { name: "Lunes", jsDay: 1 },
-  { name: "Martes", jsDay: 2 },
-  { name: "Miercoles", jsDay: 3 },
-  { name: "Jueves", jsDay: 4 },
-  { name: "Viernes", jsDay: 5 },
-  { name: "Sabado", jsDay: 6 },
-  { name: "Domingo", jsDay: 0 },
-];
+const WEEKDAY_NAME_ES: Record<number, string> = {
+  0: "Domingo",
+  1: "Lunes",
+  2: "Martes",
+  3: "Miercoles",
+  4: "Jueves",
+  5: "Viernes",
+  6: "Sabado",
+};
+
+/** Mes corto en español (índice 0 = enero). Excel no admite "/" en nombres de hoja. */
+const MONTH_ABBREV_ES = [
+  "ene",
+  "feb",
+  "mar",
+  "abr",
+  "may",
+  "jun",
+  "jul",
+  "ago",
+  "sep",
+  "oct",
+  "nov",
+  "dic",
+] as const;
+
+function sheetNameForCalendarDay(d: Date, includeYear: boolean): string {
+  const wd = WEEKDAY_NAME_ES[d.getDay()] ?? "Dia";
+  const day = d.getDate();
+  const mon = MONTH_ABBREV_ES[d.getMonth()] ?? "";
+  const y = d.getFullYear();
+  return includeYear ? `${wd} ${day} ${mon} ${y}` : `${wd} ${day} ${mon}`;
+}
+
+function daysInCalendarMonth(ym: string): number {
+  const [yStr, mStr] = ym.split("-");
+  const y = Number(yStr);
+  const m = Number(mStr);
+  if (!Number.isFinite(y) || !Number.isFinite(m) || m < 1 || m > 12) return 31;
+  return new Date(y, m, 0).getDate();
+}
+
+function enumerateYmdInMonth(ym: string): string[] {
+  const n = daysInCalendarMonth(ym);
+  const out: string[] = [];
+  for (let day = 1; day <= n; day++) {
+    const dd = String(day).padStart(2, "0");
+    const ymd = `${ym}-${dd}`;
+    if (ymd >= EXPORT_INCLUSIVE_MIN_YMD) out.push(ymd);
+  }
+  return out;
+}
+
+function enumerateYmdInRange(desdeYmd: string, hastaYmd: string): string[] {
+  if (hastaYmd < desdeYmd) return [];
+  const start = new Date(`${desdeYmd}T12:00:00`);
+  const end = new Date(`${hastaYmd}T12:00:00`);
+  if (Number.isNaN(start.getTime()) || Number.isNaN(end.getTime())) return [];
+  const out: string[] = [];
+  const cur = new Date(start);
+  while (cur.getTime() <= end.getTime()) {
+    out.push(toYmdFromDate(cur));
+    cur.setDate(cur.getDate() + 1);
+  }
+  return out;
+}
+
+export function exportMinDateAllowsCalendarMonth(ym: string): boolean {
+  const n = daysInCalendarMonth(ym);
+  const lastYmd = `${ym}-${String(n).padStart(2, "0")}`;
+  return lastYmd >= EXPORT_INCLUSIVE_MIN_YMD;
+}
+
+function uniqueSortedYmdFromRows(rows: Array<ExportRow & { _date: Date | null }>): string[] {
+  const set = new Set<string>();
+  for (const r of rows) {
+    if (r._date) set.add(toYmdFromDate(r._date));
+  }
+  return Array.from(set).sort();
+}
 
 function toYmdFromDate(d: Date): string {
   const y = d.getFullYear();
@@ -127,11 +202,30 @@ function filterVigenteForExport(invoices: Invoice[]): Invoice[] {
 }
 
 function filterByPeriod(invoices: Invoice[], period: ExportInvoicePeriod): Invoice[] {
-  if (period.mode === "historico") return invoices;
+  if (period.mode === "historico") {
+    return invoices.filter((inv) => {
+      const d = parseInvoiceDate(inv);
+      if (!d) return false;
+      return toYmdFromDate(d) >= EXPORT_INCLUSIVE_MIN_YMD;
+    });
+  }
+  if (period.mode === "mes") {
+    return invoices.filter((inv) => {
+      const d = parseInvoiceDate(inv);
+      if (!d) return false;
+      const ymd = toYmdFromDate(d);
+      return ymd.startsWith(period.month) && ymd >= EXPORT_INCLUSIVE_MIN_YMD;
+    });
+  }
+  const desde =
+    period.desde < EXPORT_INCLUSIVE_MIN_YMD ? EXPORT_INCLUSIVE_MIN_YMD : period.desde;
+  const hasta = period.hasta;
+  if (hasta < desde) return [];
   return invoices.filter((inv) => {
     const d = parseInvoiceDate(inv);
     if (!d) return false;
-    return toYmdFromDate(d).startsWith(period.month);
+    const ymd = toYmdFromDate(d);
+    return ymd >= desde && ymd <= hasta;
   });
 }
 
@@ -150,15 +244,55 @@ export async function exportInvoicesExcel(params: {
   const wsAll = XLSX.utils.json_to_sheet(publicRows);
   XLSX.utils.book_append_sheet(wb, wsAll, "Todos");
 
-  for (const wd of WEEKDAY_SHEETS) {
-    const dayRows = rows
-      .filter((r) => r._date && r._date.getDay() === wd.jsDay)
-      .map(toPublicRow);
-    const wsDay = XLSX.utils.json_to_sheet(dayRows);
-    XLSX.utils.book_append_sheet(wb, wsDay, wd.name);
+  const headerRow: (keyof ExportRow)[] = [
+    "Fecha",
+    "Prefijo/Serie",
+    "Codigo",
+    "DNI/RUC cliente",
+    "Nombre cliente",
+    "Monto",
+  ];
+
+  let ymdList: string[];
+  let includeYearInSheetName: boolean;
+  let periodLabel: string;
+
+  if (period.mode === "mes") {
+    ymdList = enumerateYmdInMonth(period.month);
+    includeYearInSheetName = false;
+    periodLabel = period.month;
+  } else if (period.mode === "historico") {
+    ymdList = uniqueSortedYmdFromRows(rows);
+    includeYearInSheetName = true;
+    periodLabel = "historico";
+  } else {
+    const desdeEff =
+      period.desde < EXPORT_INCLUSIVE_MIN_YMD ? EXPORT_INCLUSIVE_MIN_YMD : period.desde;
+    const hastaEff = period.hasta;
+    if (hastaEff < desdeEff) {
+      ymdList = [];
+    } else {
+      ymdList = enumerateYmdInRange(desdeEff, hastaEff);
+    }
+    includeYearInSheetName = desdeEff.slice(0, 7) !== hastaEff.slice(0, 7);
+    periodLabel = `${desdeEff}_a_${hastaEff}`;
   }
 
-  const periodLabel = period.mode === "historico" ? "historico" : period.month;
+  for (const ymd of ymdList) {
+    const d = new Date(`${ymd}T12:00:00`);
+    if (Number.isNaN(d.getTime())) continue;
+    const dayRows = rows
+      .filter((r) => r._date && toYmdFromDate(r._date) === ymd)
+      .map(toPublicRow);
+    const wsDay =
+      dayRows.length > 0
+        ? XLSX.utils.json_to_sheet(dayRows)
+        : XLSX.utils.aoa_to_sheet([headerRow]);
+    const rawName = sheetNameForCalendarDay(d, includeYearInSheetName);
+    const sheetName = rawName.slice(0, 31);
+    XLSX.utils.book_append_sheet(wb, wsDay, sheetName);
+  }
+
   const fileName = `${kind}s_${periodLabel}.xlsx`;
   XLSX.writeFile(wb, fileName);
   return { count: publicRows.length, fileName };

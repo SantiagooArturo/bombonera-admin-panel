@@ -3,7 +3,9 @@
 import { useEffect, useMemo, useState } from "react";
 import type { Invoice } from "@/lib/types";
 import {
+  EXPORT_INCLUSIVE_MIN_YMD,
   exportInvoicesExcel,
+  exportMinDateAllowsCalendarMonth,
   type ExportInvoiceKind,
   type ExportInvoicePeriod,
 } from "@/features/boletas/utils/exportInvoicesExcel";
@@ -23,6 +25,19 @@ function monthLabelEs(month: string): string {
   return `${monthName} ${y}`;
 }
 
+function todayYmdLocal(): string {
+  const d = new Date();
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, "0");
+  const day = String(d.getDate()).padStart(2, "0");
+  return `${y}-${m}-${day}`;
+}
+
+function defaultRangeToYmd(): string {
+  const t = todayYmdLocal();
+  return t < EXPORT_INCLUSIVE_MIN_YMD ? EXPORT_INCLUSIVE_MIN_YMD : t;
+}
+
 export function ExportExcelModal({
   open,
   onClose,
@@ -39,8 +54,10 @@ export function ExportExcelModal({
   onError?: (message: string) => void;
 }) {
   const [kind, setKind] = useState<ExportInvoiceKind>(defaultKind);
-  const [periodMode, setPeriodMode] = useState<"mes" | "historico">("mes");
+  const [periodMode, setPeriodMode] = useState<"mes" | "historico" | "rango">("mes");
   const [selectedMonth, setSelectedMonth] = useState(currentMonthYmdPrefix);
+  const [rangeFrom, setRangeFrom] = useState<string>(EXPORT_INCLUSIVE_MIN_YMD);
+  const [rangeTo, setRangeTo] = useState<string>(defaultRangeToYmd);
   const [exporting, setExporting] = useState(false);
 
   useEffect(() => {
@@ -67,6 +84,22 @@ export function ExportExcelModal({
     }
     return Array.from(months).sort((a, b) => (a > b ? -1 : 1));
   }, [invoices]);
+
+  const monthOptionsEligible = useMemo(() => {
+    const base = monthOptions.filter(exportMinDateAllowsCalendarMonth);
+    if (base.length > 0) return base;
+    const minYm = EXPORT_INCLUSIVE_MIN_YMD.slice(0, 7);
+    return exportMinDateAllowsCalendarMonth(minYm) ? [minYm] : [];
+  }, [monthOptions]);
+
+  useEffect(() => {
+    if (!open || monthOptionsEligible.length === 0) return;
+    if (!monthOptionsEligible.includes(selectedMonth)) {
+      setSelectedMonth(monthOptionsEligible[0]!);
+    }
+  }, [open, monthOptionsEligible, selectedMonth]);
+
+  const rangoInvalid = periodMode === "rango" && rangeFrom > rangeTo;
 
   if (!open) return null;
 
@@ -124,26 +157,59 @@ export function ExportExcelModal({
           <p className="mb-2 text-xs font-bold uppercase tracking-wide text-gray-500">Periodo</p>
           <select
             value={periodMode}
-            onChange={(e) => setPeriodMode(e.target.value === "historico" ? "historico" : "mes")}
+            onChange={(e) => {
+              const v = e.target.value;
+              setPeriodMode(v === "historico" ? "historico" : v === "rango" ? "rango" : "mes");
+            }}
             className="w-full rounded-xl border border-gray-300 bg-white px-3 py-2 text-sm text-gray-900 focus:border-field-dark focus:outline-none focus:ring-1 focus:ring-field-dark/25"
           >
             <option value="mes">Mes específico</option>
+            <option value="rango">Rango específico</option>
             <option value="historico">Histórico completo</option>
           </select>
           {periodMode === "mes" ? (
             <div className="mt-3">
               <p className="mb-2 text-xs font-bold uppercase tracking-wide text-gray-500">Mes</p>
               <select
-                value={selectedMonth}
+                value={
+                  monthOptionsEligible.includes(selectedMonth)
+                    ? selectedMonth
+                    : (monthOptionsEligible[0] ?? selectedMonth)
+                }
                 onChange={(e) => setSelectedMonth(e.target.value)}
                 className="w-full rounded-xl border border-gray-300 bg-white px-3 py-2 text-sm text-gray-900 focus:border-field-dark focus:outline-none focus:ring-1 focus:ring-field-dark/25"
               >
-                {monthOptions.map((m) => (
+                {monthOptionsEligible.map((m) => (
                   <option key={m} value={m}>
                     {monthLabelEs(m)}
                   </option>
                 ))}
               </select>
+            </div>
+          ) : null}
+          {periodMode === "rango" ? (
+            <div className="mt-3 grid grid-cols-1 gap-3 sm:grid-cols-2">
+              <label className="flex flex-col gap-1">
+                <span className="text-xs font-bold uppercase tracking-wide text-gray-500">Desde</span>
+                <input
+                  type="date"
+                  value={rangeFrom}
+                  min={EXPORT_INCLUSIVE_MIN_YMD}
+                  max={rangeTo}
+                  onChange={(e) => setRangeFrom(e.target.value)}
+                  className="w-full rounded-xl border border-gray-300 bg-white px-3 py-2 text-sm text-gray-900 focus:border-field-dark focus:outline-none focus:ring-1 focus:ring-field-dark/25"
+                />
+              </label>
+              <label className="flex flex-col gap-1">
+                <span className="text-xs font-bold uppercase tracking-wide text-gray-500">Hasta</span>
+                <input
+                  type="date"
+                  value={rangeTo}
+                  min={rangeFrom < EXPORT_INCLUSIVE_MIN_YMD ? EXPORT_INCLUSIVE_MIN_YMD : rangeFrom}
+                  onChange={(e) => setRangeTo(e.target.value)}
+                  className="w-full rounded-xl border border-gray-300 bg-white px-3 py-2 text-sm text-gray-900 focus:border-field-dark focus:outline-none focus:ring-1 focus:ring-field-dark/25"
+                />
+              </label>
             </div>
           ) : null}
         </div>
@@ -159,14 +225,23 @@ export function ExportExcelModal({
           </button>
           <button
             type="button"
-            disabled={exporting}
+            disabled={exporting || rangoInvalid || (periodMode === "mes" && monthOptionsEligible.length === 0)}
             onClick={async () => {
               setExporting(true);
               try {
-                const period: ExportInvoicePeriod =
-                  periodMode === "historico"
-                    ? { mode: "historico" }
-                    : { mode: "mes", month: selectedMonth };
+                let period: ExportInvoicePeriod;
+                if (periodMode === "historico") {
+                  period = { mode: "historico" };
+                } else if (periodMode === "rango") {
+                  period = { mode: "rango", desde: rangeFrom, hasta: rangeTo };
+                } else {
+                  period = {
+                    mode: "mes",
+                    month: monthOptionsEligible.includes(selectedMonth)
+                      ? selectedMonth
+                      : (monthOptionsEligible[0] ?? selectedMonth),
+                  };
+                }
                 const result = await exportInvoicesExcel({ invoices, kind, period });
                 onSuccess?.(result.count, result.fileName);
                 onClose();
