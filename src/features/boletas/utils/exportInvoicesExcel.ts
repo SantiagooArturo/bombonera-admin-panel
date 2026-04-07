@@ -54,7 +54,7 @@ function appendSheetWithUniqueName(
   desiredName: string,
   usedNames: Set<string>
 ): void {
-  let base = sanitizeExcelSheetName(desiredName);
+  const base = sanitizeExcelSheetName(desiredName);
   let name = base;
   let n = 2;
   while (usedNames.has(name)) {
