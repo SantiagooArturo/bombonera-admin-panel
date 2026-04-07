@@ -20,15 +20,50 @@ type ExportRow = {
   Monto: number;
 };
 
+/** Caracteres de control ilegales en XML/OOXML (provocan reparación o error al abrir en algunos Excel). */
+function sanitizeOoxmlCellText(value: string): string {
+  return value.replace(/[\u0000-\u0008\u000B\u000C\u000E-\u001F\u007F]/g, "");
+}
+
 function toPublicRow(row: ExportRow & { _date: Date | null }): ExportRow {
   return {
-    Fecha: row.Fecha,
-    "Prefijo/Serie": row["Prefijo/Serie"],
+    Fecha: sanitizeOoxmlCellText(row.Fecha),
+    "Prefijo/Serie": sanitizeOoxmlCellText(row["Prefijo/Serie"]),
     Codigo: row.Codigo,
-    "DNI/RUC cliente": row["DNI/RUC cliente"],
-    "Nombre cliente": row["Nombre cliente"],
+    "DNI/RUC cliente": sanitizeOoxmlCellText(row["DNI/RUC cliente"]),
+    "Nombre cliente": sanitizeOoxmlCellText(row["Nombre cliente"]),
     Monto: row.Monto,
   };
+}
+
+const EXCEL_SHEET_NAME_INVALID = /[\\/:*?\[\]]/g;
+
+function sanitizeExcelSheetName(raw: string): string {
+  let s = raw.replace(EXCEL_SHEET_NAME_INVALID, "-").replace(/\s+/g, " ").trim();
+  if (!s) s = "Hoja";
+  while (s.startsWith("'")) s = s.slice(1).trim();
+  while (s.endsWith("'")) s = s.slice(0, -1).trim();
+  if (!s) s = "Hoja";
+  return s.slice(0, 31);
+}
+
+function appendSheetWithUniqueName(
+  XLSX: typeof import("xlsx"),
+  wb: import("xlsx").WorkBook,
+  ws: import("xlsx").WorkSheet,
+  desiredName: string,
+  usedNames: Set<string>
+): void {
+  let base = sanitizeExcelSheetName(desiredName);
+  let name = base;
+  let n = 2;
+  while (usedNames.has(name)) {
+    const suffix = ` ${n}`;
+    name = (base.slice(0, Math.max(1, 31 - suffix.length)) + suffix).slice(0, 31);
+    n += 1;
+  }
+  usedNames.add(name);
+  XLSX.utils.book_append_sheet(wb, ws, name);
 }
 
 const WEEKDAY_NAME_ES: Record<number, string> = {
@@ -240,9 +275,10 @@ export async function exportInvoicesExcel(params: {
 
   const XLSX = await import("xlsx");
   const wb = XLSX.utils.book_new();
+  const usedSheetNames = new Set<string>();
   const publicRows = rows.map(toPublicRow);
   const wsAll = XLSX.utils.json_to_sheet(publicRows);
-  XLSX.utils.book_append_sheet(wb, wsAll, "Todos");
+  appendSheetWithUniqueName(XLSX, wb, wsAll, "Todos", usedSheetNames);
 
   const headerRow: (keyof ExportRow)[] = [
     "Fecha",
@@ -289,12 +325,16 @@ export async function exportInvoicesExcel(params: {
         ? XLSX.utils.json_to_sheet(dayRows)
         : XLSX.utils.aoa_to_sheet([headerRow]);
     const rawName = sheetNameForCalendarDay(d, includeYearInSheetName);
-    const sheetName = rawName.slice(0, 31);
-    XLSX.utils.book_append_sheet(wb, wsDay, sheetName);
+    appendSheetWithUniqueName(XLSX, wb, wsDay, rawName, usedSheetNames);
   }
 
   const fileName = `${kind}s_${periodLabel}.xlsx`;
-  XLSX.writeFile(wb, fileName);
+  XLSX.writeFileXLSX(wb, fileName, {
+    bookType: "xlsx",
+    bookSST: false,
+    compression: true,
+    ignoreEC: false,
+  });
   return { count: publicRows.length, fileName };
 }
 
