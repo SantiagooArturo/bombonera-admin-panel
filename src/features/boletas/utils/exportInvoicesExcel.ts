@@ -155,15 +155,17 @@ function toYmdFromDate(d: Date): string {
 }
 
 function parseInvoiceDate(inv: Invoice): Date | null {
+  const created = String(inv.created_at || "").trim();
+  if (created) {
+    const d = new Date(created);
+    if (!Number.isNaN(d.getTime())) return d;
+  }
   const ymd = String(inv.fecha_emision_ymd || "").trim();
   if (/^\d{4}-\d{2}-\d{2}$/.test(ymd)) {
     const d = new Date(`${ymd}T12:00:00`);
     return Number.isNaN(d.getTime()) ? null : d;
   }
-  const created = String(inv.created_at || "").trim();
-  if (!created) return null;
-  const d = new Date(created);
-  return Number.isNaN(d.getTime()) ? null : d;
+  return null;
 }
 
 function isUniformDigits(rawDoc: string): boolean {
@@ -271,7 +273,15 @@ export async function exportInvoicesExcel(params: {
 }): Promise<{ count: number; fileName: string }> {
   const { invoices, kind, period } = params;
   const filtered = filterByPeriod(filterByKind(filterVigenteForExport(invoices), kind), period);
-  const rows = buildRows(filtered).sort((a, b) => (a.Fecha < b.Fecha ? -1 : a.Fecha > b.Fecha ? 1 : 0));
+  const rows = buildRows(filtered).sort((a, b) => {
+    const timeA = a._date?.getTime() || 0;
+    const timeB = b._date?.getTime() || 0;
+    if (timeA !== timeB) return timeA - timeB;
+    // Tie-break if needed (rare with timestamps)
+    if (a["Prefijo/Serie"] !== b["Prefijo/Serie"])
+      return (a["Prefijo/Serie"] || "") < (b["Prefijo/Serie"] || "") ? -1 : 1;
+    return (Number(a.Codigo) || 0) - (Number(b.Codigo) || 0);
+  });
 
   const XLSX = await import("xlsx");
   const wb = XLSX.utils.book_new();
