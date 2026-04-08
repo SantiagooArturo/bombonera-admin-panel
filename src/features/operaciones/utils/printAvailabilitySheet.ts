@@ -38,8 +38,8 @@ function normalizeName(value: string | undefined): string {
   let clean = String(value || "").trim();
   if (clean.length === 0) return "Sin nombre";
 
-  // 1. Quitar todo lo que siga a "voley", "volley" o "Número Personal" (insensible a mayúsculas)
-  clean = clean.split(/voley|volley|Número Personal/i)[0];
+  // 1. Quitar todo lo que siga a palabras clave (insensible a mayúsculas/acentos)
+  clean = clean.split(/voley|volley|vóley|Número Personal/i)[0];
 
   // 2. Quitar todos los números
   clean = clean.replace(/\d+/g, "");
