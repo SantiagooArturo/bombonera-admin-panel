@@ -157,26 +157,50 @@ export function printAvailabilitySheet(params: {
         body {
           font-family: Arial, sans-serif;
           color: #1f2937;
+          margin: 0;
+          padding: 0;
           -webkit-print-color-adjust: exact;
           print-color-adjust: exact;
         }
-        .page { width: 100%; }
+        .page { 
+          width: 100%; 
+          height: 275mm; 
+          display: flex; 
+          flex-direction: column;
+          box-sizing: border-box;
+        }
         .page-break { page-break-before: always; }
-        .title-wrap { display: flex; justify-content: space-between; align-items: baseline; margin-bottom: 8px; }
-        .title-wrap h1 { margin: 0; font-size: 17px; letter-spacing: .3px; color: #166534; }
-        .meta { font-size: 20px; font-weight: 800; color: #14532d; }
-        table { width: 100%; border-collapse: collapse; table-layout: fixed; }
+        .title-wrap { 
+          display: flex; 
+          justify-content: space-between; 
+          align-items: center; 
+          margin-bottom: 10px;
+          flex-shrink: 0;
+        }
+        .title-wrap h1 { margin: 0; font-size: 18px; letter-spacing: .5px; color: #166534; }
+        .meta { font-size: 22px; font-weight: 800; color: #14532d; }
+        
+        table { 
+          width: 100%; 
+          flex-grow: 1;
+          border-collapse: collapse; 
+          table-layout: fixed; 
+        }
         thead th {
           background-color: #166534 !important;
           color: #ffffff !important;
-          font-size: 16px;
-          letter-spacing: .3px;
+          font-size: 14px;
+          padding: 8px 4px;
           -webkit-print-color-adjust: exact;
           print-color-adjust: exact;
         }
-        th, td { border: 1px solid #2f855a; padding: 4px 5px; vertical-align: middle; }
-        td { height: 32px; font-size: 13px; line-height: 1.2; word-wrap: break-word; }
-        th.turno, td.slot { width: 18%; text-align: center; font-weight: 700; }
+        th, td { border: 1.5px solid #166534; padding: 4px; vertical-align: middle; }
+        
+        /* Forzar que las filas se estiren para llenar el alto de la tabla */
+        tbody tr { height: 1%; } /* Hack para que crezcan equitativamente */
+        td { height: auto; word-wrap: break-word; }
+
+        th.turno, td.slot { width: 14%; text-align: center; font-weight: 700; }
         td.slot {
           background-color: #f0fdf4 !important;
           color: #065f46;
@@ -186,23 +210,19 @@ export function printAvailabilitySheet(params: {
         }
 
         .client-name {
-          font-weight: 700;
-          font-size: 14px;
+          font-weight: 500;
+          font-size: 16px;
           text-align: center;
           color: #000000;
-          margin-bottom: 8px;
+          margin-bottom: 10px;
           padding-bottom: 0;
         }
         .payment-info {
-          font-size: 12.5px;
+          font-size: 13.5px;
           text-align: left;
           color: #000000;
-          padding: 0 2px;
+          padding: 0 4px;
           line-height: 1.3;
-        }
-        .payment-footer {
-          font-size: 11.5px;
-          font-weight: 500;
         }
       </style>
     </head>
