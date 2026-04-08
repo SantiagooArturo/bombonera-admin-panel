@@ -35,16 +35,42 @@ function slotLabel(startSlot: string): string {
 }
 
 function normalizeName(value: string | undefined): string {
-  const clean = String(value || "").trim();
+  let clean = String(value || "").trim();
+  if (clean.length === 0) return "Sin nombre";
+
+  // 1. Quitar todo lo que siga a "voley", "volley" o "Número Personal" (insensible a mayúsculas)
+  clean = clean.split(/voley|volley|Número Personal/i)[0];
+
+  // 2. Quitar todos los números
+  clean = clean.replace(/\d+/g, "");
+
+  // 3. Limpieza final de espacios
+  clean = clean.trim();
+
   return clean.length > 0 ? clean : "Sin nombre";
 }
 
-function getCellText(reservations: Reservation[], field: number, slot: string): string {
+function getCellData(reservations: Reservation[], field: number, slot: string) {
   const match = reservations.find((r) => r.field === field && (r.time_slots || []).includes(slot));
-  if (!match) return "";
-  const name = normalizeName(match.representative_name);
-  const phone = formatDisplayPhone(String(match.phone_number || ""));
-  return phone ? `${name}\n${phone}` : name;
+  if (!match) return null;
+
+  const name = escapeHtml(normalizeName(match.representative_name));
+  const total = match.total_price || 0;
+  const paid = match.amount_paid || 0;
+  const rest = Math.max(0, total - paid);
+
+  const html = `
+    <div class="client-name">${name}</div>
+    <div class="payment-info">
+      <div>Total: S/ ${total}</div>
+      <div>Resta: S/ ${rest}</div>
+    </div>
+  `;
+
+  return {
+    id: match.id,
+    html,
+  };
 }
 
 const FIELD_GROUPS: number[][] = [
@@ -59,16 +85,47 @@ export function printAvailabilitySheet(params: {
 }): boolean {
   const { date, reservations } = params;
   const safeDate = escapeHtml(formatPrintableDateEs(date));
+
   const pages = FIELD_GROUPS.map((group, pageIdx) => {
-    const cols = group
-      .map((field) => `<th>CAMPO ${field}</th>`)
-      .join("");
-    const rows = TIME_SLOTS.map((slot) => {
+    const cols = group.map((field) => `<th>CAMPO ${field}</th>`).join("");
+
+    const fieldSpanTrack: Record<number, { id: string; remaining: number }> = {};
+
+    const rows = TIME_SLOTS.map((slot, slotIdx) => {
       const cells = group
-        .map((field) => `<td>${escapeHtml(getCellText(reservations, field, slot)) || "&nbsp;"}</td>`)
+        .map((field) => {
+          if (fieldSpanTrack[field] && fieldSpanTrack[field].remaining > 0) {
+            fieldSpanTrack[field].remaining--;
+            return "";
+          }
+
+          const data = getCellData(reservations, field, slot);
+          if (!data) {
+            return "<td>&nbsp;</td>";
+          }
+
+          let rowspan = 1;
+          for (let i = slotIdx + 1; i < TIME_SLOTS.length; i++) {
+            const nextData = getCellData(reservations, field, TIME_SLOTS[i]);
+            if (nextData && nextData.id === data.id) {
+              rowspan++;
+            } else {
+              break;
+            }
+          }
+
+          if (rowspan > 1) {
+            fieldSpanTrack[field] = { id: data.id, remaining: rowspan - 1 };
+          }
+
+          const rowspanAttr = rowspan > 1 ? ` rowspan="${rowspan}"` : "";
+          return `<td${rowspanAttr}>${data.html}</td>`;
+        })
         .join("");
+
       return `<tr><td class="slot">${escapeHtml(slotLabel(slot))}</td>${cells}</tr>`;
     }).join("");
+
     return `
       <section class="page ${pageIdx > 0 ? "page-break" : ""}">
         <header class="title-wrap">
@@ -117,8 +174,8 @@ export function printAvailabilitySheet(params: {
           -webkit-print-color-adjust: exact;
           print-color-adjust: exact;
         }
-        th, td { border: 1px solid #2f855a; padding: 6px 5px; vertical-align: middle; }
-        td { height: 30px; font-size: 15px; line-height: 1.15; word-wrap: break-word; white-space: pre-line; }
+        th, td { border: 1px solid #2f855a; padding: 4px 5px; vertical-align: middle; }
+        td { height: 32px; font-size: 13px; line-height: 1.2; word-wrap: break-word; }
         th.turno, td.slot { width: 18%; text-align: center; font-weight: 700; }
         td.slot {
           background-color: #f0fdf4 !important;
@@ -127,12 +184,34 @@ export function printAvailabilitySheet(params: {
           -webkit-print-color-adjust: exact;
           print-color-adjust: exact;
         }
+
+        .client-name {
+          font-weight: 700;
+          font-size: 14px;
+          text-align: center;
+          color: #000000;
+          margin-bottom: 8px;
+          padding-bottom: 0;
+        }
+        .payment-info {
+          font-size: 12.5px;
+          text-align: left;
+          color: #000000;
+          padding: 0 2px;
+          line-height: 1.3;
+        }
+        .payment-footer {
+          font-size: 11.5px;
+          font-weight: 500;
+        }
       </style>
     </head>
-    <body>
+    <body onload="window.focus();">
       ${pages}
     </body>
   </html>`;
+
+
 
   const printWindow = window.open("about:blank", "bombonera-print-availability");
   if (!printWindow) return false;
@@ -152,4 +231,5 @@ export function printAvailabilitySheet(params: {
   }, 120);
   return true;
 }
+
 
