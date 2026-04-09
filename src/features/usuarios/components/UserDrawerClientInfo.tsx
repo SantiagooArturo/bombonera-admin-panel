@@ -321,7 +321,8 @@ export function UserDrawerClientInfo({ user, onUserUpdated }: UserDrawerClientIn
               className="w-full rounded-xl border-2 border-gray-200 bg-gray-50 px-3 py-2.5 text-sm font-bold text-gray-800 focus:border-blue-500 focus:outline-none disabled:opacity-60"
             >
               <option value="casual">{CLIENT_TYPE_LABELS.casual}</option>
-              <option value="recurrente">{CLIENT_TYPE_LABELS.recurrente}</option>
+              <option value="frecuente">{CLIENT_TYPE_LABELS.frecuente}</option>
+              <option value="academia">{CLIENT_TYPE_LABELS.academia}</option>
               <option value="sospechoso_fraude">{CLIENT_TYPE_LABELS.sospechoso_fraude}</option>
             </select>
           )}

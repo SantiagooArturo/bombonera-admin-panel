@@ -34,7 +34,8 @@ function userBotActivated(u: User): boolean {
 
 const CLIENT_TYPE_ORDER: ClientType[] = [
   "casual",
-  "recurrente",
+  "frecuente",
+  "academia",
   "sospechoso_fraude",
 ];
 
@@ -697,13 +698,16 @@ function UsuariosContent() {
                               className={`px-3 py-1.5 rounded-lg text-base font-medium border-2 cursor-pointer transition-colors ${
                                   user.client_type === "sospechoso_fraude"
                                     ? "bg-red-50 text-red-700 border-red-200"
-                                    : user.client_type === "recurrente"
-                                    ? "bg-green-50 text-green-700 border-green-200"
+                                    : user.client_type === "frecuente"
+                                    ? "bg-amber-50 text-amber-700 border-amber-200"
+                                    : user.client_type === "academia"
+                                    ? "bg-purple-50 text-purple-700 border-purple-200"
                                   : "bg-blue-50 text-blue-700 border-blue-200"
                                 } disabled:opacity-50`}
                               >
-                              <option value="casual">Casual</option>
-                                <option value="recurrente">Recurrente</option>
+                               <option value="casual">Casual</option>
+                                <option value="frecuente">Frecuente / Casero</option>
+                                <option value="academia">Academia / Negocio</option>
                                 <option value="sospechoso_fraude">Peligro de fraude</option>
                               </select>
                             </td>

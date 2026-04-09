@@ -167,6 +167,17 @@ export default function OperacionesPage() {
     [users]
   );
 
+  const [recurrentSchedules, setRecurrentSchedules] = useState<any[]>([]);
+
+  useEffect(() => {
+    fetch("/api/recurrent-schedules")
+      .then(res => res.json())
+      .then(data => {
+        if (Array.isArray(data)) setRecurrentSchedules(data);
+      })
+      .catch(err => console.error("Error loading recurrent schedules:", err));
+  }, []);
+
   /** IDs normalizados (últimos 9 dígitos) de usuarios con client_type === "recurrente". */
   const recurrentClientIds = useMemo(() => {
     const set = new Set<string>();
@@ -557,6 +568,7 @@ export default function OperacionesPage() {
             autoAssignments={autoAssignments}
             courtConfigs={courtConfigs}
             recurrentClientIds={recurrentClientIds}
+            recurrentSchedules={recurrentSchedules}
             currentSlot={currentSlot}
             isToday={isToday}
             onSelectReservation={sidebar.open}
@@ -596,6 +608,7 @@ export default function OperacionesPage() {
           onToggleApplied={sidebar.handleToggleApplied}
           onUpdatePrice={sidebar.handleUpdatePrice}
           onUpdateAmountPaid={sidebar.handleUpdateAmountPaid}
+          onToggleRecurrence={sidebar.handleToggleRecurrence}
           amountPaidDeltaPrompt={sidebar.amountPaidDeltaPrompt}
           onResolveAmountPaidDeltaPrompt={sidebar.resolveAmountPaidDeltaPrompt}
           pendingEmitFromAmountEdit={sidebar.pendingEmitFromAmountEdit}

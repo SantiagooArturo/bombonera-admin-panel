@@ -39,90 +39,93 @@ export async function GET(request: NextRequest) {
     let createdCount = 0;
     let skippedOverlapCount = 0;
 
+    // 1. Obtener todos los horarios maestros (fuente única de verdad)
+    const schedulesSnap = await db.collection("recurrent_schedules").get();
+    const schedules = schedulesSnap.docs.map(d => d.data());
+    
+    console.log(`[Cron] Encontrados ${schedules.length} horarios recurrentes maestros.`);
+
     for (const dateStr of targetDates) {
-      const snapshot = await db
-        .collection("reservations")
-        .where("date", "==", dateStr)
-        .where("status", "==", "confirmed")
-        .get();
+      console.log(`[Cron] Procesando fecha: ${dateStr}`);
+      
+      for (const schedule of schedules) {
+        // Verificar si este horario maestro corresponde al día de la semana que estamos procesando
+        const dayOfWeek = new Date(dateStr + "T12:00:00").getDay();
+        if (schedule.day_of_week !== dayOfWeek) continue;
 
-      for (const doc of snapshot.docs) {
-        const data = doc.data();
-        
-        // Evitar procesar dos veces
-        if (data.rebooking_sent) continue;
+        const { chat_id, field, start_time, representative_name } = schedule;
 
-        const rawChatId = data.chat_id;
-        if (!rawChatId) continue;
+        // 2. Buscar si ya existe una reserva BASE confirmada para este dueño en este slot
+        const baseResSnap = await db.collection("reservations")
+          .where("date", "==", dateStr)
+          .where("chat_id", "==", chat_id)
+          .where("field", "==", field)
+          .get();
 
-        const chatId = normalizePeruPhone(String(rawChatId));
-        const userDoc = await db.collection("users").doc(chatId).get();
-        if (!userDoc.exists) continue;
+        const baseResDoc = baseResSnap.docs.find(d => {
+          const slots: string[] = d.data().time_slots || [];
+          return slots[0] === start_time && d.data().status === "confirmed";
+        });
 
-        const userData = userDoc.data();
-        // Solo clientes recurrentes
-        if (userData?.client_type !== "recurrente") continue;
+        if (!baseResDoc) {
+          // Si no hay reserva base confirmada hoy, no autogeneramos la siguiente
+          // (Pudo haber sido cancelada o no pagada)
+          continue;
+        }
 
-        const timeSlots: string[] = data.time_slots || [];
-        if (timeSlots.length === 0) continue;
+        const baseResData = baseResDoc.data();
+        if (baseResData.rebooking_sent) continue;
 
-        const field = data.field;
-        
         // Fecha destino: misma fecha de la próxima semana
-        const originalDate = new Date(dateStr + "T12:00:00");
-        const nextWeek = new Date(originalDate);
-        nextWeek.setDate(nextWeek.getDate() + 7);
+        const nextWeek = new Date(new Date(dateStr + "T12:00:00").getTime() + 7 * 24 * 60 * 60 * 1000);
         const nextWeekStr = nextWeek.toISOString().slice(0, 10);
 
-        // 1. Verificar si ya existe CUALQUIER reserva que solape en esa cancha/hora
-        const existingOverlapSnap = await db
-          .collection("reservations")
+        // 3. Verificar solapamiento en el destino
+        const existingOverlapSnap = await db.collection("reservations")
           .where("date", "==", nextWeekStr)
           .where("field", "==", field)
           .where("status", "in", ["pending", "confirmed"])
           .get();
 
-        const isOverlapping = existingOverlapSnap.docs.some((d) => {
+        const isOverlapping = existingOverlapSnap.docs.some(d => {
           const slots: string[] = d.data().time_slots || [];
-          return slots.some(s => timeSlots.includes(s));
+          return slots.includes(start_time);
         });
 
         if (isOverlapping) {
-          console.log(`[Cron] Solapamiento detectado para ${nextWeekStr} en cancha ${field}. Saltando.`);
+          console.log(`[Cron] Solapamiento en ${nextWeekStr} ${start_time} Cancha ${field}. Saltando.`);
           skippedOverlapCount++;
-          // Marcamos como enviado de todos modos para no reintentar algo que no se puede
-          await doc.ref.update({ rebooking_sent: true });
+          await baseResDoc.ref.update({ rebooking_sent: true });
           continue;
         }
 
-        // Crear la nueva reserva
+        // 4. Crear la nueva reserva (clon)
         const newReservation = {
-          chat_id: chatId,
-          court_type: data.court_type,
-          field: field || null,
+          chat_id,
+          field,
           date: nextWeekStr,
-          time_slots: timeSlots,
-          time_ranges: data.time_ranges || [],
-          slot_keys: data.slot_keys || [],
+          time_slots: baseResData.time_slots,
+          time_ranges: baseResData.time_ranges || [],
+          slot_keys: baseResData.slot_keys || [],
           created_at: new Date().toISOString(),
-          status: "pending", // Siempre pendiente como solicitó el usuario
-          total_price: data.total_price || 0,
-          reservation_price: data.reservation_price || 0,
-          phone_number: data.phone_number || "",
+          status: "pending",
+          total_price: baseResData.total_price || 0,
+          reservation_price: baseResData.reservation_price || 0,
+          phone_number: baseResData.phone_number || "",
           amount_paid: 0,
-          representative_name: data.representative_name || "",
+          representative_name: representative_name || baseResData.representative_name || "",
           auto_confirmed: false,
           confirmed: false,
           manual_pending: true,
-          source: "recurrent_rebooking_v2",
+          source: "recurrent_rebooking_v4_ssot",
         };
 
         await db.collection("reservations").add(newReservation);
         createdCount++;
 
-        // Marcar la original para no repetir
-        await doc.ref.update({ rebooking_sent: true });
-        console.log(`[Cron] Reserva creada para ${chatId} el ${nextWeekStr} (Cancha ${field})`);
+        // Marcar la base para no repetir
+        await baseResDoc.ref.update({ rebooking_sent: true });
+        console.log(`[Cron] Generada reserva para ${representative_name} el ${nextWeekStr}`);
       }
     }
 

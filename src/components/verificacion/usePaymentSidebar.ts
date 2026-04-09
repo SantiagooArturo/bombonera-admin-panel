@@ -221,6 +221,31 @@ export function usePaymentSidebar(options?: UsePaymentSidebarOptions) {
     toast("Tipo de cliente actualizado", "success");
     return true;
   }, [selectedReservation, clientType, store, toast]);
+  
+  const handleToggleRecurrence = useCallback(async (isRecurrent: boolean) => {
+    if (!selectedReservation) return false;
+    
+    try {
+      const res = await fetch("/api/reservations", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ id: selectedReservation.id, is_recurrent: isRecurrent }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        toast(data.error || "No se pudo actualizar la recurrencia", "error");
+        return false;
+      }
+      
+      setSelectedReservation(prev => prev ? { ...prev, is_recurrent: isRecurrent } : prev);
+      options?.onReservationUpdated?.(selectedReservation.id, { is_recurrent: isRecurrent });
+      toast(isRecurrent ? "Horario marcado como recurrente" : "Recurrencia removida", "success");
+      return true;
+    } catch (error) {
+      toast("Error al conectar con el servidor", "error");
+      return false;
+    }
+  }, [selectedReservation, options, toast]);
 
   const handleUpdateStatus = useCallback(async (nextStatus: "pending" | "confirmed") => {
     if (!selectedReservation) return false;
@@ -846,5 +871,6 @@ export function usePaymentSidebar(options?: UsePaymentSidebarOptions) {
     clearPendingEmitFromAmountEdit,
     handleUpdatePrice,
     handleToggleApplied,
+    handleToggleRecurrence,
   };
 }

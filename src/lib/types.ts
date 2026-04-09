@@ -37,6 +37,19 @@ export interface Reservation {
   auto_confirmed?: boolean;
   /** Si el admin marcó como pendiente manualmente. No expira automáticamente. */
   manual_pending?: boolean;
+  /** Si la reserva es parte de una cadena recurrente (dueño del horario). */
+  is_recurrent?: boolean;
+}
+
+export interface RecurrentSchedule {
+  id: string; // Document ID: day_field_time (ej. 1_3_19:00)
+  chat_id: string;
+  representative_name: string;
+  field: number;
+  day_of_week: number;
+  start_time: string;
+  last_reservation_id: string;
+  created_at: string;
 }
 
 export interface BlockedSlot {
@@ -140,7 +153,7 @@ export function getPendingExpiryTimeFormatted(r: Reservation): string | null {
 }
 
 // Usuarios: colección users. Atributos denormalizados para evitar queries anidadas.
-export type ClientType = "casual" | "recurrente" | "sospechoso_fraude";
+export type ClientType = "casual" | "frecuente" | "academia" | "sospechoso_fraude";
 
 export interface User {
   id: string; // document id = chat_id normalizado (número WA)
@@ -183,7 +196,8 @@ export interface User {
 
 export const CLIENT_TYPE_LABELS: Record<ClientType, string> = {
   casual: "Casual",
-  recurrente: "Recurrente",
+  frecuente: "Frecuente / Casero",
+  academia: "Academia / Negocio",
   sospechoso_fraude: "Peligro de fraude",
 };
 

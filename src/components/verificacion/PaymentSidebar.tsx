@@ -63,6 +63,7 @@ interface PaymentSidebarProps {
   onUpdateClientType: (clientType: ClientType) => Promise<boolean>;
   onUpdateStatus?: (status: "pending" | "confirmed") => Promise<boolean>;
   statusUpdating?: boolean;
+  onToggleRecurrence?: (isRecurrent: boolean) => Promise<boolean>;
   cancellingReservation?: boolean;
   onClose: () => void;
   /** Config de canchas para mostrar tamaño (5 vs 5, 6 vs 6) y calcular precio. */
@@ -302,6 +303,7 @@ interface ReservationDetailContentProps {
   onUpdateAmountPaid?: (amountPaid: number, reservationId?: string) => Promise<boolean>;
   onUpdateStatus?: (status: "pending" | "confirmed") => Promise<boolean>;
   onUpdateClientType: (clientType: ClientType) => Promise<boolean>;
+  onToggleRecurrence?: (isRecurrent: boolean) => Promise<boolean>;
   onCancelReservation: () => Promise<boolean>;
   /** Chips para cambiar de reserva cuando el cliente tiene 2+ reservas esta semana. */
   reservationsForChips?: Reservation[];
@@ -322,6 +324,7 @@ function ReservationDetailContent({
   onUpdateAmountPaid,
   onUpdateStatus,
   onUpdateClientType,
+  onToggleRecurrence,
   onCancelReservation,
   reservationsForChips,
   onSelectReservationFromChips,
@@ -608,7 +611,7 @@ function ReservationDetailContent({
             {clientTypeLoading ? (
               <div className="h-[42px] w-full rounded-xl border-2 border-gray-200 bg-gray-100 animate-pulse" />
             ) : (
-              <select
+            <select
                 value={clientType}
                 disabled={clientTypeUpdating}
                 onChange={(e) => {
@@ -619,10 +622,36 @@ function ReservationDetailContent({
                 className="w-full rounded-xl border-2 border-gray-200 bg-gray-50 px-3 py-2.5 text-sm font-bold text-gray-800 focus:border-blue-500 focus:outline-none disabled:opacity-60"
               >
                 <option value="casual">{CLIENT_TYPE_LABELS.casual}</option>
-                <option value="recurrente">{CLIENT_TYPE_LABELS.recurrente}</option>
+                <option value="frecuente">{CLIENT_TYPE_LABELS.frecuente}</option>
+                <option value="academia">{CLIENT_TYPE_LABELS.academia}</option>
                 <option value="sospechoso_fraude">{CLIENT_TYPE_LABELS.sospechoso_fraude}</option>
               </select>
             )}
+          </div>
+
+          <div className="flex min-w-0 w-full flex-col md:w-auto">
+            <label className="mb-1 block text-xs font-semibold uppercase tracking-wide text-amber-600">¿Horario Recurrente?</label>
+            <div className="flex items-center gap-2 h-[42px]">
+              <button
+                type="button"
+                onClick={() => onToggleRecurrence?.(!reservation.is_recurrent)}
+                className={`relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none focus:ring-2 focus:ring-blue-600 focus:ring-offset-2 ${
+                  reservation.is_recurrent ? "bg-blue-600" : "bg-gray-200"
+                }`}
+                role="switch"
+                aria-checked={reservation.is_recurrent}
+              >
+                <span
+                  aria-hidden="true"
+                  className={`pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out ${
+                    reservation.is_recurrent ? "translate-x-5" : "translate-x-0"
+                  }`}
+                />
+              </button>
+              <span className={`text-sm font-bold ${reservation.is_recurrent ? "text-blue-700" : "text-gray-500"}`}>
+                {reservation.is_recurrent ? "RECURRENTE" : "No"}
+              </span>
+            </div>
           </div>
         </div>
 
@@ -1559,6 +1588,7 @@ const PaymentSidebar = memo(function PaymentSidebar({
   onToggleApplied,
   onUpdatePrice,
   onUpdateAmountPaid,
+  onToggleRecurrence,
   clientType,
   clientTypeLoading = false,
   clientTypeUpdating = false,
@@ -1914,6 +1944,7 @@ const PaymentSidebar = memo(function PaymentSidebar({
             onUpdateAmountPaid={onUpdateAmountPaid}
             onUpdateStatus={onUpdateStatus}
             onUpdateClientType={onUpdateClientType}
+            onToggleRecurrence={onToggleRecurrence}
             onCancelReservation={onCancelReservation}
             reservationsForChips={hasMultipleReservations ? allReservationsThisWeek : undefined}
             onSelectReservationFromChips={hasMultipleReservations ? onSelectReservationFromList : undefined}

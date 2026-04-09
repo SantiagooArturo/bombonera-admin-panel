@@ -221,6 +221,7 @@ export async function PATCH(request: NextRequest) {
       amount_paid,
       /** Si true: solo persiste `amount_paid` y marca `amount_paid_manual` (no crea transferencias de ajuste). */
       amount_paid_direct,
+      is_recurrent,
     } = body;
 
     if (!id) {
@@ -293,6 +294,45 @@ export async function PATCH(request: NextRequest) {
           });
         }
         updateData.amount_paid = amount_paid;
+      }
+    }
+
+    if (typeof is_recurrent === "boolean") {
+      const resDoc = await db.collection("reservations").doc(id).get();
+      if (!resDoc.exists) return NextResponse.json({ error: "Reserva no encontrada" }, { status: 404 });
+      const resData = resDoc.data()!;
+      
+      const dateStr = resData.date;
+      const dayOfWeek = new Date(dateStr + "T12:00:00").getDay();
+      const startTime = resData.time_slots?.[0] || "";
+      const currentField = (typeof field === "number" ? field : resData.field) as number;
+      const scheduleId = `${dayOfWeek}_${currentField}_${startTime}`;
+
+      if (is_recurrent) {
+        // Validar conflicto de dueño en recurrent_schedules
+        const existing = await db.collection("recurrent_schedules").doc(scheduleId).get();
+        if (existing.exists && existing.data()?.chat_id !== resData.chat_id) {
+          return NextResponse.json({ 
+            error: `Conflicto: Este horario ya pertenece de forma recurrente a ${existing.data()?.representative_name}` 
+          }, { status: 409 });
+        }
+        // Registrar/Actualizar dueño
+        await db.collection("recurrent_schedules").doc(scheduleId).set({
+          id: scheduleId,
+          chat_id: resData.chat_id,
+          representative_name: resData.representative_name || "",
+          field: currentField,
+          day_of_week: dayOfWeek,
+          start_time: startTime,
+          last_reservation_id: id,
+          created_at: new Date().toISOString()
+        });
+      } else {
+        // Eliminar del registro si nosotros somos el dueño actual
+        const existing = await db.collection("recurrent_schedules").doc(scheduleId).get();
+        if (existing.exists && existing.data()?.last_reservation_id === id) {
+          await db.collection("recurrent_schedules").doc(scheduleId).delete();
+        }
       }
     }
 
@@ -403,6 +443,21 @@ export async function DELETE(request: NextRequest) {
     batch.delete(db.collection("reservations").doc(id));
     transfersSnap.docs.forEach((doc) => batch.delete(doc.ref));
     invoicesSnap.docs.forEach((doc) => batch.delete(doc.ref));
+
+    // Si la reserva era dueña de un horario recurrente, limpiar el registro
+    const resDoc = await db.collection("reservations").doc(id).get();
+    if (resDoc.exists) {
+      const resData = resDoc.data()!;
+      const dayOfWeek = new Date(resData.date + "T12:00:00").getDay();
+      const startTime = resData.time_slots?.[0] || "";
+      const scheduleId = `${dayOfWeek}_${resData.field}_${startTime}`;
+      const scheduleRef = db.collection("recurrent_schedules").doc(scheduleId);
+      const schedDoc = await scheduleRef.get();
+      if (schedDoc.exists && (schedDoc.data()?.last_reservation_id === id || schedDoc.data()?.chat_id === resData.chat_id)) {
+        batch.delete(scheduleRef);
+      }
+    }
+
     await batch.commit();
 
     return NextResponse.json({ success: true });

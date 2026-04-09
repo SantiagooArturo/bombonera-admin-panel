@@ -132,7 +132,8 @@ export default function AddUserModal({ open, onClose, onSubmit }: AddUserModalPr
               className="w-full rounded-xl border-2 border-gray-200 bg-gray-50 px-4 py-3 font-semibold text-gray-800 focus:border-bombonera-500 focus:outline-none"
             >
               <option value="casual">{CLIENT_TYPE_LABELS.casual}</option>
-              <option value="recurrente">{CLIENT_TYPE_LABELS.recurrente}</option>
+              <option value="frecuente">{CLIENT_TYPE_LABELS.frecuente}</option>
+              <option value="academia">{CLIENT_TYPE_LABELS.academia}</option>
             </select>
           </div>
 

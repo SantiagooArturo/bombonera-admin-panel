@@ -40,7 +40,7 @@ export async function GET() {
           typeof data.last_factura_razon_social === "string" ? data.last_factura_razon_social : undefined,
         reservation_count: typeof reservationCount === "number" ? reservationCount : 0,
         balance: typeof balance === "number" ? balance : 0,
-        client_type: (clientType === "casual" || clientType === "recurrente" || clientType === "sospechoso_fraude"
+        client_type: (clientType === "casual" || clientType === "frecuente" || clientType === "academia" || clientType === "sospechoso_fraude"
           ? clientType
           : "casual") as ClientType,
         is_automated: typeof isAutomated === "boolean" ? isAutomated : true,

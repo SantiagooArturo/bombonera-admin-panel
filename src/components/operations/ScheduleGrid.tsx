@@ -81,6 +81,8 @@ export interface ScheduleGridProps {
   onSelectBlocked: (blockedSlot: BlockedSlot) => void;
   onSelectEmpty: (field: number, timeSlot: string) => void;
   maxHeight?: string;
+  /** Registro de dueños de horarios recurrentes (colección recurrent_schedules). */
+  recurrentSchedules?: any[];
 }
 
 // ─── Component ──────────────────────────────────────────────────────────────
@@ -97,6 +99,7 @@ export default function ScheduleGrid({
   onSelectBlocked,
   onSelectEmpty,
   maxHeight = "calc(100vh - 220px)",
+  recurrentSchedules = [],
 }: ScheduleGridProps) {
   const currentRowRef = useRef<HTMLTableRowElement>(null);
   const columnGroups = useMemo(() => buildColumnGroups(courtConfigs ?? null), [courtConfigs]);
@@ -299,13 +302,18 @@ export default function ScheduleGrid({
                       <OccupiedCellContent
                         reservation={reservation}
                         isRecurrent={
-                          recurrentClientIds
-                            ? recurrentClientIds.has(
-                                String(reservation.chat_id || reservation.phone_number || "")
-                                  .replace(/\D/g, "")
-                                  .slice(-9)
-                              )
-                            : false
+                          (() => {
+                            // Fuente Única de Verdad: Registro de Dueños (recurrent_schedules)
+                            const dayOfWeek = new Date(reservation.date + "T12:00:00").getDay();
+                            const startTime = reservation.time_slots?.[0] || "";
+                            const owner = recurrentSchedules.find(s => 
+                              s.day_of_week === dayOfWeek && 
+                              s.field === field && 
+                              s.start_time === startTime
+                            );
+                            // Es recurrente si el dueño coincide con el chat_id de esta reserva
+                            return !!(owner && owner.chat_id === reservation.chat_id);
+                          })()
                         }
                       />
                     </td>
