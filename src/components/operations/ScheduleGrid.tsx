@@ -1,7 +1,7 @@
 "use client";
 
 import { useMemo, useEffect, useRef } from "react";
-import { TIME_SLOTS, type Reservation, type BlockedSlot, isReservationActive } from "@/lib/types";
+import { TIME_SLOTS, type Reservation, type BlockedSlot, isReservationActive, type RecurrentSchedule } from "@/lib/types";
 import type { CourtFieldConfig } from "@/lib/court-config";
 import { getCourtSizeLabel } from "@/lib/court-config";
 import { OccupiedCellContent, EmptyCellContent, BlockedCellContent } from "./GridCell";
@@ -81,8 +81,7 @@ export interface ScheduleGridProps {
   onSelectBlocked: (blockedSlot: BlockedSlot) => void;
   onSelectEmpty: (field: number, timeSlot: string) => void;
   maxHeight?: string;
-  /** Registro de dueños de horarios recurrentes (colección recurrent_schedules). */
-  recurrentSchedules?: any[];
+  recurrentSchedules?: RecurrentSchedule[];
 }
 
 // ─── Component ──────────────────────────────────────────────────────────────
@@ -92,7 +91,7 @@ export default function ScheduleGrid({
   blockedSlots,
   autoAssignments,
   courtConfigs,
-  recurrentClientIds,
+  // recurrentClientIds removed
   currentSlot,
   isToday,
   onSelectReservation,

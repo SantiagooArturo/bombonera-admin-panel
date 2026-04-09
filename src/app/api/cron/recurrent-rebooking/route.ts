@@ -1,6 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getDb } from "@/lib/firebase-admin";
-import { normalizePeruPhone } from "@/features/operaciones/utils";
 
 /**
  * GET /api/cron/recurrent-rebooking

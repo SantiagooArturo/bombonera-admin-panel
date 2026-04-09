@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
+import Image from "next/image";
 import { formatDisplayPhone, normalizePeruPhone } from "../utils";
 
 export type PhoneOption = {
@@ -167,13 +168,13 @@ export default function EditablePhoneSelect({
               {/* Foto de perfil redondeada */}
               <div className="h-8 w-8 rounded-full bg-gray-200 flex-shrink-0 overflow-hidden flex items-center justify-center border border-gray-100 shadow-sm">
                 {o.picture ? (
-                  <img
+                  <Image
                     src={o.picture}
                     alt={o.name}
+                    width={32}
+                    height={32}
                     className="h-full w-full object-cover"
-                    onError={(e) => {
-                      (e.target as HTMLImageElement).src = "";
-                    }}
+                    unoptimized
                   />
                 ) : (
                   <svg className="h-5 w-5 text-gray-400" fill="currentColor" viewBox="0 0 24 24">

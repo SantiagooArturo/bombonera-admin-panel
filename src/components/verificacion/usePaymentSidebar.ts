@@ -241,7 +241,7 @@ export function usePaymentSidebar(options?: UsePaymentSidebarOptions) {
       options?.onReservationUpdated?.(selectedReservation.id, { is_recurrent: isRecurrent });
       toast(isRecurrent ? "Horario marcado como recurrente" : "Recurrencia removida", "success");
       return true;
-    } catch (error) {
+    } catch {
       toast("Error al conectar con el servidor", "error");
       return false;
     }

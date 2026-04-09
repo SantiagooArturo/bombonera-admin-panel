@@ -1,5 +1,4 @@
 import { TIME_SLOTS, type Reservation } from "@/lib/types";
-import { formatDisplayPhone } from "@/features/operaciones/utils";
 
 function escapeHtml(input: string): string {
   return input

@@ -33,7 +33,7 @@ export async function GET(request: NextRequest) {
     const data = doc.data() || {};
     const value = data.client_type;
     const valid =
-      value === "casual" || value === "recurrente" || value === "sospechoso_fraude";
+      value === "casual" || value === "frecuente" || value === "academia" || value === "sospechoso_fraude";
 
     return NextResponse.json({
       client_type: (valid ? value : DEFAULT_CLIENT_TYPE) as ClientType,

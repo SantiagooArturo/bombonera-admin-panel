@@ -377,3 +377,12 @@ export interface WahaSession {
   status: string;
   me: WahaSessionUser | null;
 }
+
+/** Registro de dueño de un horario recurrente/fijo. */
+export interface RecurrentSchedule {
+  day_of_week: number;
+  field: number;
+  start_time: string;
+  chat_id: string;
+  representative_name: string;
+}

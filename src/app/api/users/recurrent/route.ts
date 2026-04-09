@@ -16,7 +16,7 @@ function normalizeDigits(value: unknown): string {
 export async function GET() {
   try {
     const db = getDb();
-    const snapshot = await db.collection("users").where("client_type", "==", "recurrente").get();
+    const snapshot = await db.collection("users").where("client_type", "==", "frecuente").get();
 
     const chatIds = snapshot.docs
       .map((doc) => {

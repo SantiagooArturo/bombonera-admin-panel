@@ -31,7 +31,7 @@ async function deepSyncFrequentUsers() {
   let updatedCount = 0;
   let notFoundCount = 0;
 
-  for (const chatId of frequentChatIds) {
+  Array.from(frequentChatIds).forEach(async (chatId) => {
     const userRef = db.collection("users").doc(chatId);
     const userDoc = await userRef.get();
 

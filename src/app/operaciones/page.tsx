@@ -4,7 +4,7 @@ import { useEffect, useState, useMemo, useCallback, useRef } from "react";
 import ClientLayout, { useToastContext } from "@/components/ClientLayout";
 import { useStore } from "@/lib/hooks";
 
-import { TIME_SLOTS, type Reservation, type BlockedSlot, isReservationActive } from "@/lib/types";
+import { TIME_SLOTS, type Reservation, type BlockedSlot, isReservationActive, type RecurrentSchedule } from "@/lib/types";
 import type { CourtFieldConfig } from "@/lib/court-config";
 import ScheduleGrid from "@/components/operations/ScheduleGrid";
 import PaymentSidebar from "@/components/verificacion/PaymentSidebar";
@@ -167,7 +167,7 @@ export default function OperacionesPage() {
     [users]
   );
 
-  const [recurrentSchedules, setRecurrentSchedules] = useState<any[]>([]);
+  const [recurrentSchedules, setRecurrentSchedules] = useState<RecurrentSchedule[]>([]);
 
   useEffect(() => {
     fetch("/api/recurrent-schedules")
@@ -183,7 +183,7 @@ export default function OperacionesPage() {
     const set = new Set<string>();
     const norm = (s: string) => String(s).replace(/\D/g, "").slice(-9);
     for (const u of users) {
-      if (u.client_type !== "recurrente") continue;
+      if (u.client_type !== "frecuente") continue;
       const key = norm(getUserPhone(u) || u.chat_id || "");
       if (key.length >= 9) set.add(key);
     }
