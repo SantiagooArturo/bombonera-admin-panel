@@ -181,7 +181,7 @@ export default function ScheduleGrid({
     }
 
     return cells;
-  }, [reservations, blockedSlots, autoAssignments]);
+  }, [reservations, blockedSlots, autoAssignments, recurrentSchedules]);
 
   // ── Render ──────────────────────────────────────────────────────────────
 

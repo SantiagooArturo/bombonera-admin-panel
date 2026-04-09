@@ -383,7 +383,7 @@ export async function PATCH(request: NextRequest) {
       updateData.reservation_price = newPrice;
     }
 
-    if (Object.keys(updateData).length === 0) {
+    if (Object.keys(updateData).length === 0 && typeof is_recurrent !== "boolean") {
       return NextResponse.json(
         { error: "No hay campos para actualizar" },
         { status: 400 }
@@ -404,7 +404,9 @@ export async function PATCH(request: NextRequest) {
       updateData.manual_pending = true;
     }
 
-    await db.collection("reservations").doc(id).update(updateData);
+    if (Object.keys(updateData).length > 0) {
+      await db.collection("reservations").doc(id).update(updateData);
+    }
 
     if (updateData.dni !== undefined) {
       const resDoc = await db.collection("reservations").doc(id).get();

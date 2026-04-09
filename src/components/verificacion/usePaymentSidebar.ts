@@ -51,6 +51,7 @@ export function usePaymentSidebar(options?: UsePaymentSidebarOptions) {
   const [clientTypeLoading, setClientTypeLoading] = useState(false);
   const [clientTypeUpdating, setClientTypeUpdating] = useState(false);
   const [statusUpdating, setStatusUpdating] = useState(false);
+  const [recurrenceUpdating, setRecurrenceUpdating] = useState(false);
   const [userNames, setUserNames] = useState<{
     custom_name?: string;
     contact_name?: string;
@@ -106,11 +107,12 @@ export function usePaymentSidebar(options?: UsePaymentSidebarOptions) {
       const rawChatId = String(reservation.chat_id || reservation.phone_number || "").replace(/\D/g, "");
       const chatIdForApi = reservation.chat_id || rawChatId || reservation.phone_number;
       const userDocId = rawChatId.length >= 9 ? normalizePeruPhone(rawChatId) : rawChatId;
-      const [transfersByClientRaw, freshResReq, clientTypeRes, clientReservationsRes] = await Promise.all([
+      const [transfersByClientRaw, freshResReq, clientTypeRes, clientReservationsRes, recurrentRes] = await Promise.all([
         store.fetchTransfersByChatId(chatIdForApi || ""),
         fetch(`/api/reservations?id=${reservation.id}`),
         fetch(`/api/users/client-type?chat_id=${encodeURIComponent(userDocId)}`, { cache: "no-store" }),
         chatIdForApi ? fetch(`/api/reservations?phone_number=${encodeURIComponent(String(chatIdForApi))}`) : Promise.resolve(new Response("[]")),
+        fetch("/api/recurrent-schedules", { cache: "no-store" }),
       ]);
 
       let transfersByClient = transfersByClientRaw;
@@ -133,7 +135,22 @@ export function usePaymentSidebar(options?: UsePaymentSidebarOptions) {
         }
       }
 
-      setSelectedReservation(freshReservation);
+      // ── Sincronizar recurrencia desde SSoT ─────────────────────────────────
+      let isRecurrentActual = false;
+      if (recurrentRes && recurrentRes.ok) {
+        const allSchedules = await recurrentRes.json();
+        if (Array.isArray(allSchedules)) {
+          const dayOfWeek = new Date(freshReservation.date + "T12:00:00").getDay();
+          const startTime = freshReservation.time_slots?.[0] || "";
+          isRecurrentActual = allSchedules.some(s => 
+            s.day_of_week === dayOfWeek &&
+            s.field === freshReservation.field &&
+            s.start_time === startTime
+          );
+        }
+      }
+
+      setSelectedReservation({ ...freshReservation, is_recurrent: isRecurrentActual });
 
       if (clientTypeRes.ok) {
         const clientTypeData = await clientTypeRes.json();
@@ -223,8 +240,9 @@ export function usePaymentSidebar(options?: UsePaymentSidebarOptions) {
   }, [selectedReservation, clientType, store, toast]);
   
   const handleToggleRecurrence = useCallback(async (isRecurrent: boolean) => {
-    if (!selectedReservation) return false;
+    if (!selectedReservation || recurrenceUpdating) return false;
     
+    setRecurrenceUpdating(true);
     try {
       const res = await fetch("/api/reservations", {
         method: "PATCH",
@@ -244,8 +262,10 @@ export function usePaymentSidebar(options?: UsePaymentSidebarOptions) {
     } catch {
       toast("Error al conectar con el servidor", "error");
       return false;
+    } finally {
+      setRecurrenceUpdating(false);
     }
-  }, [selectedReservation, options, toast]);
+  }, [selectedReservation, recurrenceUpdating, options, toast]);
 
   const handleUpdateStatus = useCallback(async (nextStatus: "pending" | "confirmed") => {
     if (!selectedReservation) return false;
@@ -859,6 +879,7 @@ export function usePaymentSidebar(options?: UsePaymentSidebarOptions) {
     handleUpdateClientType,
     handleUpdateStatus,
     statusUpdating,
+    recurrenceUpdating,
     handleAttachInvoice,
     handleDetachInvoice,
     handleVoidSunatInvoice,

@@ -71,6 +71,12 @@ export default function OperacionesPage() {
   const sidebar = usePaymentSidebar({
     onReservationUpdated: (resId, patch) => {
       setReservations((prev) => prev.map((r) => (r.id === resId ? { ...r, ...patch } : r)));
+      // SI detectamos un cambio en la recurrencia, refrescamos los badges inmediatamente
+      if ("is_recurrent" in patch) {
+        setTimeout(() => {
+          loadRecurrentSchedules();
+        }, 800);
+      }
     },
     onReservationDeleted: (resId) => {
       setReservations((prev) => prev.filter((r) => r.id !== resId));
@@ -169,14 +175,18 @@ export default function OperacionesPage() {
 
   const [recurrentSchedules, setRecurrentSchedules] = useState<RecurrentSchedule[]>([]);
 
-  useEffect(() => {
-    fetch("/api/recurrent-schedules")
+  const loadRecurrentSchedules = useCallback(() => {
+    fetch("/api/recurrent-schedules", { cache: "no-store" })
       .then(res => res.json())
       .then(data => {
         if (Array.isArray(data)) setRecurrentSchedules(data);
       })
       .catch(err => console.error("Error loading recurrent schedules:", err));
   }, []);
+
+  useEffect(() => {
+    loadRecurrentSchedules();
+  }, [loadRecurrentSchedules]);
 
   /** IDs normalizados (últimos 9 dígitos) de usuarios con client_type === "recurrente". */
   const recurrentClientIds = useMemo(() => {
@@ -567,7 +577,6 @@ export default function OperacionesPage() {
             blockedSlots={blockedSlots}
             autoAssignments={autoAssignments}
             courtConfigs={courtConfigs}
-            recurrentClientIds={recurrentClientIds}
             recurrentSchedules={recurrentSchedules}
             currentSlot={currentSlot}
             isToday={isToday}
@@ -597,6 +606,7 @@ export default function OperacionesPage() {
           onUpdateDni={sidebar.handleUpdateDni}
           onUpdateRuc={sidebar.handleUpdateRuc}
           onUpdateName={sidebar.handleUpdateName}
+          onToggleRecurrence={sidebar.handleToggleRecurrence}
           clientRuc={sidebar.userNames?.last_ruc}
           clientLastDni={sidebar.userNames?.last_dni}
           displayName={sidebar.displayName}

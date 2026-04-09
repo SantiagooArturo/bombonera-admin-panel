@@ -304,6 +304,8 @@ interface ReservationDetailContentProps {
   onUpdateStatus?: (status: "pending" | "confirmed") => Promise<boolean>;
   onUpdateClientType: (clientType: ClientType) => Promise<boolean>;
   onToggleRecurrence?: (isRecurrent: boolean) => Promise<boolean>;
+  recurrenceUpdating?: boolean;
+  loading: boolean;
   onCancelReservation: () => Promise<boolean>;
   /** Chips para cambiar de reserva cuando el cliente tiene 2+ reservas esta semana. */
   reservationsForChips?: Reservation[];
@@ -325,6 +327,8 @@ function ReservationDetailContent({
   onUpdateStatus,
   onUpdateClientType,
   onToggleRecurrence,
+  recurrenceUpdating = false,
+  loading,
   onCancelReservation,
   reservationsForChips,
   onSelectReservationFromChips,
@@ -634,10 +638,15 @@ function ReservationDetailContent({
             <div className="flex items-center gap-2 h-[42px]">
               <button
                 type="button"
-                onClick={() => onToggleRecurrence?.(!reservation.is_recurrent)}
+                onClick={() => {
+                  if (!(recurrenceUpdating || loading)) {
+                    onToggleRecurrence?.(!reservation.is_recurrent);
+                  }
+                }}
+                disabled={recurrenceUpdating || loading}
                 className={`relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none focus:ring-2 focus:ring-blue-600 focus:ring-offset-2 ${
                   reservation.is_recurrent ? "bg-blue-600" : "bg-gray-200"
-                }`}
+                } ${(recurrenceUpdating || loading) ? "opacity-50 cursor-wait" : ""}`}
                 role="switch"
                 aria-checked={reservation.is_recurrent}
               >
@@ -649,7 +658,7 @@ function ReservationDetailContent({
                 />
               </button>
               <span className={`text-sm font-bold ${reservation.is_recurrent ? "text-blue-700" : "text-gray-500"}`}>
-                {reservation.is_recurrent ? "RECURRENTE" : "No"}
+                {(recurrenceUpdating || loading) ? "Cargando..." : (reservation.is_recurrent ? "RECURRENTE" : "No")}
               </span>
             </div>
           </div>
@@ -1589,6 +1598,7 @@ const PaymentSidebar = memo(function PaymentSidebar({
   onUpdatePrice,
   onUpdateAmountPaid,
   onToggleRecurrence,
+  recurrenceUpdating = false,
   clientType,
   clientTypeLoading = false,
   clientTypeUpdating = false,
@@ -1945,6 +1955,8 @@ const PaymentSidebar = memo(function PaymentSidebar({
             onUpdateStatus={onUpdateStatus}
             onUpdateClientType={onUpdateClientType}
             onToggleRecurrence={onToggleRecurrence}
+            recurrenceUpdating={recurrenceUpdating}
+            loading={loading}
             onCancelReservation={onCancelReservation}
             reservationsForChips={hasMultipleReservations ? allReservationsThisWeek : undefined}
             onSelectReservationFromChips={hasMultipleReservations ? onSelectReservationFromList : undefined}
