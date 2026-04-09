@@ -57,13 +57,14 @@ interface PaymentSidebarProps {
   onToggleApplied?: (transferId: string, applied: boolean) => void;
   onUpdatePrice?: (totalPrice: number, reservationId?: string) => Promise<boolean>;
   onUpdateAmountPaid?: (amountPaid: number, reservationId?: string) => Promise<boolean>;
+  onToggleRecurrence?: (isRecurrent: boolean) => Promise<boolean>;
+  recurrenceUpdating?: boolean;
   clientType: ClientType;
   clientTypeLoading?: boolean;
   clientTypeUpdating?: boolean;
   onUpdateClientType: (clientType: ClientType) => Promise<boolean>;
   onUpdateStatus?: (status: "pending" | "confirmed") => Promise<boolean>;
   statusUpdating?: boolean;
-  onToggleRecurrence?: (isRecurrent: boolean) => Promise<boolean>;
   cancellingReservation?: boolean;
   onClose: () => void;
   /** Config de canchas para mostrar tamaño (5 vs 5, 6 vs 6) y calcular precio. */

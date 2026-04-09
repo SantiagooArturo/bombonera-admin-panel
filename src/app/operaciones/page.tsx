@@ -188,17 +188,6 @@ export default function OperacionesPage() {
     loadRecurrentSchedules();
   }, [loadRecurrentSchedules]);
 
-  /** IDs normalizados (últimos 9 dígitos) de usuarios con client_type === "recurrente". */
-  const recurrentClientIds = useMemo(() => {
-    const set = new Set<string>();
-    const norm = (s: string) => String(s).replace(/\D/g, "").slice(-9);
-    for (const u of users) {
-      if (u.client_type !== "frecuente") continue;
-      const key = norm(getUserPhone(u) || u.chat_id || "");
-      if (key.length >= 9) set.add(key);
-    }
-    return set;
-  }, [users]);
 
   useEffect(() => {
     if (preserveSidebarOnDayChangeRef.current) {
@@ -607,6 +596,7 @@ export default function OperacionesPage() {
           onUpdateRuc={sidebar.handleUpdateRuc}
           onUpdateName={sidebar.handleUpdateName}
           onToggleRecurrence={sidebar.handleToggleRecurrence}
+          recurrenceUpdating={sidebar.recurrenceUpdating}
           clientRuc={sidebar.userNames?.last_ruc}
           clientLastDni={sidebar.userNames?.last_dni}
           displayName={sidebar.displayName}
@@ -618,7 +608,6 @@ export default function OperacionesPage() {
           onToggleApplied={sidebar.handleToggleApplied}
           onUpdatePrice={sidebar.handleUpdatePrice}
           onUpdateAmountPaid={sidebar.handleUpdateAmountPaid}
-          onToggleRecurrence={sidebar.handleToggleRecurrence}
           amountPaidDeltaPrompt={sidebar.amountPaidDeltaPrompt}
           onResolveAmountPaidDeltaPrompt={sidebar.resolveAmountPaidDeltaPrompt}
           pendingEmitFromAmountEdit={sidebar.pendingEmitFromAmountEdit}
