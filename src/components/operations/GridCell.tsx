@@ -78,9 +78,34 @@ export function OccupiedCellContent({
         </span>
       )}
 
-      {/* Apunte (Nota) Elástico */}
+      {/* Info de pago (Prioridad alta, no encoger) */}
+      <div className="shrink-0 mt-0.5 border-t border-gray-100/50 pt-1">
+        {fullyPaid ? (
+          <span className="text-[10px] font-bold text-green-600">
+            ✓ Pagado completo
+          </span>
+        ) : (
+          <div className="flex flex-col">
+            <span className="text-[10px] text-gray-500 leading-tight">
+              Total: S/{total}
+            </span>
+            <span className="text-[10px] font-bold text-red-500 leading-tight">
+              Falta: S/{remaining}
+            </span>
+          </div>
+        )}
+      </div>
+
+      {/* Indicador de llegada (Prioridad alta) */}
+      {arrived && (
+        <span className="text-[10px] text-green-600 font-semibold shrink-0">
+          ✓ Llegó
+        </span>
+      )}
+
+      {/* Apunte (Nota) Elástico - Ocupa el espacio restante al final */}
       {lastNote && (
-        <div className="flex-1 min-h-0 overflow-hidden mt-1 relative">
+        <div className="flex-1 min-h-0 overflow-hidden mt-1 relative border-t border-blue-50 pt-1">
           <div className="flex items-start gap-1 h-full">
             <span className="shrink-0 mt-0.5 p-0.5 rounded bg-blue-100/80 text-blue-600">
               <svg className="w-2.5 h-2.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -97,29 +122,6 @@ export function OccupiedCellContent({
             </div>
           </div>
         </div>
-      )}
-
-      {/* Info de pago */}
-      {fullyPaid ? (
-        <span className="text-[10px] font-bold text-green-600 mt-0.5">
-          Pagado completo
-        </span>
-      ) : (
-        <div className="flex flex-col mt-0.5">
-          <span className="text-[10px] text-gray-500">
-            Total: S/{total}
-          </span>
-          <span className="text-[10px] font-bold text-red-500">
-            Falta: S/{remaining}
-          </span>
-        </div>
-      )}
-
-      {/* Indicador de llegada */}
-      {arrived && (
-        <span className="text-[10px] text-green-600 font-semibold">
-          ✓ Llegó
-        </span>
       )}
     </div>
   );
