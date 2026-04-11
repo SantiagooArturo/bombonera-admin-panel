@@ -410,7 +410,7 @@ class Store {
       last_ruc?: string;
       last_factura_direccion?: string;
       last_factura_razon_social?: string;
-      last_note?: string;
+      last_note?: string | null;
     }
   ): Promise<boolean> {
     // Actualización optimista local

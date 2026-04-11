@@ -193,7 +193,7 @@ export interface User {
   /** URL de la foto de perfil en Firebase Storage. */
   profile_picture?: string;
   /** El contenido del último apunte (nota) registrado para este cliente. */
-  last_note?: string;
+  last_note?: string | null;
 }
 
 export interface Note {

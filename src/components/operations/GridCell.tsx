@@ -37,7 +37,7 @@ export function OccupiedCellContent({
   }, [isPending, reservation]);
 
   return (
-    <div className={`relative h-full rounded-lg border-2 ${isPending ? "border-amber-400 border-dashed" : "border-blue-300"} ${bgByStatus} p-2 flex flex-col justify-center gap-0.5 ${isRecurrent ? "pb-5" : ""}`}>
+    <div className={`relative h-full rounded-lg border-2 ${isPending ? "border-amber-400 border-dashed" : "border-blue-300"} ${bgByStatus} p-2 flex flex-col justify-start gap-1 ${isRecurrent ? "pb-5" : ""}`}>
       {/* Badge pendiente + countdown (solo cuando no está confirmada; manual_pending no muestra countdown) */}
       {isPending && (
         <div className="flex items-center gap-1.5 flex-wrap mb-0.5">
@@ -78,17 +78,24 @@ export function OccupiedCellContent({
         </span>
       )}
 
-      {/* Apunte (Nota) */}
+      {/* Apunte (Nota) Elástico */}
       {lastNote && (
-        <div className="mt-1 flex items-start gap-1">
-          <span className="shrink-0 p-0.5 rounded bg-blue-100 text-blue-600">
-            <svg className="w-2.5 h-2.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
-            </svg>
-          </span>
-          <p className="text-[10px] font-medium text-blue-700 italic truncate" title={lastNote}>
-            {lastNote}
-          </p>
+        <div className="flex-1 min-h-0 overflow-hidden mt-1 relative">
+          <div className="flex items-start gap-1 h-full">
+            <span className="shrink-0 mt-0.5 p-0.5 rounded bg-blue-100/80 text-blue-600">
+              <svg className="w-2.5 h-2.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
+              </svg>
+            </span>
+            <div className="flex-1 min-h-0 overflow-hidden relative">
+              <p 
+                className="text-[10px] font-medium text-blue-800/90 italic break-words leading-tight"
+                title={lastNote}
+              >
+                {lastNote}
+              </p>
+            </div>
+          </div>
         </div>
       )}
 

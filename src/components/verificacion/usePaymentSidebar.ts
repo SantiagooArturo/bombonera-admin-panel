@@ -829,7 +829,7 @@ export function usePaymentSidebar(options?: UsePaymentSidebarOptions) {
         toast("Apunte agregado", "success");
         
         // Instant sync with Grid
-        const preview = content.trim().length > 40 ? content.trim().slice(0, 37) + "..." : content.trim();
+        const preview = content.trim().length > 2000 ? content.trim().slice(0, 1997) + "..." : content.trim();
         store.updateUserDoc(selectedReservation.chat_id, { last_note: preview });
       } else {
         toast("Error al agregar apunte", "error");
@@ -852,7 +852,7 @@ export function usePaymentSidebar(options?: UsePaymentSidebarOptions) {
         toast("Apunte actualizado", "success");
         
         // Instant sync with Grid
-        const preview = content.trim().length > 40 ? content.trim().slice(0, 37) + "..." : content.trim();
+        const preview = content.trim().length > 2000 ? content.trim().slice(0, 1997) + "..." : content.trim();
         store.updateUserDoc(selectedReservation.chat_id, { last_note: preview });
       } else {
         toast("Error al actualizar apunte", "error");
@@ -874,7 +874,7 @@ export function usePaymentSidebar(options?: UsePaymentSidebarOptions) {
         
         // Update Grid preview
         const latestContent = notes.find(n => n.id !== noteId)?.content;
-        const preview = latestContent ? (latestContent.length > 40 ? latestContent.slice(0, 37) + "..." : latestContent) : null;
+        const preview = latestContent ? (latestContent.length > 2000 ? latestContent.slice(0, 1997) + "..." : latestContent) : null;
         store.updateUserDoc(selectedReservation.chat_id, { last_note: preview });
       } else {
         toast("Error al eliminar apunte", "error");

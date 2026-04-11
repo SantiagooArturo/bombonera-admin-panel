@@ -65,7 +65,7 @@ export async function POST(request: NextRequest) {
     const docRef = await userRef.collection("notes").add(noteData);
 
     // Denormalizamos el último apunte en el documento del usuario para la vista de la cuadrilla
-    const preview = content.trim().length > 40 ? content.trim().slice(0, 37) + "..." : content.trim();
+    const preview = content.trim().length > 2000 ? content.trim().slice(0, 1997) + "..." : content.trim();
     await userRef.update({
       last_note: preview,
     });
@@ -96,7 +96,7 @@ export async function DELETE(request: NextRequest) {
     let preview = null;
     if (!latest.empty) {
       const lastContent = latest.docs[0].data().content || "";
-      preview = lastContent.length > 40 ? lastContent.slice(0, 37) + "..." : lastContent;
+      preview = lastContent.length > 2000 ? lastContent.slice(0, 1997) + "..." : lastContent;
     }
 
     await userRef.update({
@@ -128,7 +128,7 @@ export async function PATCH(request: NextRequest) {
     const latest = await userRef.collection("notes").orderBy("created_at", "desc").limit(1).get();
     if (!latest.empty && latest.docs[0].id === note_id) {
       const lastContent = content.trim();
-      const preview = lastContent.length > 40 ? lastContent.slice(0, 37) + "..." : lastContent;
+      const preview = lastContent.length > 150 ? lastContent.slice(0, 147) + "..." : lastContent;
       await userRef.update({
         last_note: preview,
       });
