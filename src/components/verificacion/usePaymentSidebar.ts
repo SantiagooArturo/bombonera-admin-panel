@@ -145,11 +145,10 @@ export function usePaymentSidebar(options?: UsePaymentSidebarOptions) {
       if (recurrentRes && recurrentRes.ok) {
         const allSchedules = await recurrentRes.json();
         if (Array.isArray(allSchedules)) {
-          const dayOfWeek = new Date(freshReservation.date + "T12:00:00").getDay();
           isRecurrentActual = allSchedules.some(s => {
             const dayOfRes = new Date(freshReservation.date + "T12:00:00").getDay();
             const startTimeRes = freshReservation.time_slots?.[0] || "";
-            const norm = (id: any) => String(id || "").replace(/\D/g, "").slice(-9);
+            const norm = (id: string | number | undefined | null) => String(id || "").replace(/\D/g, "").slice(-9);
             
             return (
               s.day_of_week === dayOfRes &&

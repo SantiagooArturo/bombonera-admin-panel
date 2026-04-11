@@ -240,7 +240,7 @@ function RecurrenceConflictModal({
           </div>
 
           <p className="text-sm font-semibold text-gray-700 italic border-l-4 border-amber-400 pl-3 py-1">
-            "No puede haber dos personas recurrentes para el mismo horario."
+            &quot;No puede haber dos personas recurrentes para el mismo horario.&quot;
           </p>
 
           <div className="pt-2 flex flex-col gap-3">

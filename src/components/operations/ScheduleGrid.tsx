@@ -311,7 +311,7 @@ export default function ScheduleGrid({
                               s.start_time === startTime
                             );
                             // Es recurrente si el dueño coincide con el chat_id de esta reserva
-                            const norm = (id: any) => String(id || "").replace(/\D/g, "").slice(-9);
+                            const norm = (id: string | number | undefined | null) => String(id || "").replace(/\D/g, "").slice(-9);
                             return !!(owner && norm(owner.chat_id) === norm(reservation.chat_id));
                           })()
                         }

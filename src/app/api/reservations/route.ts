@@ -314,7 +314,7 @@ export async function PATCH(request: NextRequest) {
       console.log(`[API PATCH] Computed ScheduleId: ${scheduleId}`);
 
       if (is_recurrent) {
-        const normId = (val: any) => String(val || "").replace(/\D/g, "").slice(-9);
+        const normId = (val: string | number | undefined | null) => String(val || "").replace(/\D/g, "").slice(-9);
         const existingRec = await db.collection("recurrent_schedules").doc(scheduleId).get();
         
         if (existingRec.exists) {
