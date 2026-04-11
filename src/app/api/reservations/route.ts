@@ -222,6 +222,7 @@ export async function PATCH(request: NextRequest) {
       /** Si true: solo persiste `amount_paid` y marca `amount_paid_manual` (no crea transferencias de ajuste). */
       amount_paid_direct,
       is_recurrent,
+      force,
     } = body;
 
     if (!id) {
@@ -308,13 +309,35 @@ export async function PATCH(request: NextRequest) {
       const currentField = (typeof field === "number" ? field : resData.field) as number;
       const scheduleId = `${dayOfWeek}_${currentField}_${startTime}`;
 
+      console.log(`[API PATCH] Toggling recurrence for res ${id}. Target: ${is_recurrent}`);
+      console.log(`[API PATCH] Date: ${dateStr}, DayOfWeek: ${dayOfWeek}, StartTime: ${startTime}, Field: ${currentField}`);
+      console.log(`[API PATCH] Computed ScheduleId: ${scheduleId}`);
+
       if (is_recurrent) {
-        // Validar conflicto de dueño en recurrent_schedules
-        const existing = await db.collection("recurrent_schedules").doc(scheduleId).get();
-        if (existing.exists && existing.data()?.chat_id !== resData.chat_id) {
-          return NextResponse.json({ 
-            error: `Conflicto: Este horario ya pertenece de forma recurrente a ${existing.data()?.representative_name}` 
-          }, { status: 409 });
+        const normId = (val: any) => String(val || "").replace(/\D/g, "").slice(-9);
+        const existingRec = await db.collection("recurrent_schedules").doc(scheduleId).get();
+        
+        if (existingRec.exists) {
+          const existingData = existingRec.data();
+          const existingChatId = existingData?.chat_id;
+          const currentChatId = resData.chat_id;
+          
+          console.log(`[API PATCH] Existing owner found: ${existingChatId} (${existingData?.representative_name})`);
+          console.log(`[API PATCH] Current reservation chat_id: ${currentChatId}`);
+          console.log(`[API PATCH] Normalized ID comparison: '${normId(existingChatId)}' vs '${normId(currentChatId)}'`);
+          
+          if (normId(existingChatId) !== normId(currentChatId)) {
+            if (force === true) {
+              console.log(`[API PATCH] CONFLICT DETECTED BUT OVERRIDDEN (force=true).`);
+            } else {
+              console.log(`[API PATCH] CONFLICT DETECTED! Returning 409.`);
+              return NextResponse.json({ 
+                error: `Conflicto (Slot ${scheduleId}): Este horario ya pertenece de forma recurrente a ${existingData?.representative_name} (${existingChatId}). Tu ID: ${currentChatId}` 
+              }, { status: 409 });
+            }
+          } else {
+            console.log(`[API PATCH] Same owner (or normalized match). Proceeding.`);
+          }
         }
         // Registrar/Actualizar dueño
         await db.collection("recurrent_schedules").doc(scheduleId).set({

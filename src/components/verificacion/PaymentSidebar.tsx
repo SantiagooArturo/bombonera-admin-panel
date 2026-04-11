@@ -57,7 +57,13 @@ interface PaymentSidebarProps {
   onToggleApplied?: (transferId: string, applied: boolean) => void;
   onUpdatePrice?: (totalPrice: number, reservationId?: string) => Promise<boolean>;
   onUpdateAmountPaid?: (amountPaid: number, reservationId?: string) => Promise<boolean>;
-  onToggleRecurrence?: (isRecurrent: boolean) => Promise<boolean>;
+  onToggleRecurrence?: (isRecurrent: boolean, force?: boolean) => Promise<boolean>;
+  recurrenceConflict?: {
+    ownerName: string;
+    ownerId: string;
+    slotId: string;
+  } | null;
+  setRecurrenceConflict?: (val: null) => void;
   recurrenceUpdating?: boolean;
   clientType: ClientType;
   clientTypeLoading?: boolean;
@@ -189,6 +195,70 @@ function AttendanceReminderModal({
           >
             Cancelar
           </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function RecurrenceConflictModal({
+  conflict,
+  onForce,
+  onClose,
+  loading,
+}: {
+  conflict: { ownerName: string; ownerId: string; slotId: string };
+  onForce: () => void;
+  onClose: () => void;
+  loading: boolean;
+}) {
+  return (
+    <div className="fixed inset-0 z-[10080] flex items-center justify-center bg-black/60 p-4 backdrop-blur-[2px]" onClick={onClose}>
+      <div className="relative w-full max-w-md rounded-2xl bg-white p-6 shadow-2xl animate-in fade-in zoom-in duration-200" onClick={(e) => e.stopPropagation()}>
+        <div className="mb-4 flex items-center justify-between">
+          <div className="flex items-center gap-2 text-amber-600">
+            <svg className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+            </svg>
+            <h3 className="text-xl font-bold">Conflicto de Recurrencia</h3>
+          </div>
+          <button onClick={onClose} className="rounded-lg p-1 text-gray-400 hover:bg-gray-100 transition-colors">
+            <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+            </svg>
+          </button>
+        </div>
+
+        <div className="space-y-4">
+          <div className="p-4 rounded-xl bg-red-50 border border-red-100">
+            <p className="text-sm text-red-900 leading-relaxed">
+              Este horario ya tiene un dueño recurrente:
+            </p>
+            <p className="mt-2 text-base font-bold text-red-900">
+              {conflict.ownerName} ({conflict.ownerId})
+            </p>
+          </div>
+
+          <p className="text-sm font-semibold text-gray-700 italic border-l-4 border-amber-400 pl-3 py-1">
+            "No puede haber dos personas recurrentes para el mismo horario."
+          </p>
+
+          <div className="pt-2 flex flex-col gap-3">
+            <button
+              onClick={onForce}
+              disabled={loading}
+              className="w-full min-h-[56px] px-4 py-2 rounded-xl bg-red-600 font-bold text-white shadow-lg shadow-red-200 hover:bg-red-700 active:scale-[0.98] transition-all disabled:opacity-50 flex items-center justify-center text-center"
+            >
+              {loading ? "Procesando..." : `Quitar recurrencia a ${conflict.ownerName} y asignármela`}
+            </button>
+            <button
+              onClick={onClose}
+              disabled={loading}
+              className="w-full h-12 rounded-xl bg-gray-100 font-bold text-gray-600 hover:bg-gray-200 transition-all"
+            >
+              Cancelar
+            </button>
+          </div>
         </div>
       </div>
     </div>
@@ -1599,6 +1669,8 @@ const PaymentSidebar = memo(function PaymentSidebar({
   onUpdatePrice,
   onUpdateAmountPaid,
   onToggleRecurrence,
+  recurrenceConflict,
+  setRecurrenceConflict,
   recurrenceUpdating = false,
   clientType,
   clientTypeLoading = false,
@@ -2056,6 +2128,18 @@ const PaymentSidebar = memo(function PaymentSidebar({
       ) : null}
 
       {viewingImage && <ImageViewer src={viewingImage} onClose={() => setViewingImage(null)} />}
+
+      {recurrenceConflict && (
+        <RecurrenceConflictModal
+          conflict={recurrenceConflict}
+          loading={recurrenceUpdating}
+          onClose={() => setRecurrenceConflict?.(null)}
+          onForce={async () => {
+            const ok = await onToggleRecurrence?.(true, true);
+            if (ok) setRecurrenceConflict?.(null);
+          }}
+        />
+      )}
     </>
   );
 });

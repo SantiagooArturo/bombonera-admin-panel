@@ -59,6 +59,11 @@ export function usePaymentSidebar(options?: UsePaymentSidebarOptions) {
     last_dni?: string;
     last_ruc?: string;
   }>({});
+  const [recurrenceConflict, setRecurrenceConflict] = useState<{
+    ownerName: string;
+    ownerId: string;
+    slotId: string;
+  } | null>(null);
 
   const isOpen = selectedReservation !== null;
 
@@ -141,12 +146,18 @@ export function usePaymentSidebar(options?: UsePaymentSidebarOptions) {
         const allSchedules = await recurrentRes.json();
         if (Array.isArray(allSchedules)) {
           const dayOfWeek = new Date(freshReservation.date + "T12:00:00").getDay();
-          const startTime = freshReservation.time_slots?.[0] || "";
-          isRecurrentActual = allSchedules.some(s => 
-            s.day_of_week === dayOfWeek &&
-            s.field === freshReservation.field &&
-            s.start_time === startTime
-          );
+          isRecurrentActual = allSchedules.some(s => {
+            const dayOfRes = new Date(freshReservation.date + "T12:00:00").getDay();
+            const startTimeRes = freshReservation.time_slots?.[0] || "";
+            const norm = (id: any) => String(id || "").replace(/\D/g, "").slice(-9);
+            
+            return (
+              s.day_of_week === dayOfRes &&
+              s.field === freshReservation.field &&
+              s.start_time === startTimeRes &&
+              norm(s.chat_id) === norm(freshReservation.chat_id)
+            );
+          });
         }
       }
 
@@ -239,18 +250,36 @@ export function usePaymentSidebar(options?: UsePaymentSidebarOptions) {
     return true;
   }, [selectedReservation, clientType, store, toast]);
   
-  const handleToggleRecurrence = useCallback(async (isRecurrent: boolean) => {
+  const handleToggleRecurrence = useCallback(async (isRecurrent: boolean, force = false) => {
     if (!selectedReservation || recurrenceUpdating) return false;
     
+    setRecurrenceConflict(null);
+    console.log("[usePaymentSidebar] Toggling recurrence for:", selectedReservation.id, "to:", isRecurrent, "force:", force);
     setRecurrenceUpdating(true);
     try {
       const res = await fetch("/api/reservations", {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ id: selectedReservation.id, is_recurrent: isRecurrent }),
+        body: JSON.stringify({ id: selectedReservation.id, is_recurrent: isRecurrent, force: force }),
       });
+      console.log("[usePaymentSidebar] Response status:", res.status);
       const data = await res.json();
       if (!res.ok) {
+        console.error("[usePaymentSidebar] Toggle error response:", data);
+        
+        // Parse error message for conflict info if 409
+        if (res.status === 409 && data.error) {
+          // Format: "Conflicto (Slot ID): Este horario ya pertenece de forma recurrente a NAME (ID). Tu ID: ..."
+          const ownerMatch = data.error.match(/recurrente a ([^(]+) \(([^)]+)\)/);
+          if (ownerMatch) {
+            setRecurrenceConflict({
+              ownerName: ownerMatch[1].trim(),
+              ownerId: ownerMatch[2].trim(),
+              slotId: "", // Removing internally used ID
+            });
+          }
+        }
+        
         toast(data.error || "No se pudo actualizar la recurrencia", "error");
         return false;
       }
@@ -893,5 +922,7 @@ export function usePaymentSidebar(options?: UsePaymentSidebarOptions) {
     handleUpdatePrice,
     handleToggleApplied,
     handleToggleRecurrence,
+    recurrenceConflict,
+    setRecurrenceConflict,
   };
 }

@@ -596,6 +596,8 @@ export default function OperacionesPage() {
           onUpdateRuc={sidebar.handleUpdateRuc}
           onUpdateName={sidebar.handleUpdateName}
           onToggleRecurrence={sidebar.handleToggleRecurrence}
+          recurrenceConflict={sidebar.recurrenceConflict}
+          setRecurrenceConflict={sidebar.setRecurrenceConflict}
           recurrenceUpdating={sidebar.recurrenceUpdating}
           clientRuc={sidebar.userNames?.last_ruc}
           clientLastDni={sidebar.userNames?.last_dni}

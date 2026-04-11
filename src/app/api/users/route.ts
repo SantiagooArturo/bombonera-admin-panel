@@ -184,7 +184,7 @@ export async function PATCH(request: NextRequest) {
       );
     }
 
-    const VALID_CLIENT_TYPES = ["casual", "recurrente", "sospechoso_fraude"];
+    const VALID_CLIENT_TYPES = ["casual", "frecuente", "academia", "recurrente", "sospechoso_fraude"];
 
     const updateData: Record<string, unknown> = {};
     if (typeof is_automated === "boolean") {
@@ -255,7 +255,6 @@ export async function PATCH(request: NextRequest) {
         .collection("reservations")
         .where("chat_id", "==", id)
         .get();
-
       const reservationCount = reservationsSnap.size;
       let nameFromReservation: string | null = null;
       for (const d of reservationsSnap.docs) {
