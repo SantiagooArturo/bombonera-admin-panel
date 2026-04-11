@@ -27,7 +27,6 @@ export function usePaymentSidebar(options?: UsePaymentSidebarOptions) {
 
   const [selectedReservation, setSelectedReservation] = useState<Reservation | null>(null);
   const [allReservationsThisWeek, setAllReservationsThisWeek] = useState<Reservation[]>([]);
-  const [allClientReservations, setAllClientReservations] = useState<Reservation[]>([]);
   const allReservationsChatIdRef = useRef<string | null>(null);
   /** ID de la reserva que estamos abriendo; si close() se llama antes de que termine el fetch, no actualizamos al completar. */
   const openRequestIdRef = useRef<string | null>(null);
@@ -77,7 +76,6 @@ export function usePaymentSidebar(options?: UsePaymentSidebarOptions) {
     const nextChatId = String(reservation.chat_id || reservation.phone_number || "").replace(/\D/g, "");
     if (allReservationsChatIdRef.current && allReservationsChatIdRef.current !== nextChatId) {
       setAllReservationsThisWeek([]);
-      setAllClientReservations([]);
       allReservationsChatIdRef.current = null;
     }
     setSelectedReservation(reservation);
@@ -200,11 +198,9 @@ export function usePaymentSidebar(options?: UsePaymentSidebarOptions) {
           .filter((r: Reservation) => r.status !== "cancelled" && r.status !== "expired")
           .sort(sortFn);
         const upcomingOnly = allFiltered.filter((r: Reservation) => (r.date || "") >= todayStr);
-        setAllClientReservations(allFiltered);
         setAllReservationsThisWeek(upcomingOnly);
         allReservationsChatIdRef.current = String(chatIdForApi || "").replace(/\D/g, "");
       } else {
-        setAllClientReservations([]);
         setAllReservationsThisWeek([]);
         allReservationsChatIdRef.current = null;
       }
@@ -235,7 +231,6 @@ export function usePaymentSidebar(options?: UsePaymentSidebarOptions) {
     openRequestIdRef.current = null;
     setSelectedReservation(null);
     setAllReservationsThisWeek([]);
-    setAllClientReservations([]);
     allReservationsChatIdRef.current = null;
     setTransfers([]);
     setInvoices([]);
@@ -415,9 +410,6 @@ export function usePaymentSidebar(options?: UsePaymentSidebarOptions) {
                   patch.status = "confirmed";
                 }
                 const rid = selectedReservation.id;
-                setAllClientReservations((prev) =>
-                  prev.map((r) => (r.id === rid ? { ...r, ...patch } : r))
-                );
                 setAllReservationsThisWeek((prev) =>
                   prev.map((r) => (r.id === rid ? { ...r, ...patch } : r))
                 );
@@ -656,14 +648,11 @@ export function usePaymentSidebar(options?: UsePaymentSidebarOptions) {
       toast("Pago desvinculado correctamente", "success");
       setTransfers((prev) => prev.filter((t) => t.id !== transferId));
       if (result.refunded && reservationIdForApi) {
-        const affectedRes = allClientReservations.find((r) => r.id === reservationIdForApi);
+        const affectedRes = allReservationsThisWeek.find((r) => r.id === reservationIdForApi);
         const prevPaid = affectedRes?.amount_paid ?? 0;
         const newPaid = Math.max(0, prevPaid - result.refunded);
         const patch = { amount_paid: newPaid };
         setSelectedReservation((prev) => (prev?.id === reservationIdForApi ? { ...prev, ...patch } : prev));
-        setAllClientReservations((prev) =>
-          prev.map((r) => (r.id === reservationIdForApi ? { ...r, ...patch } : r))
-        );
         setAllReservationsThisWeek((prev) =>
           prev.map((r) => (r.id === reservationIdForApi ? { ...r, ...patch } : r))
         );
@@ -672,7 +661,7 @@ export function usePaymentSidebar(options?: UsePaymentSidebarOptions) {
     } else {
       toast("Error al revocar pago", "error");
     }
-  }, [store, toast, transfers, allClientReservations, options]);
+  }, [store, toast, transfers, allReservationsThisWeek, options]);
 
   const clearPendingEmitFromAmountEdit = useCallback(() => {
     setPendingEmitFromAmountEdit(null);
@@ -680,10 +669,9 @@ export function usePaymentSidebar(options?: UsePaymentSidebarOptions) {
 
   const persistDirectAmountPaid = useCallback(
     async (id: string, amountPaid: number): Promise<boolean> => {
-      const prevReservations = allClientReservations;
+      const prevReservations = allReservationsThisWeek;
       const prevSelected = selectedReservation;
       const patch: Partial<Reservation> = { amount_paid: amountPaid, amount_paid_manual: true };
-      setAllClientReservations((prev) => prev.map((r) => (r.id === id ? { ...r, ...patch } : r)));
       setAllReservationsThisWeek((prev) => prev.map((r) => (r.id === id ? { ...r, ...patch } : r)));
       setSelectedReservation((prev) => (prev?.id === id ? { ...prev, ...patch } : prev));
       options?.onReservationUpdated?.(id, patch);
@@ -694,7 +682,6 @@ export function usePaymentSidebar(options?: UsePaymentSidebarOptions) {
           body: JSON.stringify({ id, amount_paid: amountPaid, amount_paid_direct: true }),
         });
         if (!res.ok) {
-          setAllClientReservations(prevReservations);
           setSelectedReservation(prevSelected);
           toast("No se pudo actualizar el monto pagado", "error");
           return false;
@@ -709,13 +696,12 @@ export function usePaymentSidebar(options?: UsePaymentSidebarOptions) {
         toast("Monto pagado actualizado", "success");
         return true;
       } catch {
-        setAllClientReservations(prevReservations);
         setSelectedReservation(prevSelected);
         toast("Error al actualizar monto pagado", "error");
         return false;
       }
     },
-    [allClientReservations, selectedReservation, options, toast, store]
+    [allReservationsThisWeek, selectedReservation, options, toast, store]
   );
 
   const resolveAmountPaidDeltaPrompt = useCallback(
@@ -727,7 +713,7 @@ export function usePaymentSidebar(options?: UsePaymentSidebarOptions) {
       const resSnapshot =
         selectedReservation?.id === id
           ? selectedReservation
-          : allClientReservations.find((r) => r.id === id) ?? selectedReservation;
+          : allReservationsThisWeek.find((r) => r.id === id) ?? selectedReservation;
 
       setPaymentLoading(true);
       let ok = false;
@@ -758,7 +744,7 @@ export function usePaymentSidebar(options?: UsePaymentSidebarOptions) {
         setPaymentLoading(false);
       }
     },
-    [selectedReservation, allClientReservations, persistDirectAmountPaid]
+    [selectedReservation, allReservationsThisWeek, persistDirectAmountPaid]
   );
 
   const handleUpdateAmountPaid = useCallback(
@@ -769,7 +755,7 @@ export function usePaymentSidebar(options?: UsePaymentSidebarOptions) {
       const resSnapshot =
         selectedReservation?.id === id
           ? selectedReservation
-          : allClientReservations.find((r) => r.id === id) ?? selectedReservation;
+          : allReservationsThisWeek.find((r) => r.id === id) ?? selectedReservation;
       const prevPaid = resSnapshot?.amount_paid ?? 0;
       const delta = amountPaid - prevPaid;
 
@@ -780,7 +766,7 @@ export function usePaymentSidebar(options?: UsePaymentSidebarOptions) {
 
       return persistDirectAmountPaid(id, amountPaid);
     },
-    [selectedReservation, allClientReservations, persistDirectAmountPaid]
+    [selectedReservation, allReservationsThisWeek, persistDirectAmountPaid]
   );
 
   const handleUpdatePrice = useCallback(async (totalPrice: number, reservationId?: string) => {
@@ -797,9 +783,6 @@ export function usePaymentSidebar(options?: UsePaymentSidebarOptions) {
         return false;
       }
       const patch = { total_price: totalPrice };
-      setAllClientReservations((prev) =>
-        prev.map((r) => (r.id === id ? { ...r, ...patch } : r))
-      );
       setAllReservationsThisWeek((prev) =>
         prev.map((r) => (r.id === id ? { ...r, ...patch } : r))
       );
@@ -834,7 +817,7 @@ export function usePaymentSidebar(options?: UsePaymentSidebarOptions) {
       } else {
         toast("Error al agregar apunte", "error");
       }
-    } catch (e) {
+    } catch {
       toast("Error al conectar con el servidor", "error");
     }
   }, [selectedReservation, store, toast]);
@@ -857,7 +840,7 @@ export function usePaymentSidebar(options?: UsePaymentSidebarOptions) {
       } else {
         toast("Error al actualizar apunte", "error");
       }
-    } catch (e) {
+    } catch {
       toast("Error al conectar con el servidor", "error");
     }
   }, [selectedReservation, store, toast]);
@@ -879,15 +862,15 @@ export function usePaymentSidebar(options?: UsePaymentSidebarOptions) {
       } else {
         toast("Error al eliminar apunte", "error");
       }
-    } catch (e) {
+    } catch {
       toast("Error al conectar con el servidor", "error");
     }
-  }, [selectedReservation, store, toast]);
+  }, [selectedReservation, store, toast, notes]);
 
   const handleRegisterPayment = useCallback(async (reservationId: string | null, amount: number, method: PaymentMethod, mediaUrl?: string) => {
     const targetRes =
       reservationId != null
-        ? allClientReservations.find((r) => r.id === reservationId) ?? selectedReservation
+        ? allReservationsThisWeek.find((r) => r.id === reservationId) ?? selectedReservation
         : selectedReservation;
     const phoneNumber =
       targetRes?.phone_number ||
@@ -929,9 +912,6 @@ export function usePaymentSidebar(options?: UsePaymentSidebarOptions) {
             status: baseRes.status === "pending" ? "confirmed" : baseRes.status,
             confirmed: true,
           };
-          setAllClientReservations((prev) =>
-            prev.map((r) => (r.id === reservationId ? { ...r, ...patch } : r))
-          );
           setSelectedReservation((prev) =>
             prev?.id === reservationId ? { ...prev, ...patch } : prev
           );
@@ -958,7 +938,7 @@ export function usePaymentSidebar(options?: UsePaymentSidebarOptions) {
     } finally {
       setPaymentLoading(false);
     }
-  }, [store, toast, selectedReservation, allClientReservations, options]);
+  }, [store, toast, selectedReservation, allReservationsThisWeek, options]);
 
   const displayName =
     userNames.custom_name ||
@@ -971,7 +951,6 @@ export function usePaymentSidebar(options?: UsePaymentSidebarOptions) {
     selectedReservation,
     setSelectedReservation,
     allReservationsThisWeek,
-    allClientReservations,
     transfers,
     invoices,
     userNames,

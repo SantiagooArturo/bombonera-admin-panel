@@ -285,7 +285,7 @@ export default function OperacionesPage() {
   );
 
   const userNotesMap = new Map<string, string>();
-  const normKey = (s: any) => String(s || "").replace(/\D/g, "").slice(-9);
+  const normKey = (s: string | number | undefined | null) => String(s || "").replace(/\D/g, "").slice(-9);
   for (const u of users) {
     if (u.last_note) {
       const k = normKey(u.chat_id || u.id);
@@ -638,7 +638,6 @@ export default function OperacionesPage() {
           onClose={sidebar.close}
           courtConfigs={courtConfigs}
           allReservationsThisWeek={sidebar.allReservationsThisWeek}
-          allClientReservations={sidebar.allClientReservations}
           notes={sidebar.notes}
           loadingNotes={sidebar.loadingNotes}
           onAddNote={sidebar.handleAddNote}

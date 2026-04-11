@@ -414,7 +414,7 @@ class Store {
     }
   ): Promise<boolean> {
     // Actualización optimista local
-    const norm = (s: any) => String(s || "").replace(/\D/g, "").slice(-9);
+    const norm = (s: string | number | undefined | null) => String(s || "").replace(/\D/g, "").slice(-9);
     const targetNorm = norm(userId);
 
     const prevUsers = [...this.users];
@@ -435,7 +435,7 @@ class Store {
           id: userId,
           chat_id: userId,
           ...doc,
-        } as any,
+        } as User,
       ];
     }
     this.notify();

@@ -77,8 +77,6 @@ interface PaymentSidebarProps {
   courtConfigs?: CourtFieldConfig[] | null;
   /** Todas las reservas del cliente esta semana (incl. actual), ordenadas por fecha. */
   allReservationsThisWeek?: Reservation[];
-  /** Todas las reservas del cliente (pasadas, esta semana, futuras) para el tab Cobros. */
-  allClientReservations?: Reservation[];
   /** Al hacer click en una reserva de la lista: navegar a ella (ej. cambiar día en operaciones). */
   onSelectReservationFromList?: (reservation: Reservation) => void;
   /** Tras «Pagado» + registrar cobro: abrir emisor vinculado al transfer creado. */
@@ -1353,7 +1351,6 @@ const COBROS_NEARBY_THEME_WITH_PAYMENTS: CobrosNearbyAccordionTheme = {
 // ─── Cobros Tab Content ─────────────────────────────────────────────────────
 
 const CobrosTabContent = memo(function CobrosTabContent({
-  allClientReservations,
   reservation,
   transfers,
   invoices,
@@ -1373,7 +1370,6 @@ const CobrosTabContent = memo(function CobrosTabContent({
   registerPaymentRemaining,
   registerPaymentClientSummary,
 }: {
-  allClientReservations: Reservation[];
   reservation: Reservation;
   transfers: Transfer[];
   invoices: Invoice[];
@@ -1800,7 +1796,6 @@ const PaymentSidebar = memo(function PaymentSidebar({
   onClose,
   courtConfigs,
   allReservationsThisWeek = [],
-  allClientReservations = [],
   onSelectReservationFromList,
   pendingEmitFromAmountEdit = null,
   onClearPendingEmitFromAmountEdit,
@@ -2174,7 +2169,6 @@ const PaymentSidebar = memo(function PaymentSidebar({
         ) : null}
         {activeTab === "cobros" && (
           <CobrosTabContent
-            allClientReservations={allClientReservations}
             reservation={reservation}
             transfers={transfers}
             invoices={invoices}
