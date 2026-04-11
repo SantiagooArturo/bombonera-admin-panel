@@ -57,6 +57,7 @@ export async function GET() {
             ? data.created_at
             : undefined,
         profile_picture: typeof data.profile_picture === "string" ? data.profile_picture : undefined,
+        last_note: typeof data.last_note === "string" ? data.last_note : undefined,
       };
     });
 
@@ -165,8 +166,8 @@ export async function PATCH(request: NextRequest) {
   try {
     const db = getDb();
     const body = await request.json();
+    console.log("DEBUG: PATCH /api/users body:", body);
     const {
-      id,
       is_automated,
       client_type,
       custom_name,
@@ -175,7 +176,10 @@ export async function PATCH(request: NextRequest) {
       last_factura_direccion,
       last_factura_razon_social,
       phone_number,
+      last_note,
     } = body;
+
+    const id = body.id ? String(body.id) : null;
 
     if (!id) {
       return NextResponse.json(
@@ -228,6 +232,10 @@ export async function PATCH(request: NextRequest) {
       updateData.last_factura_razon_social = t || null;
     }
 
+    if (last_note !== undefined) {
+      updateData.last_note = typeof last_note === "string" ? last_note.trim() : null;
+    }
+
     if (phone_number !== undefined) {
       const raw = typeof phone_number === "string" ? phone_number : "";
       const normalized = normalizePeruPhone(raw.replace(/\D/g, ""));
@@ -240,9 +248,10 @@ export async function PATCH(request: NextRequest) {
       updateData.phone_number = normalized;
     }
 
-    if (Object.keys(updateData).length === 0) {
+    const totalKeys = Object.keys(updateData).length;
+    if (totalKeys === 0) {
       return NextResponse.json(
-        { error: "No hay campos para actualizar" },
+        { error: "No hay campos válidos para actualizar", receivedKeys: Object.keys(body) },
         { status: 400 }
       );
     }

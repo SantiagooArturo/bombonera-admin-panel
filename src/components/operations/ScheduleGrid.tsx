@@ -82,6 +82,7 @@ export interface ScheduleGridProps {
   onSelectEmpty: (field: number, timeSlot: string) => void;
   maxHeight?: string;
   recurrentSchedules?: RecurrentSchedule[];
+  userNotesMap?: Map<string, string>;
 }
 
 // ─── Component ──────────────────────────────────────────────────────────────
@@ -99,6 +100,7 @@ export default function ScheduleGrid({
   onSelectEmpty,
   maxHeight = "calc(100vh - 220px)",
   recurrentSchedules = [],
+  userNotesMap = new Map(),
 }: ScheduleGridProps) {
   const currentRowRef = useRef<HTMLTableRowElement>(null);
   const columnGroups = useMemo(() => buildColumnGroups(courtConfigs ?? null), [courtConfigs]);
@@ -315,6 +317,10 @@ export default function ScheduleGrid({
                             return !!(owner && norm(owner.chat_id) === norm(reservation.chat_id));
                           })()
                         }
+                        lastNote={(() => {
+                          const norm = (id: string | number | undefined | null) => String(id || "").replace(/\D/g, "").slice(-9);
+                          return userNotesMap.get(norm(reservation.chat_id));
+                        })()}
                       />
                     </td>
                   );

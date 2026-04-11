@@ -13,9 +13,11 @@ function formatPhone(phone: string): string {
 export function OccupiedCellContent({
   reservation,
   isRecurrent,
+  lastNote,
 }: {
   reservation: Reservation;
   isRecurrent?: boolean;
+  lastNote?: string;
 }) {
   const paid = reservation.amount_paid ?? 0;
   const total = reservation.total_price ?? 0;
@@ -74,6 +76,20 @@ export function OccupiedCellContent({
         <span className="absolute bottom-1 right-1 inline-flex px-1.5 py-0.5 rounded-md text-[9px] font-bold border bg-amber-100 text-amber-800 border-amber-200 shadow-sm">
           Recurrente
         </span>
+      )}
+
+      {/* Apunte (Nota) */}
+      {lastNote && (
+        <div className="mt-1 flex items-start gap-1">
+          <span className="shrink-0 p-0.5 rounded bg-blue-100 text-blue-600">
+            <svg className="w-2.5 h-2.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
+            </svg>
+          </span>
+          <p className="text-[10px] font-medium text-blue-700 italic truncate" title={lastNote}>
+            {lastNote}
+          </p>
+        </div>
       )}
 
       {/* Info de pago */}

@@ -3,7 +3,7 @@
 import { useState, useCallback, useRef, useEffect } from "react";
 import { useStore } from "@/lib/hooks";
 import { useToastContext } from "@/components/ClientLayout";
-import type { Reservation, Transfer, Invoice, PaymentMethod, ClientType, EmitComprobanteParams } from "@/lib/types";
+import { type Reservation, type Transfer, type Invoice, type PaymentMethod, type ClientType, type EmitComprobanteParams, Note } from "@/lib/types";
 import { voidSunatInvoice } from "@/features/boletas/services/voidSunatInvoice";
 import { mergeInvoiceVoided } from "@/features/boletas/utils/mergeInvoiceVoided";
 import { TRANSFER_ID_EMIT_THEN_REGISTER_PAYMENT } from "@/features/boletas/constants/emitThenRegisterPayment";
@@ -65,10 +65,15 @@ export function usePaymentSidebar(options?: UsePaymentSidebarOptions) {
     slotId: string;
   } | null>(null);
 
+  const [notes, setNotes] = useState<Note[]>([]);
+  const [loadingNotes, setLoadingNotes] = useState(false);
+
   const isOpen = selectedReservation !== null;
 
   const open = useCallback(async (reservation: Reservation) => {
     openRequestIdRef.current = reservation.id;
+    setLoadingNotes(true);
+    setNotes([]);
     const nextChatId = String(reservation.chat_id || reservation.phone_number || "").replace(/\D/g, "");
     if (allReservationsChatIdRef.current && allReservationsChatIdRef.current !== nextChatId) {
       setAllReservationsThisWeek([]);
@@ -211,6 +216,19 @@ export function usePaymentSidebar(options?: UsePaymentSidebarOptions) {
       setLoadingData(false);
       setClientTypeLoading(false);
     }
+
+    // Fetch notes separately to not block main data
+    setLoadingNotes(true);
+    try {
+      const bRes = await fetch(`/api/notes?chat_id=${encodeURIComponent(reservation.chat_id)}`);
+      if (bRes.ok) {
+        setNotes(await bRes.json());
+      }
+    } catch (e) {
+      console.error("Error fetching notes", e);
+    } finally {
+      setLoadingNotes(false);
+    }
   }, [store, toast]);
 
   const close = useCallback(() => {
@@ -227,6 +245,8 @@ export function usePaymentSidebar(options?: UsePaymentSidebarOptions) {
     setUserNames({});
     setPendingEmitFromAmountEdit(null);
     setAmountPaidDeltaPrompt(null);
+    setNotes([]);
+    setLoadingNotes(false);
   }, []);
 
   const handleUpdateClientType = useCallback(async (nextType: ClientType) => {
@@ -794,6 +814,75 @@ export function usePaymentSidebar(options?: UsePaymentSidebarOptions) {
       return false;
     }
   }, [selectedReservation, options, toast]);
+  
+  const handleAddNote = useCallback(async (content: string) => {
+    if (!selectedReservation || !content.trim()) return;
+    try {
+      const res = await fetch("/api/notes", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ chat_id: selectedReservation.chat_id, content }),
+      });
+      if (res.ok) {
+        const newNote = await res.json();
+        setNotes(prev => [newNote, ...prev]);
+        toast("Apunte agregado", "success");
+        
+        // Instant sync with Grid
+        const preview = content.trim().length > 40 ? content.trim().slice(0, 37) + "..." : content.trim();
+        store.updateUserDoc(selectedReservation.chat_id, { last_note: preview });
+      } else {
+        toast("Error al agregar apunte", "error");
+      }
+    } catch (e) {
+      toast("Error al conectar con el servidor", "error");
+    }
+  }, [selectedReservation, store, toast]);
+
+  const handleEditNote = useCallback(async (noteId: string, content: string) => {
+    if (!selectedReservation || !content.trim()) return;
+    try {
+      const res = await fetch("/api/notes", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ chat_id: selectedReservation.chat_id, note_id: noteId, content }),
+      });
+      if (res.ok) {
+        setNotes(prev => prev.map(n => n.id === noteId ? { ...n, content, updated_at: new Date().toISOString() } : n));
+        toast("Apunte actualizado", "success");
+        
+        // Instant sync with Grid
+        const preview = content.trim().length > 40 ? content.trim().slice(0, 37) + "..." : content.trim();
+        store.updateUserDoc(selectedReservation.chat_id, { last_note: preview });
+      } else {
+        toast("Error al actualizar apunte", "error");
+      }
+    } catch (e) {
+      toast("Error al conectar con el servidor", "error");
+    }
+  }, [selectedReservation, store, toast]);
+
+  const handleDeleteNote = useCallback(async (noteId: string) => {
+    if (!selectedReservation) return;
+    try {
+      const res = await fetch(`/api/notes?chat_id=${encodeURIComponent(selectedReservation.chat_id)}&note_id=${encodeURIComponent(noteId)}`, {
+        method: "DELETE",
+      });
+      if (res.ok) {
+        setNotes(prev => prev.filter(n => n.id !== noteId));
+        toast("Apunte eliminado", "success");
+        
+        // Update Grid preview
+        const latestContent = notes.find(n => n.id !== noteId)?.content;
+        const preview = latestContent ? (latestContent.length > 40 ? latestContent.slice(0, 37) + "..." : latestContent) : null;
+        store.updateUserDoc(selectedReservation.chat_id, { last_note: preview });
+      } else {
+        toast("Error al eliminar apunte", "error");
+      }
+    } catch (e) {
+      toast("Error al conectar con el servidor", "error");
+    }
+  }, [selectedReservation, store, toast]);
 
   const handleRegisterPayment = useCallback(async (reservationId: string | null, amount: number, method: PaymentMethod, mediaUrl?: string) => {
     const targetRes =
@@ -923,5 +1012,10 @@ export function usePaymentSidebar(options?: UsePaymentSidebarOptions) {
     handleToggleRecurrence,
     recurrenceConflict,
     setRecurrenceConflict,
+    notes,
+    loadingNotes,
+    handleAddNote,
+    handleEditNote,
+    handleDeleteNote,
   };
 }

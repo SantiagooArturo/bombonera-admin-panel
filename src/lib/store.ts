@@ -298,10 +298,8 @@ class Store {
 
   async resetUser(userId: string) {
     try {
-      const res = await fetch("/api/users", {
+      const res = await fetch(`/api/users?id=${encodeURIComponent(userId)}`, {
         method: "DELETE",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ id: userId }),
       });
       if (!res.ok) throw new Error("Failed to delete user");
 
@@ -412,8 +410,36 @@ class Store {
       last_ruc?: string;
       last_factura_direccion?: string;
       last_factura_razon_social?: string;
+      last_note?: string;
     }
   ): Promise<boolean> {
+    // Actualización optimista local
+    const norm = (s: any) => String(s || "").replace(/\D/g, "").slice(-9);
+    const targetNorm = norm(userId);
+
+    const prevUsers = [...this.users];
+    let found = false;
+    this.users = this.users.map((u) => {
+      const uIdNorm = norm(u.id);
+      const uChatNorm = norm(u.chat_id);
+      const isMatch = (targetNorm && (uIdNorm === targetNorm || uChatNorm === targetNorm)) || u.id === userId;
+      if (isMatch) found = true;
+      return isMatch ? { ...u, ...doc } : u;
+    });
+
+    if (!found && doc.last_note) {
+      // Si no existe en la lista local, lo agregamos para que la cuadrilla lo vea al instante
+      this.users = [
+        ...this.users,
+        {
+          id: userId,
+          chat_id: userId,
+          ...doc,
+        } as any,
+      ];
+    }
+    this.notify();
+
     try {
       const body: Record<string, unknown> = { id: userId, ...doc };
       const res = await fetch("/api/users", {
@@ -421,14 +447,17 @@ class Store {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(body),
       });
-      if (!res.ok) return false;
-      this.users = this.users.map((u) =>
-        u.id === userId ? { ...u, ...doc } : u
-      );
-      this.notify();
+      if (!res.ok) {
+        // Revertimos si falla
+        this.users = prevUsers;
+        this.notify();
+        return false;
+      }
       return true;
     } catch (error) {
       console.error("Error updating user doc:", error);
+      this.users = prevUsers;
+      this.notify();
       return false;
     }
   }

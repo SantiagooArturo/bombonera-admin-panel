@@ -284,6 +284,15 @@ export default function OperacionesPage() {
     [reservations]
   );
 
+  const userNotesMap = new Map<string, string>();
+  const normKey = (s: any) => String(s || "").replace(/\D/g, "").slice(-9);
+  for (const u of users) {
+    if (u.last_note) {
+      const k = normKey(u.chat_id || u.id);
+      if (k) userNotesMap.set(k, u.last_note);
+    }
+  }
+
   // ── Desbloqueo ────────────────────────────────────────────────────────
 
   async function handleUnblock() {
@@ -572,6 +581,7 @@ export default function OperacionesPage() {
             onSelectReservation={sidebar.open}
             onSelectBlocked={setUnblockTarget}
             onSelectEmpty={handleSelectEmptySlot}
+            userNotesMap={userNotesMap}
             maxHeight="100%"
           />
         </div>
@@ -629,6 +639,10 @@ export default function OperacionesPage() {
           courtConfigs={courtConfigs}
           allReservationsThisWeek={sidebar.allReservationsThisWeek}
           allClientReservations={sidebar.allClientReservations}
+          notes={sidebar.notes}
+          loadingNotes={sidebar.loadingNotes}
+          onAddNote={sidebar.handleAddNote}
+          onDeleteNote={sidebar.handleDeleteNote}
           onSelectReservationFromList={(r) => {
             if (ignoreListClickRef.current) return;
             preserveSidebarOnDayChangeRef.current = true;

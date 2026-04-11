@@ -6,7 +6,7 @@ import { PdfPreviewThumbnail } from "@/components/PdfPreviewThumbnail";
 import { invoicePlantillaPdfHref } from "@/features/boletas/utils/invoicePdfLinks";
 import { invoiceComprobantePdfDownloadFilename } from "@/features/boletas/utils/comprobantePdfFilename";
 import { EmitInvoiceModal } from "./EmitInvoiceModal";
-import { Transfer, Invoice, Reservation, PaymentMethod, ClientType, CLIENT_TYPE_LABELS, STATUS_LABELS, getPendingExpiryTimeFormatted, type ReservationStatus, type EmitComprobanteParams } from "@/lib/types";
+import { Transfer, Invoice, Reservation, PaymentMethod, ClientType, Note, CLIENT_TYPE_LABELS, STATUS_LABELS, getPendingExpiryTimeFormatted, type ReservationStatus, type EmitComprobanteParams } from "@/lib/types";
 import type { CourtFieldConfig } from "@/lib/court-config";
 import { getCourtSizeLabel } from "@/lib/court-config";
 import {
@@ -84,9 +84,15 @@ interface PaymentSidebarProps {
   /** Tras «Pagado» + registrar cobro: abrir emisor vinculado al transfer creado. */
   pendingEmitFromAmountEdit?: Transfer | null;
   onClearPendingEmitFromAmountEdit?: () => void;
-  /** Subida de «Pagado» con delta &gt; 0: modal en app (no confirm del navegador). */
+  /** Subida de «Pagado» con delta > 0: modal en app (no confirm del navegador). */
   amountPaidDeltaPrompt?: AmountPaidDeltaPrompt | null;
   onResolveAmountPaidDeltaPrompt?: (choice: "direct" | "emit") => Promise<boolean>;
+  /** Apuntes del cliente. */
+  notes?: Note[];
+  loadingNotes?: boolean;
+  onAddNote?: (content: string) => Promise<void>;
+  onEditNote?: (noteId: string, content: string) => Promise<void>;
+  onDeleteNote?: (noteId: string) => Promise<void>;
 }
 
 // ─── Sub-components ──────────────────────────────────────────────────────────
@@ -1419,96 +1425,12 @@ const CobrosTabContent = memo(function CobrosTabContent({
     [transfersByPeriod]
   );
 
-  const totalCost = useMemo(
-    () => allClientReservations.reduce((s, r) => s + (r.total_price ?? 0), 0),
-    [allClientReservations]
-  );
-  const totalPaid = useMemo(
-    () => allClientReservations.reduce((s, r) => s + (r.amount_paid ?? 0), 0),
-    [allClientReservations]
-  );
-  /* eslint-disable @typescript-eslint/no-unused-vars -- UI «Por cobrar» comentada arriba */
-  const totalRemaining = Math.max(0, totalCost - totalPaid);
-  const reservationsWithDebt = useMemo(
-    () => allClientReservations.filter((r) => (r.total_price ?? 0) - (r.amount_paid ?? 0) > 0),
-    [allClientReservations]
-  );
-
-  const pendingByPeriod = useMemo(() => {
-    const lastWeekStart = addDaysYmd(weekStart, -7);
-    const lastWeekEnd = addDaysYmd(weekEnd, -7);
-    const monthNames = [
-      "Enero", "Febrero", "Marzo", "Abril", "Mayo", "Junio", "Julio", "Agosto", "Septiembre", "Octubre",
-      "Noviembre", "Diciembre",
-    ] as const;
-    const getPeriodLabel = (dateStr: string): string => {
-      if (dateStr >= weekStart && dateStr <= weekEnd) return "Esta semana";
-      if (dateStr >= lastWeekStart && dateStr <= lastWeekEnd) return "Semana pasada";
-      const d = new Date(dateStr + "T12:00:00");
-      return monthNames[d.getMonth()] + " " + d.getFullYear();
-    };
-    return reservationsWithDebt.reduce(
-      (acc, r) => {
-        const pending = Math.max(0, (r.total_price ?? 0) - (r.amount_paid ?? 0));
-        const label = getPeriodLabel(r.date);
-        acc[label] = (acc[label] ?? 0) + pending;
-        return acc;
-      },
-      {} as Record<string, number>
-    );
-  }, [reservationsWithDebt, weekStart, weekEnd]);
-  /* eslint-enable @typescript-eslint/no-unused-vars */
-
   const digits = String(reservation.phone_number || reservation.chat_id || chatId || "").replace(/\D/g, "");
   const phoneForSearch =
     digits.length >= 9 ? normalizePeruPhone(digits) : digits.length > 0 ? digits : chatId.replace(/\D/g, "");
 
   return (
     <div className="flex flex-1 flex-col overflow-y-auto">
-      {/* Por cobrar (cliente): oculto para probar layout sin monto agregado
-      <div className="shrink-0 border-b border-gray-200 bg-gray-50 px-6 py-4">
-        <div
-          className={`flex min-h-[7.5rem] flex-col justify-center rounded-xl border-2 px-4 py-4 text-center ${
-            totalRemaining <= 0 ? "border-green-200 bg-green-50" : "border-orange-200 bg-orange-50"
-          }`}
-        >
-          <p
-            className={`text-xs font-bold uppercase tracking-wide ${
-              totalRemaining <= 0 ? "text-green-600" : "text-orange-600"
-            }`}
-          >
-            Por cobrar
-          </p>
-          <p
-            className={`mt-1 text-2xl font-bold ${
-              totalRemaining <= 0 ? "text-green-700" : "text-orange-600"
-            }`}
-          >
-            S/ {totalRemaining.toFixed(2)}
-          </p>
-          {Object.keys(pendingByPeriod).length > 0 && (
-            <div className="mt-2 flex flex-wrap justify-center gap-x-3 gap-y-1 text-xs font-medium text-gray-600">
-              {Object.entries(pendingByPeriod)
-                .sort(([a], [b]) => {
-                  const order = ["Esta semana", "Semana pasada"];
-                  const ai = order.indexOf(a);
-                  const bi = order.indexOf(b);
-                  if (ai >= 0 && bi >= 0) return ai - bi;
-                  if (ai >= 0) return -1;
-                  if (bi >= 0) return 1;
-                  return a.localeCompare(b);
-                })
-                .map(([label, amt]) => (
-                  <span key={label}>
-                    {label}: S/ {amt.toFixed(2)}
-                  </span>
-                ))}
-            </div>
-          )}
-        </div>
-      </div>
-      */}
-
       <div className="flex-1 space-y-6 overflow-y-auto bg-gray-50 p-6">
         <section className="rounded-xl border-2 border-blue-100 bg-white p-4 shadow-sm">
           <p className="mb-3 text-xs font-bold uppercase tracking-wide text-gray-500">Registrar pago</p>
@@ -1610,6 +1532,202 @@ const CobrosTabContent = memo(function CobrosTabContent({
   );
 });
 
+function NotesTabContent({
+  notes,
+  loading,
+  onAddNote,
+  onEditNote,
+  onDeleteNote,
+}: {
+  notes: Note[];
+  loading: boolean;
+  onAddNote: (content: string) => Promise<void>;
+  onEditNote: (noteId: string, content: string) => Promise<void>;
+  onDeleteNote: (noteId: string) => Promise<void>;
+}) {
+  const [newNote, setNewNote] = useState("");
+  const [adding, setAdding] = useState(false);
+  const [isCreating, setIsCreating] = useState(false);
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [editContent, setEditContent] = useState("");
+  const [updatingId, setUpdatingId] = useState<string | null>(null);
+
+  const sortedNotes = useMemo(() => {
+    return [...notes].sort((a, b) => b.created_at.localeCompare(a.created_at));
+  }, [notes]);
+
+  return (
+    <div className="flex flex-1 flex-col overflow-y-auto bg-gray-50">
+      {/* Botón de creación o Formulario */}
+      <div className="sticky top-0 z-10 bg-gray-50 p-4 border-b border-gray-200 shadow-sm">
+        {!isCreating ? (
+          <button
+            onClick={() => setIsCreating(true)}
+            className="flex w-full items-center justify-center gap-3 rounded-2xl bg-white border-2 border-dashed border-blue-400 p-6 text-blue-600 hover:bg-blue-50 hover:border-blue-500 transition-all active:scale-[0.98]"
+          >
+            <div className="flex h-12 w-12 items-center justify-center rounded-full bg-blue-100">
+              <svg className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M12 4v16m8-8H4" />
+              </svg>
+            </div>
+            <span className="text-lg font-black uppercase tracking-tight">Crear nuevo apunte</span>
+          </button>
+        ) : (
+          <div className="rounded-2xl border-2 border-blue-500 bg-white p-5 shadow-xl animate-in fade-in zoom-in duration-200">
+            <h4 className="mb-3 text-sm font-black uppercase tracking-widest text-blue-600">Nuevo apunte</h4>
+            <textarea
+              autoFocus
+              value={newNote}
+              onChange={(e) => setNewNote(e.target.value)}
+              placeholder="Escribe aquí cualquier observación sobre el cliente..."
+              className="w-full min-h-[120px] rounded-xl border-2 border-gray-100 bg-gray-50 p-4 text-base font-bold text-gray-800 focus:border-blue-500 focus:ring-0 resize-none transition-all placeholder:text-gray-400"
+            />
+            <div className="mt-4 flex gap-3">
+              <button
+                onClick={() => {
+                  setIsCreating(false);
+                  setNewNote("");
+                }}
+                className="flex-1 rounded-xl bg-gray-100 py-4 text-base font-bold text-gray-600 hover:bg-gray-200 active:scale-95 transition-all"
+              >
+                Cancelar
+              </button>
+              <button
+                onClick={async () => {
+                  if (!newNote.trim()) return;
+                  setAdding(true);
+                  await onAddNote(newNote);
+                  setNewNote("");
+                  setAdding(false);
+                  setIsCreating(false);
+                }}
+                disabled={adding || !newNote.trim()}
+                className="flex-[2] rounded-xl bg-blue-600 py-4 text-base font-bold text-white shadow-lg shadow-blue-200 hover:bg-blue-700 disabled:opacity-50 active:scale-95 transition-all"
+              >
+                {adding ? "Guardando..." : "Guardar Apunte"}
+              </button>
+            </div>
+          </div>
+        )}
+      </div>
+
+      {/* Lista de apuntes */}
+      <div className="p-4 space-y-4">
+        {loading && notes.length === 0 ? (
+          <div className="flex flex-col items-center justify-center py-20 animate-pulse">
+            <div className="h-12 w-12 rounded-full bg-gray-200 mb-4" />
+            <div className="h-4 w-32 bg-gray-200 rounded" />
+          </div>
+        ) : notes.length === 0 ? (
+          <div className="flex flex-col items-center justify-center py-20 px-10 text-center text-gray-400">
+            <div className="mb-4 rounded-full bg-gray-100 p-6">
+              <svg className="h-12 w-12 text-gray-300" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10" />
+              </svg>
+            </div>
+            <p className="text-base font-bold text-gray-500">No hay apuntes anteriores</p>
+            <p className="mt-1 text-sm text-gray-400 font-medium italic">Los apuntes ayudan a recordar detalles importantes de los clientes.</p>
+          </div>
+        ) : (
+          sortedNotes.map((note) => {
+            const isEditing = editingId === note.id;
+            const isUpdating = updatingId === note.id;
+
+            return (
+              <div 
+                key={note.id} 
+                className={`group relative rounded-2xl border-2 transition-all ${
+                  isEditing ? "border-blue-400 bg-white ring-4 ring-blue-50 shadow-xl" : "border-white bg-white shadow-sm hover:border-gray-200 hover:shadow-md"
+                }`}
+              >
+                {!isEditing ? (
+                  <div className="p-5">
+                    <div className="flex items-center justify-between mb-3">
+                      <div className="flex items-center gap-2">
+                         <div className="h-8 w-8 rounded-lg bg-blue-50 flex items-center justify-center text-blue-500">
+                            <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
+                            </svg>
+                         </div>
+                         <span className="text-xs font-black uppercase tracking-widest text-gray-400">
+                            {new Date(note.created_at).toLocaleString("es-PE", {
+                              day: "2-digit", month: "long", year: "numeric", hour: "2-digit", minute: "2-digit"
+                            })}
+                         </span>
+                      </div>
+                      <div className="flex gap-1">
+                        <button
+                          onClick={() => {
+                            setEditingId(note.id);
+                            setEditContent(note.content);
+                          }}
+                          className="flex h-10 w-10 items-center justify-center rounded-xl bg-gray-50 text-gray-500 hover:bg-amber-100 hover:text-amber-700 transition-colors"
+                          title="Editar apunte"
+                        >
+                          <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" />
+                          </svg>
+                        </button>
+                        <button
+                          onClick={() => {
+                            if (confirm("¿Seguro que quieres borrar este apunte? No se puede deshacer.")) {
+                              onDeleteNote(note.id);
+                            }
+                          }}
+                          className="flex h-10 w-10 items-center justify-center rounded-xl bg-gray-50 text-gray-500 hover:bg-red-100 hover:text-red-700 transition-colors"
+                          title="Eliminar apunte"
+                        >
+                          <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                          </svg>
+                        </button>
+                      </div>
+                    </div>
+                    <p className="text-lg font-bold text-gray-700 whitespace-pre-wrap leading-tight">
+                      {note.content}
+                    </p>
+                  </div>
+                ) : (
+                  <div className="p-5 animate-in fade-in slide-in-from-top-2">
+                    <h4 className="mb-3 text-xs font-black uppercase tracking-widest text-blue-600">Editando apunte</h4>
+                    <textarea
+                      autoFocus
+                      value={editContent}
+                      onChange={(e) => setEditContent(e.target.value)}
+                      className="w-full min-h-[100px] rounded-xl border-2 border-gray-100 bg-gray-50 p-4 text-base font-bold text-gray-800 focus:border-blue-500 focus:ring-0 resize-none transition-all"
+                    />
+                    <div className="mt-4 flex gap-2">
+                       <button
+                        onClick={() => setEditingId(null)}
+                        className="flex-1 rounded-xl bg-gray-100 py-3 text-sm font-bold text-gray-600 hover:bg-gray-200"
+                      >
+                        Cancelar
+                      </button>
+                      <button
+                        onClick={async () => {
+                          if (!editContent.trim() || isUpdating) return;
+                          setUpdatingId(note.id);
+                          await onEditNote(note.id, editContent);
+                          setUpdatingId(null);
+                          setEditingId(null);
+                        }}
+                        disabled={isUpdating || !editContent.trim()}
+                        className="flex-[2] rounded-xl bg-blue-600 py-3 text-sm font-bold text-white shadow-lg shadow-blue-100 hover:bg-blue-700 disabled:opacity-50"
+                      >
+                        {isUpdating ? "Guardando..." : "Guardar Cambios"}
+                      </button>
+                    </div>
+                  </div>
+                )}
+              </div>
+            );
+          })
+        )}
+      </div>
+    </div>
+  );
+}
+
 /** Misma rejilla que `CobrosNearbyPaymentRow` (pago | boleta). */
 function CobrosPaymentRowSkeleton() {
   return (
@@ -1688,6 +1806,11 @@ const PaymentSidebar = memo(function PaymentSidebar({
   onClearPendingEmitFromAmountEdit,
   amountPaidDeltaPrompt = null,
   onResolveAmountPaidDeltaPrompt,
+  notes = [],
+  loadingNotes = false,
+  onAddNote,
+  onEditNote,
+  onDeleteNote,
 }: PaymentSidebarProps) {
   const toast = useToastContext();
   const [attendanceReminderLabel, setAttendanceReminderLabel] = useState<string | null>(null);
@@ -1767,7 +1890,7 @@ const PaymentSidebar = memo(function PaymentSidebar({
     return r || p || "";
   }, [reservation.dni, clientLastDni]);
 
-  const [activeTab, setActiveTab] = useState<"detalles" | "cobros">("detalles");
+  const [activeTab, setActiveTab] = useState<"detalles" | "cobros" | "apuntes">("detalles");
   const [viewingImage, setViewingImage] = useState<string | null>(null);
   const [emitModalTransfer, setEmitModalTransfer] = useState<Transfer | null>(null);
   const [amountPaidEditCloseSignal, setAmountPaidEditCloseSignal] = useState(0);
@@ -1936,7 +2059,7 @@ const PaymentSidebar = memo(function PaymentSidebar({
           <div className="flex items-center justify-between">
             <div>
               <h3 className="text-xl font-bold text-gray-900">
-                {activeTab === "detalles" ? "Detalle de reserva" : "Gestionar cobros"}
+                {activeTab === "detalles" ? "Detalle de reserva" : activeTab === "cobros" ? "Gestionar cobros" : "Apuntes"}
               </h3>
               {activeTab === "detalles" && (
                 <div className="flex flex-wrap items-center gap-x-3 gap-y-1 mt-1 text-sm text-gray-500">
@@ -1957,7 +2080,7 @@ const PaymentSidebar = memo(function PaymentSidebar({
                   </span>
                 </div>
               )}
-              {activeTab === "cobros" && (
+              {activeTab !== "detalles" && (
                 <p className="mt-1 text-sm text-gray-500">{effectiveDisplayName || "Cliente"}</p>
               )}
             </div>
@@ -1971,7 +2094,7 @@ const PaymentSidebar = memo(function PaymentSidebar({
               </svg>
             </button>
           </div>
-          {/* Tabs: siempre visibles para acceder al histórico de cobros */}
+          {/* Tabs */}
           <div className="flex gap-1 mt-4 p-1 bg-gray-200 rounded-xl">
             <button
               type="button"
@@ -1990,6 +2113,15 @@ const PaymentSidebar = memo(function PaymentSidebar({
               }`}
             >
               Cobros
+            </button>
+            <button
+              type="button"
+              onClick={() => setActiveTab("apuntes")}
+              className={`flex-1 py-2 px-4 rounded-lg text-sm font-semibold transition-colors ${
+                activeTab === "apuntes" ? "bg-white text-gray-900 shadow-sm" : "text-gray-600 hover:text-gray-900"
+              }`}
+            >
+              Apuntes {notes.length > 0 && `(${notes.length})`}
             </button>
           </div>
         </div>
@@ -2061,6 +2193,15 @@ const PaymentSidebar = memo(function PaymentSidebar({
             onRegisterPayment={onRegisterPayment}
             registerPaymentRemaining={registerPaymentRemaining}
             registerPaymentClientSummary={registerPaymentClientSummary}
+          />
+        )}
+        {activeTab === "apuntes" && (
+          <NotesTabContent
+            notes={notes}
+            loading={loadingNotes}
+            onAddNote={onAddNote || (async () => {})}
+            onEditNote={onEditNote || (async () => {})}
+            onDeleteNote={onDeleteNote || (async () => {})}
           />
         )}
       </div>

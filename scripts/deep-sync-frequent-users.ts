@@ -43,21 +43,21 @@ async function deepSyncFrequentUsers() {
         console.log(`✅ [SYNC] ${chatId} (${userData.custom_name || 'Sin nombre'}) -> Frecuente`);
       }
     } else {
-        // Intentar buscar por teléfono si el ID no coincide exactamente
-        const phoneMatch = await db.collection("users").where("phone_number", "==", chatId).get();
-        if (!phoneMatch.empty) {
-            const doc = phoneMatch.docs[0];
-            if (doc.data().client_type !== "frecuente") {
-                await doc.ref.update({ client_type: "frecuente" });
-                updatedCount++;
-                console.log(`✅ [SYNC-PHONE] ${chatId} -> Frecuente`);
-            }
-        } else {
-            notFoundCount++;
-            console.warn(`⚠️ [NOT FOUND] ${chatId} no existe en la colección 'users'.`);
+      // Intentar buscar por teléfono si el ID no coincide exactamente
+      const phoneMatch = await db.collection("users").where("phone_number", "==", chatId).get();
+      if (!phoneMatch.empty) {
+        const doc = phoneMatch.docs[0];
+        if (doc.data().client_type !== "frecuente") {
+          await doc.ref.update({ client_type: "frecuente" });
+          updatedCount++;
+          console.log(`✅ [SYNC-PHONE] ${chatId} -> Frecuente`);
         }
+      } else {
+        notFoundCount++;
+        console.warn(`⚠️ [NOT FOUND] ${chatId} no existe en la colección 'users'.`);
+      }
     }
-  }
+  });
 
   console.log(`\n✨ Sincronización terminada.`);
   console.log(`📈 Usuarios actualizados: ${updatedCount}`);

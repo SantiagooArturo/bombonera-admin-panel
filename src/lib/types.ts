@@ -192,6 +192,14 @@ export interface User {
   created_at?: string;
   /** URL de la foto de perfil en Firebase Storage. */
   profile_picture?: string;
+  /** El contenido del último apunte (nota) registrado para este cliente. */
+  last_note?: string;
+}
+
+export interface Note {
+  id: string;
+  content: string;
+  created_at: string;
 }
 
 export const CLIENT_TYPE_LABELS: Record<ClientType, string> = {
