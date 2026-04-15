@@ -336,8 +336,16 @@ function buildFirestoreDoc(params: {
     sunat_xml: String(statusPayload.xml || "") || null,
     sunat_cdr: String(statusPayload.cdr || "") || null,
     sunat_pdf_ticket: String(statusPayload.pdf?.ticket || "") || null,
-    status: "emitted",
-    created_at: new Date().toISOString(),
+    status: sunatEstado === "ANULADO" ? "voided" : "emitted",
+    ...(sunatEstado === "ANULADO"
+      ? {
+          voided_at: new Date().toISOString(),
+          void_motivo: "ANULACIÓN DE OPERACIÓN (recuperación batch)",
+        }
+      : {}),
+    created_at: fechaEmision
+      ? new Date(new Date(`${fechaEmision}T17:00:00.000Z`).getTime() + (correlativo % 1000) * 1000).toISOString()
+      : new Date().toISOString(),
     fecha_emision_ymd: fechaEmision,
     hora_emision_hms: "",
     ...(tipoComprobante === "factura" && cliente.direccion
