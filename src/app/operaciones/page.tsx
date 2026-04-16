@@ -29,6 +29,7 @@ import {
   getUserPhone,
   isValidPeruPhone,
   normalizePeruPhone,
+  normalizePhoneKey,
 } from "@/features/operaciones/utils";
 
 // ─── Page ───────────────────────────────────────────────────────────────────
@@ -103,16 +104,21 @@ export default function OperacionesPage() {
     }
   }, [store]);
 
-  /** Usuarios ordenados; se actualiza cuando el store cambia (p. ej. al editar tipo de cliente). */
-  const users = [...store.getUsers()].sort((a, b) => {
-    const timeA = (a.last_interaction_at || a.created_at) ? new Date(a.last_interaction_at || a.created_at!).getTime() || 0 : 0;
-    const timeB = (b.last_interaction_at || b.created_at) ? new Date(b.last_interaction_at || b.created_at!).getTime() || 0 : 0;
-    if (timeA !== timeB) return timeB - timeA;
-    // Fallback: Si no hay tiempos, preferir que los "vacíos" o "." vayan al final si no tienen nombre real
-    const nameA = getUserName(a);
-    const nameB = getUserName(b);
-    return nameA.localeCompare(nameB, "es");
-  });
+  /** Referencia estable al array del store; cambia solo cuando el store hace notify(). */
+  const rawUsers = store.getUsers();
+
+  /** Usuarios ordenados; memoizado para no recalcular en cada render. */
+  const users = useMemo(
+    () =>
+      [...rawUsers].sort((a, b) => {
+        const timeA = (a.last_interaction_at || a.created_at) ? new Date(a.last_interaction_at || a.created_at!).getTime() || 0 : 0;
+        const timeB = (b.last_interaction_at || b.created_at) ? new Date(b.last_interaction_at || b.created_at!).getTime() || 0 : 0;
+        if (timeA !== timeB) return timeB - timeA;
+        return getUserName(a).localeCompare(getUserName(b), "es");
+      }),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [rawUsers]
+  );
 
 
   const selectedDate = useMemo(() => formatDateISO(getDateWithOffset(dayOffset)), [dayOffset]);
@@ -276,18 +282,22 @@ export default function OperacionesPage() {
     [reservations]
   );
 
-  const userNotesMap = new Map<string, string>();
-  const normKey = (s: string | number | undefined | null) => String(s || "").replace(/\D/g, "").slice(-9);
-  for (const u of users) {
-    if (u.last_note) {
-      // Registrar ambas claves (id y chat_id) porque algunos usuarios de WhatsApp
-      // tienen chat_id en formato @lid (Linked Device ID) distinto al número de teléfono.
-      const keyById = normKey(u.id);
-      const keyByChatId = normKey(u.chat_id);
-      if (keyById) userNotesMap.set(keyById, u.last_note);
-      if (keyByChatId && keyByChatId !== keyById) userNotesMap.set(keyByChatId, u.last_note);
+  /**
+   * Mapa de clave normalizada → last_note. Registra tres claves por usuario para
+   * cubrir todos los formatos posibles de chat_id que puede devolver WAHA:
+   * phone_number (más fiable), id (doc Firestore) y chat_id (@c.us / @lid).
+   */
+  const userNotesMap = useMemo(() => {
+    const map = new Map<string, string>();
+    for (const u of users) {
+      if (!u.last_note) continue;
+      const keyByPhone = normalizePhoneKey(u.phone_number || u.id);
+      const keyByChatId = normalizePhoneKey(u.chat_id);
+      if (keyByPhone) map.set(keyByPhone, u.last_note);
+      if (keyByChatId && keyByChatId !== keyByPhone) map.set(keyByChatId, u.last_note);
     }
-  }
+    return map;
+  }, [users]);
 
   // ── Desbloqueo ────────────────────────────────────────────────────────
 

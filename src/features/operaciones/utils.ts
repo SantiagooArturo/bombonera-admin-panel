@@ -69,6 +69,15 @@ export function getUserPhone(u: User): string {
   return (u.phone_number || u.chat_id || "").replace(/\D/g, "");
 }
 
+/**
+ * Reduce cualquier identificador de usuario (teléfono, @c.us, @lid, etc.)
+ * a los últimos 9 dígitos para comparación cruzada entre reservas y usuarios.
+ * Es la única fuente de verdad para buscar coincidencias de usuario por clave.
+ */
+export function normalizePhoneKey(s: string | number | undefined | null): string {
+  return String(s || "").replace(/\D/g, "").slice(-9);
+}
+
 /** Normaliza a formato Perú (51 + 9 dígitos) para comparación consistente. */
 export function normalizePeruPhone(phone: string): string {
   const digits = phone.replace(/\D/g, "").slice(0, 11);

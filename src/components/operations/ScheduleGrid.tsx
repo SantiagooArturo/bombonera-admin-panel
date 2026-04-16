@@ -5,6 +5,7 @@ import { TIME_SLOTS, type Reservation, type BlockedSlot, isReservationActive, ty
 import type { CourtFieldConfig } from "@/lib/court-config";
 import { getCourtSizeLabel } from "@/lib/court-config";
 import { OccupiedCellContent, EmptyCellContent, BlockedCellContent } from "./GridCell";
+import { normalizePhoneKey } from "@/features/operaciones/utils";
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
@@ -304,23 +305,20 @@ export default function ScheduleGrid({
                         reservation={reservation}
                         isRecurrent={
                           (() => {
-                            // Fuente Única de Verdad: Registro de Dueños (recurrent_schedules)
                             const dayOfWeek = new Date(reservation.date + "T12:00:00").getDay();
                             const startTime = reservation.time_slots?.[0] || "";
-                            const owner = recurrentSchedules.find(s => 
-                              s.day_of_week === dayOfWeek && 
-                              s.field === field && 
+                            const owner = recurrentSchedules.find(s =>
+                              s.day_of_week === dayOfWeek &&
+                              s.field === field &&
                               s.start_time === startTime
                             );
-                            // Es recurrente si el dueño coincide con el chat_id de esta reserva
-                            const norm = (id: string | number | undefined | null) => String(id || "").replace(/\D/g, "").slice(-9);
-                            return !!(owner && norm(owner.chat_id) === norm(reservation.chat_id));
+                            return !!(owner && normalizePhoneKey(owner.chat_id) === normalizePhoneKey(reservation.chat_id));
                           })()
                         }
-                        lastNote={(() => {
-                          const norm = (id: string | number | undefined | null) => String(id || "").replace(/\D/g, "").slice(-9);
-                          return userNotesMap.get(norm(reservation.chat_id));
-                        })()}
+                        lastNote={
+                          // phone_number es la clave más fiable; chat_id puede ser @lid
+                          userNotesMap.get(normalizePhoneKey(reservation.phone_number || reservation.chat_id))
+                        }
                       />
                     </td>
                   );

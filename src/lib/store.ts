@@ -9,7 +9,7 @@ import type {
   EmitComprobanteParams,
 } from "./types";
 import { TRANSFER_ID_EMIT_THEN_REGISTER_PAYMENT } from "@/features/boletas/constants/emitThenRegisterPayment";
-import { normalizePeruPhone, isValidPeruPhone } from "@/features/operaciones/utils";
+import { normalizePeruPhone, isValidPeruPhone, normalizePhoneKey } from "@/features/operaciones/utils";
 
 // API-backed store that syncs with Firebase via Next.js API routes
 type Listener = () => void;
@@ -414,16 +414,15 @@ class Store {
     }
   ): Promise<boolean> {
     // Actualización optimista local
-    const norm = (s: string | number | undefined | null) => String(s || "").replace(/\D/g, "").slice(-9);
-    const targetNorm = norm(userId);
+    const targetNorm = normalizePhoneKey(userId);
 
     const prevUsers = [...this.users];
     let found = false;
     let foundId: string | null = null;
     this.users = this.users.map((u) => {
-      const uIdNorm = norm(u.id);
-      const uChatNorm = norm(u.chat_id);
-      const isMatch = (targetNorm && (uIdNorm === targetNorm || uChatNorm === targetNorm)) || u.id === userId;
+      const uPhoneNorm = normalizePhoneKey(u.phone_number || u.id);
+      const uChatNorm = normalizePhoneKey(u.chat_id);
+      const isMatch = (targetNorm && (uPhoneNorm === targetNorm || uChatNorm === targetNorm)) || u.id === userId;
       if (isMatch) {
         found = true;
         if (!foundId) foundId = u.id;

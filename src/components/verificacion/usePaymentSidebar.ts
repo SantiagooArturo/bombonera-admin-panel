@@ -7,7 +7,7 @@ import { type Reservation, type Transfer, type Invoice, type PaymentMethod, type
 import { voidSunatInvoice } from "@/features/boletas/services/voidSunatInvoice";
 import { mergeInvoiceVoided } from "@/features/boletas/utils/mergeInvoiceVoided";
 import { TRANSFER_ID_EMIT_THEN_REGISTER_PAYMENT } from "@/features/boletas/constants/emitThenRegisterPayment";
-import { normalizePeruPhone } from "@/features/operaciones/utils";
+import { normalizePeruPhone, normalizePhoneKey } from "@/features/operaciones/utils";
 
 interface UsePaymentSidebarOptions {
   onReservationUpdated?: (resId: string, patch: Partial<Reservation>) => void;
@@ -85,14 +85,12 @@ export function usePaymentSidebar(options?: UsePaymentSidebarOptions) {
 
     // Usar client_type de la cache (users) si está disponible → mostrar al instante
     const cachedUsers = store.getUsers();
-    const norm = (s: string) => s.replace(/\D/g, "").slice(-9);
-    const resNorm = norm(reservation.phone_number || reservation.chat_id || "");
+    const resNorm = normalizePhoneKey(reservation.phone_number || reservation.chat_id || "");
     const cachedUser = cachedUsers.find(
       (u) =>
         resNorm && resNorm.length >= 9 && (
-          norm(u.id || "") === resNorm ||
-          norm(u.chat_id || "") === resNorm ||
-          (u.phone_number && norm(u.phone_number) === resNorm)
+          normalizePhoneKey(u.phone_number || u.id) === resNorm ||
+          normalizePhoneKey(u.chat_id) === resNorm
         )
     );
     const validType = (t: string): t is ClientType =>
@@ -151,13 +149,11 @@ export function usePaymentSidebar(options?: UsePaymentSidebarOptions) {
           isRecurrentActual = allSchedules.some(s => {
             const dayOfRes = new Date(freshReservation.date + "T12:00:00").getDay();
             const startTimeRes = freshReservation.time_slots?.[0] || "";
-            const norm = (id: string | number | undefined | null) => String(id || "").replace(/\D/g, "").slice(-9);
-            
             return (
               s.day_of_week === dayOfRes &&
               s.field === freshReservation.field &&
               s.start_time === startTimeRes &&
-              norm(s.chat_id) === norm(freshReservation.chat_id)
+              normalizePhoneKey(s.chat_id) === normalizePhoneKey(freshReservation.chat_id)
             );
           });
         }
@@ -224,10 +220,11 @@ export function usePaymentSidebar(options?: UsePaymentSidebarOptions) {
         // Backstop: si el usuario tiene notas pero last_note no está en el store
         // (e.g. notas añadidas antes de que se implementara last_note), sincronizar.
         if (fetchedNotes.length > 0) {
-          const normFn = (s: string | number | undefined | null) => String(s || "").replace(/\D/g, "").slice(-9);
-          const resNorm = normFn(reservation.chat_id || reservation.phone_number || "");
+          const resNorm = normalizePhoneKey(reservation.phone_number || reservation.chat_id || "");
           const matchedUser = store.getUsers().find(
-            (u) => normFn(u.id) === resNorm || normFn(u.chat_id) === resNorm
+            (u) =>
+              normalizePhoneKey(u.phone_number || u.id) === resNorm ||
+              normalizePhoneKey(u.chat_id) === resNorm
           );
           if (!matchedUser?.last_note) {
             const latestContent = fetchedNotes[0].content || "";
