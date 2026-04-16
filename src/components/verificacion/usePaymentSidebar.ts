@@ -218,7 +218,25 @@ export function usePaymentSidebar(options?: UsePaymentSidebarOptions) {
     try {
       const bRes = await fetch(`/api/notes?chat_id=${encodeURIComponent(reservation.chat_id)}`);
       if (bRes.ok) {
-        setNotes(await bRes.json());
+        const fetchedNotes = await bRes.json();
+        setNotes(fetchedNotes);
+
+        // Backstop: si el usuario tiene notas pero last_note no está en el store
+        // (e.g. notas añadidas antes de que se implementara last_note), sincronizar.
+        if (fetchedNotes.length > 0) {
+          const normFn = (s: string | number | undefined | null) => String(s || "").replace(/\D/g, "").slice(-9);
+          const resNorm = normFn(reservation.chat_id || reservation.phone_number || "");
+          const matchedUser = store.getUsers().find(
+            (u) => normFn(u.id) === resNorm || normFn(u.chat_id) === resNorm
+          );
+          if (!matchedUser?.last_note) {
+            const latestContent = fetchedNotes[0].content || "";
+            const preview = latestContent.length > 2000 ? latestContent.slice(0, 1997) + "..." : latestContent;
+            if (preview) {
+              store.updateUserDoc(reservation.chat_id, { last_note: preview });
+            }
+          }
+        }
       }
     } catch (e) {
       console.error("Error fetching notes", e);

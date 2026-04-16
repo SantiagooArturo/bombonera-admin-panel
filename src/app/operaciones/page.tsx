@@ -114,14 +114,6 @@ export default function OperacionesPage() {
     return nameA.localeCompare(nameB, "es");
   });
 
-  useEffect(() => {
-    if (users.length > 0) {
-      console.log("📊 [Sorting Debug] Top 5 contactos por recencia:");
-      users.slice(0, 5).forEach((u, i) => {
-        console.log(`${i + 1}. ${getUserName(u)} - Last: ${u.last_interaction_at || "Sin fecha"}`);
-      });
-    }
-  }, [users]);
 
   const selectedDate = useMemo(() => formatDateISO(getDateWithOffset(dayOffset)), [dayOffset]);
   const todayDate = useMemo(() => formatDateISO(new Date()), []);
@@ -288,8 +280,12 @@ export default function OperacionesPage() {
   const normKey = (s: string | number | undefined | null) => String(s || "").replace(/\D/g, "").slice(-9);
   for (const u of users) {
     if (u.last_note) {
-      const k = normKey(u.chat_id || u.id);
-      if (k) userNotesMap.set(k, u.last_note);
+      // Registrar ambas claves (id y chat_id) porque algunos usuarios de WhatsApp
+      // tienen chat_id en formato @lid (Linked Device ID) distinto al número de teléfono.
+      const keyById = normKey(u.id);
+      const keyByChatId = normKey(u.chat_id);
+      if (keyById) userNotesMap.set(keyById, u.last_note);
+      if (keyByChatId && keyByChatId !== keyById) userNotesMap.set(keyByChatId, u.last_note);
     }
   }
 

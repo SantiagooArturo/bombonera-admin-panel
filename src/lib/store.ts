@@ -239,7 +239,7 @@ class Store {
 
   async fetchUsers() {
     try {
-      const res = await fetch("/api/users");
+      const res = await fetch("/api/users", { cache: "no-store" });
       if (!res.ok) throw new Error("Failed to fetch");
       this.users = await res.json();
       this.loaded.users = true;
@@ -419,11 +419,15 @@ class Store {
 
     const prevUsers = [...this.users];
     let found = false;
+    let foundId: string | null = null;
     this.users = this.users.map((u) => {
       const uIdNorm = norm(u.id);
       const uChatNorm = norm(u.chat_id);
       const isMatch = (targetNorm && (uIdNorm === targetNorm || uChatNorm === targetNorm)) || u.id === userId;
-      if (isMatch) found = true;
+      if (isMatch) {
+        found = true;
+        if (!foundId) foundId = u.id;
+      }
       return isMatch ? { ...u, ...doc } : u;
     });
 
@@ -440,8 +444,10 @@ class Store {
     }
     this.notify();
 
+    // Usar el ID real del documento en Firestore (no el userId raw que puede tener formato @c.us)
+    const apiId = foundId || userId;
     try {
-      const body: Record<string, unknown> = { id: userId, ...doc };
+      const body: Record<string, unknown> = { id: apiId, ...doc };
       const res = await fetch("/api/users", {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
