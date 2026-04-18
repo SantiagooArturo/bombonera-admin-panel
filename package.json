@@ -14,6 +14,7 @@
     "verify:sunat-comprobante": "tsx scripts/verify-sunat-comprobante-readonly.ts",
     "recover:invoice-firestore": "tsx scripts/recover-invoice-firestore.ts",
     "recover:missing-invoices": "tsx scripts/recover-missing-invoices.ts",
+    "recurrent-rebooking:run": "tsx scripts/run-recurrent-rebooking.ts",
     "dev": "next dev",
     "build": "next build",
     "seed:court-config": "curl -s -X POST http://localhost:3000/api/court-config/seed",

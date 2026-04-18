@@ -340,9 +340,13 @@ export async function PATCH(request: NextRequest) {
           }
         }
         // Registrar/Actualizar dueño
+        const schedulePhone = normalizePeruPhone(
+          String(resData.phone_number || resData.chat_id || "").replace(/\D/g, "")
+        );
         await db.collection("recurrent_schedules").doc(scheduleId).set({
           id: scheduleId,
           chat_id: resData.chat_id,
+          phone_number: schedulePhone || String(resData.phone_number || "").replace(/\D/g, ""),
           representative_name: resData.representative_name || "",
           field: currentField,
           day_of_week: dayOfWeek,

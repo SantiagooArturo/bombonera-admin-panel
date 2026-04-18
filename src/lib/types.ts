@@ -44,6 +44,8 @@ export interface Reservation {
 export interface RecurrentSchedule {
   id: string; // Document ID: day_field_time (ej. 1_3_19:00)
   chat_id: string;
+  /** Teléfono normalizado para cruce con reservas (prioridad sobre chat_id en jobs). */
+  phone_number?: string;
   representative_name: string;
   field: number;
   day_of_week: number;
@@ -384,13 +386,4 @@ export interface WahaSession {
   name: string;
   status: string;
   me: WahaSessionUser | null;
-}
-
-/** Registro de dueño de un horario recurrente/fijo. */
-export interface RecurrentSchedule {
-  day_of_week: number;
-  field: number;
-  start_time: string;
-  chat_id: string;
-  representative_name: string;
 }
