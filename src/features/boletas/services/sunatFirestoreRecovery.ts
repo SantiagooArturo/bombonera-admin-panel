@@ -1,6 +1,10 @@
 /**
  * Lógica compartida: boletas/facturas en apisunat/SUNAT ausentes en Firestore (huecos + sonda de cola).
  * Usa el script `scripts/recover-missing-invoices.ts` y la API dev de recuperación.
+ *
+ * Monto/cliente: `/sunat/comprobante` suele fallar en boletas; el fallback es **parsear el PDF**
+ * de la URL `payload.pdf.ticket` / `a4` que devuelve apisunat en `/status` (no es el PDF formal
+ * del panel; ese se arma en otro flujo con plantilla + QR).
  */
 import type { Firestore as AdminFirestore } from "firebase-admin/firestore";
 import { receptorNombreSnapshot } from "@/features/boletas/utils/sanitizeReceptorNombre";
@@ -43,8 +47,12 @@ async function extractDataFromPdf(pdfUrl: string, token: string): Promise<PdfDat
   try {
     const res = await fetch(pdfUrl, {
       headers: { Authorization: `Bearer ${token}` },
+      signal: AbortSignal.timeout(60_000),
     });
-    if (!res.ok) return null;
+    if (!res.ok) {
+      console.warn("[sunatFirestoreRecovery] PDF fetch HTTP", res.status, pdfUrl.slice(0, 96));
+      return null;
+    }
     const buf = Buffer.from(await res.arrayBuffer());
 
     const pdfjsLib = await import("pdfjs-dist/legacy/build/pdf.mjs");
@@ -62,7 +70,10 @@ async function extractDataFromPdf(pdfUrl: string, token: string): Promise<PdfDat
 
     const importeMatch =
       fullText.match(/Total\s+\(S\/\)\s*:\s*([\d,]+(?:\.\d+)?)/i) ??
-      fullText.match(/Importe\s+Total\s+S\/\s*([\d,]+(?:\.\d+)?)/i);
+      fullText.match(/Importe\s+Total\s+S\/\s*([\d,]+(?:\.\d+)?)/i) ??
+      fullText.match(/TOTAL\s+Venta\s+S\/\s*([\d,]+(?:\.\d+)?)/i) ??
+      fullText.match(/Total\s+a\s+Pagar[^0-9]*S\/?\.?\s*([\d,]+(?:\.\d+)?)/i) ??
+      fullText.match(/Monto\s+Total\s*S\/?\.?\s*([\d,]+(?:\.\d+)?)/i);
     const importe = importeMatch ? parseFloat(importeMatch[1]!.replace(/,/g, "")) : 0;
 
     const fechaMatch =
@@ -75,7 +86,10 @@ async function extractDataFromPdf(pdfUrl: string, token: string): Promise<PdfDat
     }
 
     const clienteMatch =
-      fullText.match(/Cliente\s*:\s*(.+)/i) ?? fullText.match(/Nombres?\s*:\s*(.+)/i);
+      fullText.match(/Cliente\s*:\s*(.+)/i) ??
+      fullText.match(/Nombres?\s*:\s*(.+)/i) ??
+      fullText.match(/Señor(?:\(a\)|\(es\))?\s*:\s*(.+)/i) ??
+      fullText.match(/Raz[oó]n\s+Social\s*:\s*(.+)/i);
     const clienteNombre = clienteMatch ? clienteMatch[1]!.replace(/\s+/g, " ").trim() : "";
 
     const dniMatch = fullText.match(/(?:DNI|RUC)\s*:?\s*(\d+)/i);
@@ -105,9 +119,29 @@ async function extractDataFromPdf(pdfUrl: string, token: string): Promise<PdfDat
       clienteDoc,
       descripcion: descLines.join(" | "),
     };
-  } catch {
+  } catch (e) {
+    console.warn("[sunatFirestoreRecovery] PDF parse error:", e instanceof Error ? e.message : e);
     return null;
   }
+}
+
+function pdfDataUsableForRecovery(p: PdfData | null): p is PdfData {
+  if (!p) return false;
+  if (Number.isFinite(p.importeTotal) && p.importeTotal > 0) return true;
+  return p.clienteNombre.trim().length >= 2;
+}
+
+/** Un intento por URL: primero ticket apisunat, si no sirve el texto, A4. Sin reintentos en bucle. */
+async function extractFromTicketOrA4Pdf(
+  pdf: { ticket?: string; a4?: string } | undefined,
+  token: string
+): Promise<PdfData | null> {
+  const urls = [pdf?.ticket, pdf?.a4].filter((u): u is string => typeof u === "string" && u.startsWith("http"));
+  for (const url of urls) {
+    const d = await extractDataFromPdf(url, token);
+    if (pdfDataUsableForRecovery(d)) return d;
+  }
+  return null;
 }
 
 // ── apisunat ─────────────────────────────────────────────────────────────────
@@ -134,7 +168,7 @@ type StatusResponse = {
     hash?: string;
     xml?: string;
     cdr?: string;
-    pdf?: { ticket?: string };
+    pdf?: { ticket?: string; a4?: string };
   };
 };
 
@@ -339,7 +373,8 @@ export type SunatRecoveryPreviewRow = {
   amount: number;
   fecha_emision_ymd: string;
   sunat_estado: string;
-  dataSource: "api" | "pdf";
+  /** `minimal` = SUNAT OK pero no se pudo leer monto/cliente del PDF en el servidor (completar a mano). */
+  dataSource: "api" | "pdf" | "minimal";
 };
 
 export type SunatRecoveryScanResult = {
@@ -496,15 +531,31 @@ export async function scanMissingSunatInvoicesForFirestore(
 
     let pdfData: PdfData | null = null;
     if (!compPayload) {
-      const pdfUrl = statusResp.payload.pdf?.ticket;
-      if (pdfUrl) {
-        await sleep(100);
-        pdfData = await extractDataFromPdf(pdfUrl, APISUNAT_TOKEN);
-      }
+      await sleep(100);
+      pdfData = await extractFromTicketOrA4Pdf(statusResp.payload.pdf, APISUNAT_TOKEN);
     }
 
-    if (!compPayload && !pdfData) {
-      errors.push({ correlativo: corr, reason: "Sin datos de monto (ni API ni PDF)" });
+    let dataSource: "api" | "pdf" | "minimal";
+    if (compPayload) {
+      dataSource = "api";
+    } else if (pdfDataUsableForRecovery(pdfData)) {
+      dataSource = "pdf";
+    } else if (
+      String(statusResp.payload.hash || "").trim() &&
+      (statusResp.payload.pdf?.ticket || statusResp.payload.pdf?.a4)
+    ) {
+      const ticketOrA4 =
+        statusResp.payload.pdf?.ticket || statusResp.payload.pdf?.a4 || "";
+      pdfData = {
+        importeTotal: 0,
+        fechaEmision: "",
+        clienteNombre: "(COMPLETAR: monto y cliente desde PDF SUNAT)",
+        clienteDoc: "",
+        descripcion: `SUNAT aceptó el CPE; el servidor no extrajo totales del PDF. Ticket: ${ticketOrA4.slice(0, 200)}`,
+      };
+      dataSource = "minimal";
+    } else {
+      errors.push({ correlativo: corr, reason: "Sin datos de monto (ni API ni PDF ni ticket SUNAT)" });
       if (i < gaps.length - 1) await sleep(DELAY_MS);
       continue;
     }
@@ -518,8 +569,10 @@ export async function scanMissingSunatInvoicesForFirestore(
       tipoComprobante,
       recoverySource,
     });
+    if (dataSource === "minimal") {
+      firestoreDoc.recovery_note = `${String(firestoreDoc.recovery_note)} [Recuperación mínima: revisar PDF ticket y completar monto/receptor en el panel.]`;
+    }
     toCreate.push({ correlativo: corr, doc: firestoreDoc });
-    const dataSource: "api" | "pdf" = compPayload ? "api" : "pdf";
     previewRows.push({
       correlativo: corr,
       serie_correlativo: `${SERIE}-${corr}`,

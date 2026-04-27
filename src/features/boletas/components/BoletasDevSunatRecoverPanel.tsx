@@ -30,7 +30,7 @@ type PreviewRow = {
   amount: number;
   fecha_emision_ymd: string;
   sunat_estado: string;
-  dataSource: "api" | "pdf";
+  dataSource: "api" | "pdf" | "minimal";
 };
 
 type ScanJson = {
