@@ -24,6 +24,7 @@ import { invoicePlantillaPdfHref } from "../utils/invoicePdfLinks";
 import { invoiceComprobantePdfDownloadFilename } from "../utils/comprobantePdfFilename";
 import { invoiceMatchesSearch } from "../utils/invoiceMatchesSearch";
 import { BoletasDevCounterPanel } from "./BoletasDevCounterPanel";
+import { BoletasDevSunatRecoverPanel } from "./BoletasDevSunatRecoverPanel";
 import { BoletasMobileList } from "./BoletasMobileList";
 import { IconOpenInNewTab, SerieCorrelativoCell } from "./boletasSharedUi";
 import { ExportExcelModal } from "./ExportExcelModal";
@@ -306,6 +307,7 @@ export function BoletasPage() {
       </div>
 
       <BoletasDevCounterPanel />
+      <BoletasDevSunatRecoverPanel onRestored={() => void load()} />
 
       {miscModalOpen ? (
         <EmitComprobanteModal
