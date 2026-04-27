@@ -2014,8 +2014,14 @@ const PaymentSidebar = memo(function PaymentSidebar({
           sending={attendanceReminderSending}
         />
       )}
-      {/* Backdrop (sin blur para mejor rendimiento) */}
-      <div className="fixed inset-0 z-40 bg-black/40" onClick={onClose} />
+      {/* Backdrop (sin blur para mejor rendimiento). No cerrar mientras corre POST /api/invoices. */}
+      <div
+        className={`fixed inset-0 z-40 bg-black/40 ${emittingInvoiceId ? "cursor-not-allowed" : ""}`}
+        onClick={() => {
+          if (emittingInvoiceId) return;
+          onClose();
+        }}
+      />
 
       {/* Sidebar (contain para aislar repaints) */}
       <div className="fixed inset-y-0 right-0 z-50 w-full max-w-3xl bg-white shadow-2xl flex flex-col animate-slide-in-right" style={{ contain: "layout paint" }}>
@@ -2080,8 +2086,11 @@ const PaymentSidebar = memo(function PaymentSidebar({
               )}
             </div>
             <button
+              type="button"
               onClick={onClose}
-              className="text-gray-500 hover:text-gray-700 p-2 rounded-lg hover:bg-gray-200 transition-colors shrink-0"
+              disabled={!!emittingInvoiceId}
+              title={emittingInvoiceId ? "Esperá a que termine la emisión del comprobante" : undefined}
+              className="text-gray-500 hover:text-gray-700 p-2 rounded-lg hover:bg-gray-200 transition-colors shrink-0 disabled:pointer-events-none disabled:opacity-40"
               aria-label="Cerrar sidebar"
             >
               <svg className="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">

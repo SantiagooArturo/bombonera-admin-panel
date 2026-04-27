@@ -765,6 +765,7 @@ class Store {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(body),
+        keepalive: true,
       });
       const result = await res.json();
       if (!res.ok) {
@@ -892,6 +893,7 @@ class Store {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(body),
+        keepalive: true,
       });
       const result = await res.json();
       if (!res.ok) {

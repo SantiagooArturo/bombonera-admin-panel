@@ -709,7 +709,10 @@ export const EmitComprobanteModal = memo(function EmitComprobanteModal(props: Em
               className="h-11 w-11 animate-spin rounded-full border-[3px] border-field-dark border-t-transparent"
               aria-hidden
             />
-            <p className="text-center text-sm font-semibold text-gray-800">Emitiendo comprobante…</p>
+            <p className="text-center text-sm font-semibold text-gray-800">SUNAT y registro en base de datos…</p>
+            <p className="max-w-[16rem] text-center text-xs leading-snug text-gray-600">
+              No cierres esta ventana ni la pestaña hasta que termine (el servidor guarda después de SUNAT).
+            </p>
           </div>
         ) : null}
 
@@ -1030,7 +1033,7 @@ export const EmitComprobanteModal = memo(function EmitComprobanteModal(props: Em
               }
               className={`flex ${controlH} flex-1 items-center justify-center rounded-lg border border-field-dark bg-field-dark text-sm font-semibold text-white hover:opacity-95 disabled:opacity-50`}
             >
-              {emitting || transferSubmitting ? "Emitiendo…" : "Emitir comprobante"}
+              {emitting || transferSubmitting ? "Guardando…" : "Emitir comprobante"}
             </button>
           )}
         </div>

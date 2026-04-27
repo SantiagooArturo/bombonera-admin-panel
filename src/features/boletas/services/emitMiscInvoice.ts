@@ -71,6 +71,8 @@ export async function emitMiscInvoice(params: EmitMiscInvoiceParams): Promise<Em
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(body),
+    /** Permite que el navegador intente completar la petición si el usuario cierra la pestaña tras SUNAT. */
+    keepalive: true,
   });
   const data = (await res.json()) as EmitMiscInvoiceResult & { error?: string };
   if (!res.ok) {

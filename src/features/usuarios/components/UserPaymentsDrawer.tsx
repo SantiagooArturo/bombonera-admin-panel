@@ -69,6 +69,16 @@ export default function UserPaymentsDrawer({ user, onClose, onUserUpdated }: Use
     setLocalUser(user);
   }, [user]);
 
+  useEffect(() => {
+    if (!emittingId) return;
+    const warn = (e: BeforeUnloadEvent) => {
+      e.preventDefault();
+      e.returnValue = "";
+    };
+    window.addEventListener("beforeunload", warn);
+    return () => window.removeEventListener("beforeunload", warn);
+  }, [emittingId]);
+
   const mergeUser = useCallback(
     (next: User) => {
       setLocalUser(next);
@@ -369,7 +379,9 @@ export default function UserPaymentsDrawer({ user, onClose, onUserUpdated }: Use
             <button
               type="button"
               onClick={onClose}
-              className="p-2 rounded-lg text-gray-500 hover:bg-gray-200 hover:text-gray-700 shrink-0"
+              disabled={emittingId !== null}
+              className="p-2 rounded-lg text-gray-500 hover:bg-gray-200 hover:text-gray-700 shrink-0 disabled:pointer-events-none disabled:opacity-40"
+              title={emittingId ? "Esperá a que termine la emisión" : undefined}
             >
               <svg className="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />

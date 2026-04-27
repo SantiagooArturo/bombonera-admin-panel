@@ -92,6 +92,38 @@ async function peekNextCorrelativo(
   return current + 1;
 }
 
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+/**
+ * SUNAT ya aceptó el CPE: el registro en `invoices` debe existir aunque Firestore falle un instante
+ * (red, cold start, cuota). Sin esto, un fallo puntual deja CPE huérfano.
+ */
+async function addInvoiceDocumentWithRetries(
+  db: FirebaseFirestore.Firestore,
+  data: Record<string, unknown>,
+  context: { serieCorrelativo: string }
+): Promise<FirebaseFirestore.DocumentReference> {
+  const maxAttempts = 15;
+  let lastErr: unknown;
+  for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+    try {
+      return await db.collection("invoices").add(data);
+    } catch (e) {
+      lastErr = e;
+      console.error(
+        `[POST /api/invoices] Firestore invoices.add falló (${context.serieCorrelativo}) intento ${attempt}/${maxAttempts}:`,
+        e
+      );
+      if (attempt === maxAttempts) break;
+      const delayMs = Math.min(25_000, Math.round(400 * Math.pow(1.55, attempt - 1)));
+      await sleep(delayMs);
+    }
+  }
+  throw lastErr;
+}
+
 // ── GET: Listar boletas por reserva | Obtener siguiente correlativo ───────────
 
 export async function GET(request: NextRequest) {
@@ -579,7 +611,7 @@ export async function POST(request: NextRequest) {
     if (tipoComprobante === "factura") {
       invoiceDataPhase1.cliente_direccion = clienteDireccionSunat;
     }
-    const docRef = await db.collection("invoices").add(invoiceDataPhase1);
+    const docRef = await addInvoiceDocumentWithRetries(db, invoiceDataPhase1, { serieCorrelativo });
 
     // 7b. PDFs: plantilla del panel (formal + QR) y ticket oficial apisunat, cada uno en Storage.
     const pathFormal = `invoices/${serieCorrelativo}-formal.pdf`;
