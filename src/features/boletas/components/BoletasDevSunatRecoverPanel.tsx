@@ -30,8 +30,14 @@ type PreviewRow = {
   amount: number;
   fecha_emision_ymd: string;
   sunat_estado: string;
-  dataSource: "api" | "pdf" | "minimal";
+  dataSource: "api" | "pdf" | "xml";
 };
+
+function labelDataSource(ds: PreviewRow["dataSource"]): string {
+  if (ds === "api") return "API detalle comprobante";
+  if (ds === "xml") return "XML UBL (/status)";
+  return "PDF ticket / A4 (apisunat)";
+}
 
 type ScanJson = {
   error?: string;
@@ -92,11 +98,18 @@ export function BoletasDevSunatRecoverPanel(props: { onRestored?: () => void }) 
         return;
       }
       setScan(data);
-      setMsg(
-        data.recoverableCount === 0
-          ? "No hay boletas recuperables (SUNAT sin doc o ya en Firestore)."
-          : `Listas para restaurar: ${data.recoverableCount} (huecos/cola revisados: ${data.gapsScanned ?? "—"}).`
-      );
+      if (data.recoverableCount === 0) {
+        const hasOmitidos = (data.errors?.length ?? 0) > 0;
+        setMsg(
+          hasOmitidos
+            ? "No hay filas listas: en cada correlativo faltaron datos parseables (API detalle y/o texto del PDF). Revisá omitidos; si todos dicen PDF presente pero extracción falló, es el mismo escaneo que el script — probá el script en local solo como mismo código en otro host (npm run recover:missing-invoices)."
+            : "No hay boletas recuperables (SUNAT sin doc o ya en Firestore)."
+        );
+      } else {
+        setMsg(
+          `Listas para restaurar: ${data.recoverableCount} (huecos/cola revisados: ${data.gapsScanned ?? "—"}).`
+        );
+      }
     } catch {
       setMsg("Error de red al escanear.");
     } finally {
@@ -156,9 +169,17 @@ export function BoletasDevSunatRecoverPanel(props: { onRestored?: () => void }) 
           <p className="text-xs text-violet-900/90">
             Compara huecos y cola respecto a la serie{" "}
             <code className="rounded bg-violet-100/80 px-1">APISUNAT_SERIE_BOLETA</code> con apisunat{" "}
-            <code className="rounded bg-violet-100/80 px-1">/status</code> + PDF si hace falta. Este bloque solo
-            aparece con <code className="rounded bg-violet-100/80 px-1">localStorage.devMode === &quot;true&quot;</code>
-            .
+            <code className="rounded bg-violet-100/80 px-1">/status</code> y, si la API de detalle no trae la boleta,
+            intenta leer primero el XML UBL (<code className="rounded bg-violet-100/80 px-0.5">payload.xml</code>
+            ) y, si no alcanza, el PDF enlazado. Solo con{" "}
+            <code className="rounded bg-violet-100/80 px-1">localStorage.devMode === &quot;true&quot;</code>.
+          </p>
+          <p className="text-xs text-violet-800/85">
+            Este botón y el script <code className="rounded bg-violet-100/80 px-0.5">recover-missing-invoices</code>{" "}
+            usan la misma función de escaneo (<code className="rounded bg-violet-100/80 px-0.5">scanMissingSunatInvoicesForFirestore</code>
+            ). Si ves muchos omitidos “PDF presente, extracción falló”, SUNAT sí emitió; el límite está en leer el PDF
+            automáticamente en el host del panel (tiempos, red hacia apisunat, pdfjs en serverless). En tu PC el mismo
+            código a veces sí alcanza a parsear: no es otra lógica, es otro entorno.
           </p>
           <div className="flex flex-wrap gap-2">
             <button
@@ -191,7 +212,7 @@ export function BoletasDevSunatRecoverPanel(props: { onRestored?: () => void }) 
                     <th className="px-2 py-1.5">Monto</th>
                     <th className="px-2 py-1.5">Emisión</th>
                     <th className="px-2 py-1.5">SUNAT</th>
-                    <th className="px-2 py-1.5">Fuente</th>
+                    <th className="px-2 py-1.5">Origen datos</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -204,7 +225,7 @@ export function BoletasDevSunatRecoverPanel(props: { onRestored?: () => void }) 
                       <td className="px-2 py-1 tabular-nums">S/ {Number(r.amount).toFixed(2)}</td>
                       <td className="px-2 py-1 font-mono">{r.fecha_emision_ymd || "—"}</td>
                       <td className="px-2 py-1">{r.sunat_estado}</td>
-                      <td className="px-2 py-1 uppercase">{r.dataSource}</td>
+                      <td className="px-2 py-1">{labelDataSource(r.dataSource)}</td>
                     </tr>
                   ))}
                 </tbody>

@@ -2,11 +2,11 @@
  * Lógica compartida: boletas/facturas en apisunat/SUNAT ausentes en Firestore (huecos + sonda de cola).
  * Usa el script `scripts/recover-missing-invoices.ts` y la API dev de recuperación.
  *
- * Monto/cliente: `/sunat/comprobante` suele fallar en boletas; el fallback es **parsear el PDF**
- * de la URL `payload.pdf.ticket` / `a4` que devuelve apisunat en `/status` (no es el PDF formal
- * del panel; ese se arma en otro flujo con plantilla + QR).
+ * Monto/cliente: `/sunat/comprobante` suele fallar en boletas. Orden: **XML** desde
+ * `payload.xml` (UBL en línea, base64, o **URL** a `/xml/...` apisunat), luego PDF ticket/A4.
  */
 import type { Firestore as AdminFirestore } from "firebase-admin/firestore";
+import { extractRecoveryFromApisunatStatusXml } from "@/features/boletas/services/extractRecoveryFromApisunatStatusXml";
 import { receptorNombreSnapshot } from "@/features/boletas/utils/sanitizeReceptorNombre";
 
 // ── PDF ─────────────────────────────────────────────────────────────────────
@@ -43,7 +43,113 @@ function reconstructTextFromPdfItems(
   return lines.map((words) => words.join(" ")).join("\n");
 }
 
-async function extractDataFromPdf(pdfUrl: string, token: string): Promise<PdfData | null> {
+/**
+ * Heurísticas sobre el texto del ticket apisunat (salida de pdfjs o HTML a texto).
+ * Exportado para scripts de diagnóstico (`scripts/experiment-sunat-ticket-extract.ts`).
+ */
+export function parseApisunatTicketPlainText(fullText: string): PdfData {
+  const importeMatch =
+    fullText.match(/Total\s+\(S\/\)\s*:\s*([\d,]+(?:\.\d+)?)/i) ??
+    fullText.match(/Importe\s+Total\s+S\/\s*([\d,]+(?:\.\d+)?)/i) ??
+    fullText.match(/IMPORTE\s+TOTAL\s+S\/?\.?\s*([\d,]+(?:\.\d+)?)/i) ??
+    fullText.match(/TOTAL\s+Venta\s+S\/\s*([\d,]+(?:\.\d+)?)/i) ??
+    fullText.match(/Total\s+a\s+Pagar[^0-9]*S\/?\.?\s*([\d,]+(?:\.\d+)?)/i) ??
+    fullText.match(/Monto\s+Total\s*S\/?\.?\s*([\d,]+(?:\.\d+)?)/i);
+  const importe = importeMatch ? parseFloat(importeMatch[1]!.replace(/,/g, "")) : 0;
+
+  const fechaMatch =
+    fullText.match(/Fecha\s*:\s*(\d{1,2}\/\d{1,2}\/\d{4})/i) ??
+    fullText.match(/Fecha\s+de\s+emisi[oó]n\s*[:\s]\s*(\d{1,2}\/\d{1,2}\/\d{4})/i);
+  let fechaYmd = "";
+  if (fechaMatch) {
+    const [dd, mm, yyyy] = fechaMatch[1]!.split("/");
+    if (dd && mm && yyyy) fechaYmd = `${yyyy}-${mm.padStart(2, "0")}-${dd.padStart(2, "0")}`;
+  }
+
+  const clienteMatch =
+    fullText.match(/Cliente\s*:\s*(.+)/i) ??
+    fullText.match(/Nombres?\s*:\s*(.+)/i) ??
+    fullText.match(/Señor(?:\(a\)|\(es\))?\s*:\s*(.+)/i) ??
+    fullText.match(/Raz[oó]n\s+Social\s*:\s*(.+)/i);
+  const clienteNombre = clienteMatch ? clienteMatch[1]!.replace(/\s+/g, " ").trim() : "";
+
+  const dniMatch = fullText.match(/(?:DNI|RUC)\s*:?\s*(\d+)/i);
+  const clienteDoc = dniMatch ? dniMatch[1]! : "";
+
+  const descLines: string[] = [];
+  const descMatch = fullText.match(
+    /(?:Cant\s+U\.?M|Cantidad\s+UM)\s+.*?\n([\s\S]*?)(?:Total\s+Gravado|Consulta|Representaci)/i
+  );
+  if (descMatch) {
+    const raw = descMatch[1]!.trim();
+    const lines = raw.split("\n").filter((l) => {
+      const trimmed = l.trim();
+      if (!trimmed) return false;
+      if (/^\d+\s+[A-Z]{1,3}\s+[\d,.]+\s+[\d,.]+$/.test(trimmed)) return false;
+      return true;
+    });
+    if (lines.length > 0) {
+      descLines.push(lines.map((l) => l.trim()).join(" | "));
+    }
+  }
+
+  return {
+    importeTotal: Number.isFinite(importe) ? importe : 0,
+    fechaEmision: fechaYmd,
+    clienteNombre,
+    clienteDoc,
+    descripcion: descLines.join(" | "),
+  };
+}
+
+/** apisunat a veces manda XML en claro; otras, base64 en el mismo campo. */
+export function normalizeApisunatStatusXmlField(raw: unknown): string | null {
+  if (typeof raw !== "string") return null;
+  const t = raw.trim();
+  if (!t) return null;
+  if (t.startsWith("<?xml") || t.startsWith("<")) return t;
+  try {
+    const dec = Buffer.from(t, "base64").toString("utf8");
+    const u = dec.trim();
+    if (u.startsWith("<?xml") || u.startsWith("<")) return u;
+  } catch {
+    /* ignore */
+  }
+  return null;
+}
+
+/**
+ * Contenido UBL listo para parsear: inline/base64 vía {@link normalizeApisunatStatusXmlField},
+ * o descarga de la URL que apisunat pone en `payload.xml` (mismo patrón que PDF ticket).
+ */
+export async function resolveApisunatStatusXmlPayload(
+  raw: unknown,
+  token: string
+): Promise<string | null> {
+  const inline = normalizeApisunatStatusXmlField(raw);
+  if (inline) return inline;
+  if (typeof raw !== "string") return null;
+  const t = raw.trim();
+  if (!t.startsWith("http://") && !t.startsWith("https://")) return null;
+  try {
+    const res = await fetch(t, {
+      headers: { Authorization: `Bearer ${token}` },
+      signal: AbortSignal.timeout(60_000),
+    });
+    if (!res.ok) {
+      console.warn("[sunatFirestoreRecovery] XML URL fetch HTTP", res.status, t.slice(0, 96));
+      return null;
+    }
+    const body = (await res.text()).trim();
+    if (body.startsWith("<?xml") || body.startsWith("<")) return body;
+  } catch (e) {
+    console.warn("[sunatFirestoreRecovery] XML URL fetch error:", e instanceof Error ? e.message : e);
+  }
+  return null;
+}
+
+/** Descarga PDF apisunat y aplica {@link parseApisunatTicketPlainText}. Exportado para scripts de diagnóstico. */
+export async function extractDataFromPdf(pdfUrl: string, token: string): Promise<PdfData | null> {
   try {
     const res = await fetch(pdfUrl, {
       headers: { Authorization: `Bearer ${token}` },
@@ -56,7 +162,15 @@ async function extractDataFromPdf(pdfUrl: string, token: string): Promise<PdfDat
     const buf = Buffer.from(await res.arrayBuffer());
 
     const pdfjsLib = await import("pdfjs-dist/legacy/build/pdf.mjs");
-    const doc = await pdfjsLib.getDocument({ data: new Uint8Array(buf) }).promise;
+    const doc = await pdfjsLib
+      .getDocument({
+        data: new Uint8Array(buf),
+        disableFontFace: true,
+        useSystemFonts: true,
+        isEvalSupported: false,
+        verbosity: 0,
+      })
+      .promise;
 
     let fullText = "";
     for (let p = 1; p <= doc.numPages; p++) {
@@ -68,67 +182,21 @@ async function extractDataFromPdf(pdfUrl: string, token: string): Promise<PdfDat
       fullText += pageText + "\n";
     }
 
-    const importeMatch =
-      fullText.match(/Total\s+\(S\/\)\s*:\s*([\d,]+(?:\.\d+)?)/i) ??
-      fullText.match(/Importe\s+Total\s+S\/\s*([\d,]+(?:\.\d+)?)/i) ??
-      fullText.match(/TOTAL\s+Venta\s+S\/\s*([\d,]+(?:\.\d+)?)/i) ??
-      fullText.match(/Total\s+a\s+Pagar[^0-9]*S\/?\.?\s*([\d,]+(?:\.\d+)?)/i) ??
-      fullText.match(/Monto\s+Total\s*S\/?\.?\s*([\d,]+(?:\.\d+)?)/i);
-    const importe = importeMatch ? parseFloat(importeMatch[1]!.replace(/,/g, "")) : 0;
-
-    const fechaMatch =
-      fullText.match(/Fecha\s*:\s*(\d{1,2}\/\d{1,2}\/\d{4})/i) ??
-      fullText.match(/Fecha\s+de\s+emisi[oó]n\s*[:\s]\s*(\d{1,2}\/\d{1,2}\/\d{4})/i);
-    let fechaYmd = "";
-    if (fechaMatch) {
-      const [dd, mm, yyyy] = fechaMatch[1]!.split("/");
-      if (dd && mm && yyyy) fechaYmd = `${yyyy}-${mm.padStart(2, "0")}-${dd.padStart(2, "0")}`;
-    }
-
-    const clienteMatch =
-      fullText.match(/Cliente\s*:\s*(.+)/i) ??
-      fullText.match(/Nombres?\s*:\s*(.+)/i) ??
-      fullText.match(/Señor(?:\(a\)|\(es\))?\s*:\s*(.+)/i) ??
-      fullText.match(/Raz[oó]n\s+Social\s*:\s*(.+)/i);
-    const clienteNombre = clienteMatch ? clienteMatch[1]!.replace(/\s+/g, " ").trim() : "";
-
-    const dniMatch = fullText.match(/(?:DNI|RUC)\s*:?\s*(\d+)/i);
-    const clienteDoc = dniMatch ? dniMatch[1]! : "";
-
-    const descLines: string[] = [];
-    const descMatch = fullText.match(
-      /(?:Cant\s+U\.?M|Cantidad\s+UM)\s+.*?\n([\s\S]*?)(?:Total\s+Gravado|Consulta|Representaci)/i
-    );
-    if (descMatch) {
-      const raw = descMatch[1]!.trim();
-      const lines = raw.split("\n").filter((l) => {
-        const trimmed = l.trim();
-        if (!trimmed) return false;
-        if (/^\d+\s+[A-Z]{1,3}\s+[\d,.]+\s+[\d,.]+$/.test(trimmed)) return false;
-        return true;
-      });
-      if (lines.length > 0) {
-        descLines.push(lines.map((l) => l.trim()).join(" | "));
-      }
-    }
-
-    return {
-      importeTotal: Number.isFinite(importe) ? importe : 0,
-      fechaEmision: fechaYmd,
-      clienteNombre,
-      clienteDoc,
-      descripcion: descLines.join(" | "),
-    };
+    return parseApisunatTicketPlainText(fullText);
   } catch (e) {
     console.warn("[sunatFirestoreRecovery] PDF parse error:", e instanceof Error ? e.message : e);
     return null;
   }
 }
 
+const YMD_RE = /^\d{4}-\d{2}-\d{2}$/;
+
 function pdfDataUsableForRecovery(p: PdfData | null): p is PdfData {
   if (!p) return false;
-  if (Number.isFinite(p.importeTotal) && p.importeTotal > 0) return true;
-  return p.clienteNombre.trim().length >= 2;
+  const amountOk = Number.isFinite(p.importeTotal) && p.importeTotal > 0;
+  const fechaOk = YMD_RE.test(String(p.fechaEmision || "").trim());
+  const clienteOk = p.clienteNombre.trim().length >= 2;
+  return amountOk && fechaOk && clienteOk;
 }
 
 /** Un intento por URL: primero ticket apisunat, si no sirve el texto, A4. Sin reintentos en bucle. */
@@ -373,8 +441,8 @@ export type SunatRecoveryPreviewRow = {
   amount: number;
   fecha_emision_ymd: string;
   sunat_estado: string;
-  /** `minimal` = SUNAT OK pero no se pudo leer monto/cliente del PDF en el servidor (completar a mano). */
-  dataSource: "api" | "pdf" | "minimal";
+  /** De dónde salieron monto/cliente/fecha (solo filas que ya se pueden persistir bien). */
+  dataSource: "api" | "pdf" | "xml";
 };
 
 export type SunatRecoveryScanResult = {
@@ -530,32 +598,32 @@ export async function scanMissingSunatInvoicesForFirestore(
     const compPayload = compResp?.success ? compResp.payload : null;
 
     let pdfData: PdfData | null = null;
+    let dataSource: "api" | "pdf" | "xml" = compPayload ? "api" : "pdf";
+
     if (!compPayload) {
       await sleep(100);
-      pdfData = await extractFromTicketOrA4Pdf(statusResp.payload.pdf, APISUNAT_TOKEN);
+      const xmlNorm = await resolveApisunatStatusXmlPayload(statusResp.payload.xml, APISUNAT_TOKEN);
+      if (xmlNorm) {
+        pdfData = extractRecoveryFromApisunatStatusXml(xmlNorm);
+        if (pdfDataUsableForRecovery(pdfData)) dataSource = "xml";
+        else pdfData = null;
+      }
+      if (!pdfDataUsableForRecovery(pdfData)) {
+        pdfData = await extractFromTicketOrA4Pdf(statusResp.payload.pdf, APISUNAT_TOKEN);
+        if (pdfDataUsableForRecovery(pdfData)) dataSource = "pdf";
+      }
     }
 
-    let dataSource: "api" | "pdf" | "minimal";
-    if (compPayload) {
-      dataSource = "api";
-    } else if (pdfDataUsableForRecovery(pdfData)) {
-      dataSource = "pdf";
-    } else if (
-      String(statusResp.payload.hash || "").trim() &&
-      (statusResp.payload.pdf?.ticket || statusResp.payload.pdf?.a4)
-    ) {
-      const ticketOrA4 =
-        statusResp.payload.pdf?.ticket || statusResp.payload.pdf?.a4 || "";
-      pdfData = {
-        importeTotal: 0,
-        fechaEmision: "",
-        clienteNombre: "(COMPLETAR: monto y cliente desde PDF SUNAT)",
-        clienteDoc: "",
-        descripcion: `SUNAT aceptó el CPE; el servidor no extrajo totales del PDF. Ticket: ${ticketOrA4.slice(0, 200)}`,
-      };
-      dataSource = "minimal";
-    } else {
-      errors.push({ correlativo: corr, reason: "Sin datos de monto (ni API ni PDF ni ticket SUNAT)" });
+    if (!compPayload && !pdfDataUsableForRecovery(pdfData)) {
+      const sunatOkPdf =
+        String(statusResp.payload.hash || "").trim() &&
+        (statusResp.payload.pdf?.ticket || statusResp.payload.pdf?.a4);
+      errors.push({
+        correlativo: corr,
+        reason: sunatOkPdf
+          ? "CPE aceptado y apisunat devolvió URL del PDF (ticket/A4); no extrajimos de ese PDF monto + fecha + cliente válidos en este entorno (no es “sin PDF”: es parse/descarga aquí)."
+          : "Sin datos: API de detalle vacía y en /status no hay URL de PDF (ticket/A4) para intentar leer.",
+      });
       if (i < gaps.length - 1) await sleep(DELAY_MS);
       continue;
     }
@@ -569,9 +637,28 @@ export async function scanMissingSunatInvoicesForFirestore(
       tipoComprobante,
       recoverySource,
     });
-    if (dataSource === "minimal") {
-      firestoreDoc.recovery_note = `${String(firestoreDoc.recovery_note)} [Recuperación mínima: revisar PDF ticket y completar monto/receptor en el panel.]`;
+
+    const amountFinal = Number(firestoreDoc.amount) || 0;
+    const fechaFinal = String(firestoreDoc.fecha_emision_ymd ?? "").trim();
+    if (!Number.isFinite(amountFinal) || amountFinal <= 0) {
+      errors.push({
+        correlativo: corr,
+        reason:
+          "Tras armar el documento el monto sigue siendo 0 o inválido; no se crea fila (revisá API o PDF).",
+      });
+      if (i < gaps.length - 1) await sleep(DELAY_MS);
+      continue;
     }
+    if (!YMD_RE.test(fechaFinal)) {
+      errors.push({
+        correlativo: corr,
+        reason:
+          "Falta fecha de emisión en formato YYYY-MM-DD; no se crea fila hasta tener fecha clara.",
+      });
+      if (i < gaps.length - 1) await sleep(DELAY_MS);
+      continue;
+    }
+
     toCreate.push({ correlativo: corr, doc: firestoreDoc });
     previewRows.push({
       correlativo: corr,
