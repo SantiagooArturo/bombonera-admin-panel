@@ -4,14 +4,9 @@ import { getDb } from "@/lib/firebase-admin";
 const APISUNAT_SERIE_BOLETA = process.env.APISUNAT_SERIE_BOLETA || "B001";
 const APISUNAT_SERIE_FACTURA = process.env.APISUNAT_SERIE_FACTURA || "F001";
 
-/**
- * Permite mutar el contador solo en desarrollo o si se define ALLOW_DEV_INVOICE_COUNTER=1
- * (p. ej. preview en Vercel). No confiar solo en localStorage del cliente.
- */
+/** Solo `next dev` (evita mutar correlativos desde internet en el deploy de producción). */
 function allowDevCounterWrite(): boolean {
-  return (
-    process.env.NODE_ENV === "development" || process.env.ALLOW_DEV_INVOICE_COUNTER === "1"
-  );
+  return process.env.NODE_ENV === "development";
 }
 
 /**

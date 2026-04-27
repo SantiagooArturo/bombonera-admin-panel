@@ -5,13 +5,6 @@
 import type { Firestore as AdminFirestore } from "firebase-admin/firestore";
 import { receptorNombreSnapshot } from "@/features/boletas/utils/sanitizeReceptorNombre";
 
-export function allowSunatMissingRecoveryFromApi(): boolean {
-  return (
-    process.env.NODE_ENV === "development" ||
-    process.env.ALLOW_DEV_SUNAT_INVOICE_RECOVERY === "1"
-  );
-}
-
 // ── PDF ─────────────────────────────────────────────────────────────────────
 
 export type PdfData = {

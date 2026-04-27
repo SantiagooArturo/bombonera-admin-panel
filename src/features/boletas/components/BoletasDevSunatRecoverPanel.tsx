@@ -1,17 +1,27 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
+import {
+  INVOICE_RECOVERY_DEV_MODE_HEADER,
+  INVOICE_RECOVERY_DEV_MODE_VALUE,
+} from "@/features/boletas/constants/devInvoiceRecovery";
 
 const LS_KEY = "devMode";
 
 function readDevMode(): boolean {
   if (typeof window === "undefined") return false;
   try {
-    return localStorage.getItem(LS_KEY) === "true";
+    const raw = localStorage.getItem(LS_KEY);
+    return raw === "true" || raw === "1";
   } catch {
     return false;
   }
 }
+
+const recoveryFetchHeaders: HeadersInit = {
+  "Content-Type": "application/json",
+  [INVOICE_RECOVERY_DEV_MODE_HEADER]: INVOICE_RECOVERY_DEV_MODE_VALUE,
+};
 
 type PreviewRow = {
   correlativo: number;
@@ -43,9 +53,7 @@ type ApplyJson = {
   errors?: Array<{ correlativo: number; reason: string }>;
 };
 
-/**
- * Solo si `localStorage.devMode === "true"`. El servidor exige desarrollo o ALLOW_DEV_SUNAT_INVOICE_RECOVERY=1.
- */
+/** Solo si `localStorage.devMode === "true"` (o `"1"`). Las peticiones llevan cabecera que exige la API. */
 export function BoletasDevSunatRecoverPanel(props: { onRestored?: () => void }) {
   const { onRestored } = props;
   const [enabled, setEnabled] = useState(false);
@@ -71,7 +79,7 @@ export function BoletasDevSunatRecoverPanel(props: { onRestored?: () => void }) 
     try {
       const res = await fetch("/api/invoices/dev-recover-sunat-missing", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: recoveryFetchHeaders,
         body: JSON.stringify({ apply: false }),
       });
       const data = (await res.json().catch(() => ({}))) as ScanJson;
@@ -110,7 +118,7 @@ export function BoletasDevSunatRecoverPanel(props: { onRestored?: () => void }) 
     try {
       const res = await fetch("/api/invoices/dev-recover-sunat-missing", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: recoveryFetchHeaders,
         body: JSON.stringify({ apply: true }),
       });
       const data = (await res.json().catch(() => ({}))) as ApplyJson;
@@ -148,9 +156,9 @@ export function BoletasDevSunatRecoverPanel(props: { onRestored?: () => void }) 
           <p className="text-xs text-violet-900/90">
             Compara huecos y cola respecto a la serie{" "}
             <code className="rounded bg-violet-100/80 px-1">APISUNAT_SERIE_BOLETA</code> con apisunat{" "}
-            <code className="rounded bg-violet-100/80 px-1">/status</code> + PDF si hace falta. En producción el POST
-            solo responde con{" "}
-            <code className="rounded bg-violet-100/80 px-1">ALLOW_DEV_SUNAT_INVOICE_RECOVERY=1</code>.
+            <code className="rounded bg-violet-100/80 px-1">/status</code> + PDF si hace falta. Este bloque solo
+            aparece con <code className="rounded bg-violet-100/80 px-1">localStorage.devMode === &quot;true&quot;</code>
+            .
           </p>
           <div className="flex flex-wrap gap-2">
             <button

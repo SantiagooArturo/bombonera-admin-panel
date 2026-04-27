@@ -2,7 +2,10 @@ import { NextResponse } from "next/server";
 import { getDb } from "@/lib/firebase-admin";
 import { getEmisorSunatFromEnv } from "@/features/boletas/pdf/emisorSunatEnv";
 import {
-  allowSunatMissingRecoveryFromApi,
+  INVOICE_RECOVERY_DEV_MODE_HEADER,
+  INVOICE_RECOVERY_DEV_MODE_VALUE,
+} from "@/features/boletas/constants/devInvoiceRecovery";
+import {
   scanMissingSunatInvoicesForFirestore,
   commitRecoveredInvoiceDocs,
 } from "@/features/boletas/services/sunatFirestoreRecovery";
@@ -12,16 +15,15 @@ const APISUNAT_SERIE_BOLETA = process.env.APISUNAT_SERIE_BOLETA || "B001";
 /**
  * POST { apply?: boolean }
  * Busca boletas (serie B*) en apisunat/SUNAT que no están en Firestore (huecos + cola) y opcionalmente las crea.
- *
- * Misma política que dev-counter: solo `development` o `ALLOW_DEV_SUNAT_INVOICE_RECOVERY=1`.
- * El botón en UI usa `localStorage.devMode`; eso no autentica — la protección es esta env.
+ * Requiere cabecera {@link INVOICE_RECOVERY_DEV_MODE_HEADER} (la envía solo el panel visible con `devMode`).
  */
 export async function POST(request: Request) {
-  if (!allowSunatMissingRecoveryFromApi()) {
+  const devAck = request.headers.get(INVOICE_RECOVERY_DEV_MODE_HEADER);
+  if (devAck !== INVOICE_RECOVERY_DEV_MODE_VALUE) {
     return NextResponse.json(
       {
         error:
-          "Recuperación SUNAT vía API deshabilitada. Usá desarrollo local o definí ALLOW_DEV_SUNAT_INVOICE_RECOVERY=1.",
+          "Esta acción solo está disponible con modo dev en el panel (localStorage.devMode === \"true\").",
       },
       { status: 403 }
     );

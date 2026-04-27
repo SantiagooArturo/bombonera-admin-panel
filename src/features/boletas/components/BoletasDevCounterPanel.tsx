@@ -7,7 +7,8 @@ const LS_KEY = "devMode";
 function readDevMode(): boolean {
   if (typeof window === "undefined") return false;
   try {
-    return localStorage.getItem(LS_KEY) === "true";
+    const raw = localStorage.getItem(LS_KEY);
+    return raw === "true" || raw === "1";
   } catch {
     return false;
   }
@@ -15,10 +16,7 @@ function readDevMode(): boolean {
 
 type SeriePreview = { serie: string; next_correlativo: number };
 
-/**
- * Panel solo si `localStorage.devMode === "true"`. El servidor solo acepta el POST en dev
- * o con ALLOW_DEV_INVOICE_COUNTER=1.
- */
+/** Panel solo si `localStorage.devMode === "true"`. El POST al contador solo funciona en `next dev`. */
 export function BoletasDevCounterPanel() {
   const [open, setOpen] = useState(false);
   const [enabled, setEnabled] = useState(false);
@@ -111,8 +109,7 @@ export function BoletasDevCounterPanel() {
         <div className="mt-3 space-y-3 border-t border-amber-200/80 pt-3">
           <p className="text-xs text-amber-800/90">
             Ajusta el próximo correlativo en Firestore (<code className="rounded bg-amber-100/80 px-1">config/invoice_counter_*</code>
-            ). En producción el POST solo funciona con{" "}
-            <code className="rounded bg-amber-100/80 px-1">ALLOW_DEV_INVOICE_COUNTER=1</code>.
+            ). Guardar solo responde en entorno local (<code className="rounded bg-amber-100/80 px-1">next dev</code>).
           </p>
           <button
             type="button"
