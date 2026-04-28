@@ -159,7 +159,9 @@ export const EmitComprobanteModal = memo(function EmitComprobanteModal(props: Em
   const invoicePostInFlightRef = useRef(false);
   const [emitPreviewLightboxSrc, setEmitPreviewLightboxSrc] = useState<string | null>(null);
 
-  const [emisorContext, setEmisorContext] = useState<"" | EmitComprobanteEmisorContext>("");
+  const [emisorContext, setEmisorContext] = useState<"" | EmitComprobanteEmisorContext>(
+    steppedBoletaUx ? "ventas_dia" : ""
+  );
 
   /** Si el usuario editó el nombre en el CPE, no lo pisan autocompletados (perfil / SUNAT). */
   const nombreComprobanteTouchedRef = useRef(false);
@@ -194,10 +196,15 @@ export const EmitComprobanteModal = memo(function EmitComprobanteModal(props: Em
     if (!misc) return;
     if (!store.isLoaded("users")) void store.fetchUsers();
   }, [misc, store]);
+  const usersLoaded = store.isLoaded("users");
+  const usersSnapshot = store.getUsers();
+
+  const shouldBuildDirectoryOptions =
+    misc && (!steppedBoletaUx || emisorContext === "cliente_reservado");
 
   const emitClienteDirectoryOptions = useMemo(() => {
-    if (!misc) return [];
-    const sortedUsers = [...store.getUsers()].sort((a, b) => {
+    if (!shouldBuildDirectoryOptions) return [];
+    const sortedUsers = [...usersSnapshot].sort((a, b) => {
       const timeA = (a.last_interaction_at || a.created_at) ? new Date(a.last_interaction_at || a.created_at!).getTime() || 0 : 0;
       const timeB = (b.last_interaction_at || b.created_at) ? new Date(b.last_interaction_at || b.created_at!).getTime() || 0 : 0;
       if (timeA !== timeB) return timeB - timeA;
@@ -219,7 +226,7 @@ export const EmitComprobanteModal = memo(function EmitComprobanteModal(props: Em
         };
       })
       .filter((o) => o.phone.replace(/\D/g, "").length >= 9);
-  }, [misc, store]);
+  }, [shouldBuildDirectoryOptions, usersSnapshot]);
 
   const clienteReservadoLinkedUser = useMemo(() => {
     if (!misc || !panelLinkPhoneNorm || !isValidPeruPhone(panelLinkPhoneNorm)) return undefined;
@@ -711,7 +718,7 @@ export const EmitComprobanteModal = memo(function EmitComprobanteModal(props: Em
             />
             <p className="text-center text-sm font-semibold text-gray-800">SUNAT y registro en base de datos…</p>
             <p className="max-w-[16rem] text-center text-xs leading-snug text-gray-600">
-              No cierres esta ventana ni la pestaña hasta que termine (el servidor guarda después de SUNAT).
+              No cierres esta ventana.
             </p>
           </div>
         ) : null}
@@ -771,6 +778,8 @@ export const EmitComprobanteModal = memo(function EmitComprobanteModal(props: Em
               inputText={clienteDirectoryInput}
               onInputTextChange={setClienteDirectoryInput}
               options={emitClienteDirectoryOptions}
+              defaultOpen
+              loading={!usersLoaded}
             />
           ) : null}
 
@@ -783,6 +792,8 @@ export const EmitComprobanteModal = memo(function EmitComprobanteModal(props: Em
                   inputText={clienteDirectoryInput}
                   onInputTextChange={setClienteDirectoryInput}
                   options={emitClienteDirectoryOptions}
+                  defaultOpen
+                  loading={!usersLoaded}
                 />
               ) : null}
 

@@ -33,7 +33,7 @@ import { getInvoiceUiStatus } from "../utils/invoiceUiStatus";
 
 type ComprobanteTab = "todos" | "boletas" | "facturas";
 type InvoiceStatusFilter = "all" | ReturnType<typeof getInvoiceUiStatus>;
-type DateRangeFilter = "historico" | "mes_actual" | "ultimos_30_dias";
+type DateRangeFilter = "historico" | "mes_actual" | "ultimos_7_dias" | "ultimos_30_dias";
 
 function getSunatBadgeMeta(inv: Invoice): {
   label: string;
@@ -80,7 +80,7 @@ export function BoletasPage() {
   const searchParams = useSearchParams();
   const [tipoFilter, setTipoFilter] = useState<ComprobanteTab>("todos");
   const [statusFilter, setStatusFilter] = useState<InvoiceStatusFilter>("all");
-  const [dateRangeFilter, setDateRangeFilter] = useState<DateRangeFilter>("historico");
+  const [dateRangeFilter, setDateRangeFilter] = useState<DateRangeFilter>("ultimos_7_dias");
   const [invoices, setInvoices] = useState<Invoice[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -165,6 +165,8 @@ export function BoletasPage() {
     const startRange = new Date(startToday);
     if (dateRangeFilter === "mes_actual") {
       startRange.setDate(1);
+    } else if (dateRangeFilter === "ultimos_7_dias") {
+      startRange.setDate(startRange.getDate() - 6);
     } else if (dateRangeFilter === "ultimos_30_dias") {
       startRange.setDate(startRange.getDate() - 29);
     }
@@ -384,6 +386,7 @@ export function BoletasPage() {
           >
             <option value="historico">Histórico</option>
             <option value="mes_actual">Mes actual</option>
+            <option value="ultimos_7_dias">Últimos 7 días</option>
             <option value="ultimos_30_dias">Últimos 30 días</option>
           </select>
         </label>

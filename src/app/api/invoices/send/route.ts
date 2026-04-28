@@ -30,6 +30,22 @@ function xmlFilenameFromPdfFilename(pdfName: string): string {
 }
 
 const BOT_TIMEOUT_MS = 120_000;
+const BOT_MEDIA_RETRY_DELAY_MS = 900;
+
+function shouldRetryBotMediaSend(message: string | undefined): boolean {
+  const msg = String(message || "").toLowerCase();
+  if (!msg) return false;
+  return (
+    msg.includes("processmedia") ||
+    msg.includes("upload media") ||
+    msg.includes("entry was not found") ||
+    msg.includes("media entry was not found")
+  );
+}
+
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
 
 async function postSendFileToBot(params: {
   chatbotUrl: string;
@@ -38,31 +54,43 @@ async function postSendFileToBot(params: {
   filename: string;
   caption: string;
 }): Promise<{ ok: boolean; message?: string; status: number }> {
-  const botRes = await fetch(`${params.chatbotUrl}/chatbot/send-file/`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({
-      chat_id: params.chatId,
-      file_base64: params.fileBase64,
-      caption: params.caption,
-      filename: params.filename,
-    }),
-    signal: AbortSignal.timeout(BOT_TIMEOUT_MS),
-  });
+  for (let attempt = 1; attempt <= 2; attempt++) {
+    const botRes = await fetch(`${params.chatbotUrl}/chatbot/send-file/`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        chat_id: params.chatId,
+        file_base64: params.fileBase64,
+        caption: params.caption,
+        filename: params.filename,
+      }),
+      signal: AbortSignal.timeout(BOT_TIMEOUT_MS),
+    });
 
-  const responseData = await botRes.json().catch(() => ({}));
-  const errMsg =
-    typeof (responseData as { message?: string })?.message === "string"
-      ? (responseData as { message: string }).message
-      : undefined;
-  if (!botRes.ok || (responseData as { status?: string })?.status === "error") {
+    const responseData = await botRes.json().catch(() => ({}));
+    const errMsg =
+      typeof (responseData as { message?: string })?.message === "string"
+        ? (responseData as { message: string }).message
+        : undefined;
+    const failed = !botRes.ok || (responseData as { status?: string })?.status === "error";
+    if (!failed) {
+      return { ok: true, status: botRes.status };
+    }
+
+    const retryable = shouldRetryBotMediaSend(errMsg);
+    if (attempt < 2 && retryable) {
+      await sleep(BOT_MEDIA_RETRY_DELAY_MS);
+      continue;
+    }
+
     return {
       ok: false,
       message: errMsg || "No se pudo enviar el archivo.",
       status: botRes.ok ? 500 : botRes.status,
     };
   }
-  return { ok: true, status: botRes.status };
+
+  return { ok: false, message: "No se pudo enviar el archivo.", status: 500 };
 }
 
 export async function POST(request: NextRequest) {

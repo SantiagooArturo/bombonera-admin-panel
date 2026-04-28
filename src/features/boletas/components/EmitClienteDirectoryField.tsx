@@ -36,6 +36,8 @@ type EmitClienteDirectoryFieldProps = {
   onInputTextChange: (text: string) => void;
   options: EmitClienteDirectoryOption[];
   placeholder?: string;
+  defaultOpen?: boolean;
+  loading?: boolean;
 };
 
 /**
@@ -51,8 +53,10 @@ export function EmitClienteDirectoryField({
   onInputTextChange,
   options,
   placeholder = "Buscar o número",
+  defaultOpen = false,
+  loading = false,
 }: EmitClienteDirectoryFieldProps) {
-  const [open, setOpen] = useState(false);
+  const [open, setOpen] = useState(defaultOpen);
 
   const filteredOptions = useMemo(() => {
     const qNorm = stripEmojis(inputText).trim().toLowerCase().replace(/\s+/g, " ");
@@ -134,7 +138,18 @@ export function EmitClienteDirectoryField({
         </p>
       ) : null}
 
-      {open && filteredOptions.length > 0 ? (
+      {open && loading ? (
+        <div className="absolute z-[70] mt-1 w-full rounded-lg border border-gray-200 bg-white p-2 shadow-lg">
+          <div className="animate-pulse space-y-2">
+            <div className="h-9 rounded bg-gray-100" />
+            <div className="h-9 rounded bg-gray-100" />
+            <div className="h-9 rounded bg-gray-100" />
+          </div>
+          <p className="mt-2 text-[11px] text-gray-500">Cargando contactos recientes…</p>
+        </div>
+      ) : null}
+
+      {open && !loading && filteredOptions.length > 0 ? (
         <div className="absolute z-[70] mt-1 max-h-56 w-full overflow-auto rounded-lg border border-gray-200 bg-white shadow-lg">
           {filteredOptions.map((o) => (
             <button
