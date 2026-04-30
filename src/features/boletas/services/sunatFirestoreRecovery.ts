@@ -50,16 +50,17 @@ function reconstructTextFromPdfItems(
 export function parseApisunatTicketPlainText(fullText: string): PdfData {
   const importeMatch =
     fullText.match(/Total\s+\(S\/\)\s*:\s*([\d,]+(?:\.\d+)?)/i) ??
-    fullText.match(/Importe\s+Total\s+S\/\s*([\d,]+(?:\.\d+)?)/i) ??
+    fullText.match(/Importe\s+Total\s*:?\s*S\/?\.?\s*([\d,]+(?:\.\d+)?)/i) ??
     fullText.match(/IMPORTE\s+TOTAL\s+S\/?\.?\s*([\d,]+(?:\.\d+)?)/i) ??
     fullText.match(/TOTAL\s+Venta\s+S\/\s*([\d,]+(?:\.\d+)?)/i) ??
     fullText.match(/Total\s+a\s+Pagar[^0-9]*S\/?\.?\s*([\d,]+(?:\.\d+)?)/i) ??
     fullText.match(/Monto\s+Total\s*S\/?\.?\s*([\d,]+(?:\.\d+)?)/i);
   const importe = importeMatch ? parseFloat(importeMatch[1]!.replace(/,/g, "")) : 0;
 
+  /** Ticket: "Fecha: dd/mm/aaaa". A4 apisunat: "Fecha de emisión dd/mm/aaaa" (a menudo sin ":" antes de la fecha). */
   const fechaMatch =
     fullText.match(/Fecha\s*:\s*(\d{1,2}\/\d{1,2}\/\d{4})/i) ??
-    fullText.match(/Fecha\s+de\s+emisi[oó]n\s*[:\s]\s*(\d{1,2}\/\d{1,2}\/\d{4})/i);
+    fullText.match(/Fecha\s+de\s+emisi[oó]n\s*:?\s*(\d{1,2}\/\d{1,2}\/\d{4})/i);
   let fechaYmd = "";
   if (fechaMatch) {
     const [dd, mm, yyyy] = fechaMatch[1]!.split("/");
