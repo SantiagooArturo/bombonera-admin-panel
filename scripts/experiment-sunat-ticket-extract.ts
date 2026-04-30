@@ -26,58 +26,16 @@ import { apisunatApiBaseFromDocumentsUrl } from "../src/features/boletas/utils/a
 import { extractRecoveryFromApisunatStatusXml } from "../src/features/boletas/services/extractRecoveryFromApisunatStatusXml";
 import {
   extractDataFromPdf,
+  extractPlainTextFromPdfBytes,
+  isApisunatPdfExtractUsableForRecovery,
   normalizeApisunatStatusXmlField,
   parseApisunatTicketPlainText,
   resolveApisunatStatusXmlPayload,
   type PdfData,
 } from "../src/features/boletas/services/sunatFirestoreRecovery";
 
-async function pdfBufferToPlainText(buf: ArrayBuffer): Promise<string> {
-  const pdfjsLib = await import("pdfjs-dist/legacy/build/pdf.mjs");
-  const doc = await pdfjsLib
-    .getDocument({
-      data: new Uint8Array(buf),
-      disableFontFace: true,
-      useSystemFonts: true,
-      isEvalSupported: false,
-      verbosity: 0,
-    })
-    .promise;
-  let fullText = "";
-  for (let p = 1; p <= doc.numPages; p++) {
-    const page = await doc.getPage(p);
-    const content = await page.getTextContent();
-    const items = content.items as Array<{ str?: string; transform?: number[] }>;
-    const lines: string[][] = [];
-    let cur: string[] = [];
-    let lastY: number | null = null;
-    for (const item of items) {
-      const str = item.str ?? "";
-      if (!str) continue;
-      const y = item.transform?.[5] ?? 0;
-      if (lastY !== null && Math.abs(y - lastY) > 2) {
-        if (cur.length) lines.push(cur);
-        cur = [];
-      }
-      cur.push(str);
-      lastY = y;
-    }
-    if (cur.length) lines.push(cur);
-    fullText += lines.map((w) => w.join(" ")).join("\n") + "\n";
-  }
-  return fullText;
-}
-
-const YMD = /^\d{4}-\d{2}-\d{2}$/;
-
 function usable(p: PdfData | null): boolean {
-  if (!p) return false;
-  return (
-    Number.isFinite(p.importeTotal) &&
-    p.importeTotal > 0 &&
-    YMD.test(String(p.fechaEmision || "").trim()) &&
-    p.clienteNombre.trim().length >= 2
-  );
+  return isApisunatPdfExtractUsableForRecovery(p);
 }
 
 function labelOk(ok: boolean): string {
@@ -168,7 +126,7 @@ async function probeUrl(kind: string, url: string, token: string): Promise<void>
   if (pdfMagic || got.contentType.includes("pdf")) {
     let fullText = "";
     try {
-      fullText = await pdfBufferToPlainText(got.buf);
+      fullText = await extractPlainTextFromPdfBytes(got.buf);
     } catch (e) {
       console.log(`  pdfjs error: ${e instanceof Error ? e.message : String(e)}`);
       summarize(`PDF (pdfjs) — ${kind}`, null, "falló pdfjs sobre el buffer");

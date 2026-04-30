@@ -44,14 +44,44 @@ function reconstructTextFromPdfItems(
 }
 
 /**
+ * Texto plano del PDF con las mismas opciones pdfjs que recuperación (para scripts / tests).
+ */
+export async function extractPlainTextFromPdfBytes(data: Uint8Array | ArrayBuffer): Promise<string> {
+  const uint8 = data instanceof Uint8Array ? data : new Uint8Array(data);
+  const pdfjsLib = await import("pdfjs-dist/legacy/build/pdf.mjs");
+  const doc = await pdfjsLib
+    .getDocument({
+      data: uint8,
+      disableFontFace: true,
+      useSystemFonts: true,
+      isEvalSupported: false,
+      verbosity: 0,
+    })
+    .promise;
+  let fullText = "";
+  for (let p = 1; p <= doc.numPages; p++) {
+    const page = await doc.getPage(p);
+    const content = await page.getTextContent();
+    fullText +=
+      reconstructTextFromPdfItems(
+        content.items as Array<{ str?: string; transform?: number[] }>
+      ) + "\n";
+  }
+  return fullText;
+}
+
+/**
  * Heurísticas sobre el texto del ticket apisunat (salida de pdfjs o HTML a texto).
  * Exportado para scripts de diagnóstico (`scripts/experiment-sunat-ticket-extract.ts`).
  */
 export function parseApisunatTicketPlainText(fullText: string): PdfData {
+  /** A4 a veces deja "Importe Total" en una línea y "S/ 240.00" en la siguiente (pdfjs). */
   const importeMatch =
     fullText.match(/Total\s+\(S\/\)\s*:\s*([\d,]+(?:\.\d+)?)/i) ??
     fullText.match(/Importe\s+Total\s*:?\s*S\/?\.?\s*([\d,]+(?:\.\d+)?)/i) ??
+    fullText.match(/Importe\s+Total\s*:?\s*\n\s*S\/?\.?\s*([\d,]+(?:\.\d+)?)/i) ??
     fullText.match(/IMPORTE\s+TOTAL\s+S\/?\.?\s*([\d,]+(?:\.\d+)?)/i) ??
+    fullText.match(/IMPORTE\s+TOTAL\s*:?\s*\n\s*S\/?\.?\s*([\d,]+(?:\.\d+)?)/i) ??
     fullText.match(/TOTAL\s+Venta\s+S\/\s*([\d,]+(?:\.\d+)?)/i) ??
     fullText.match(/Total\s+a\s+Pagar[^0-9]*S\/?\.?\s*([\d,]+(?:\.\d+)?)/i) ??
     fullText.match(/Monto\s+Total\s*S\/?\.?\s*([\d,]+(?:\.\d+)?)/i);
@@ -60,16 +90,22 @@ export function parseApisunatTicketPlainText(fullText: string): PdfData {
   /** Ticket: "Fecha: dd/mm/aaaa". A4 apisunat: "Fecha de emisión dd/mm/aaaa" (a menudo sin ":" antes de la fecha). */
   const fechaMatch =
     fullText.match(/Fecha\s*:\s*(\d{1,2}\/\d{1,2}\/\d{4})/i) ??
-    fullText.match(/Fecha\s+de\s+emisi[oó]n\s*:?\s*(\d{1,2}\/\d{1,2}\/\d{4})/i);
+    fullText.match(/Fecha\s+de\s+emisi[oó]n\s*:?\s*(\d{1,2}\/\d{1,2}\/\d{4})/i) ??
+    fullText.match(/Fecha\s+de\s+emisi[oó]n\s*:?\s*\n\s*(\d{1,2}\/\d{1,2}\/\d{4})/i);
   let fechaYmd = "";
   if (fechaMatch) {
     const [dd, mm, yyyy] = fechaMatch[1]!.split("/");
     if (dd && mm && yyyy) fechaYmd = `${yyyy}-${mm.padStart(2, "0")}-${dd.padStart(2, "0")}`;
   }
 
+  /**
+   * "Nombres:" + valor misma línea; o "Nombres:\nvalor"; o etiqueta "Nombres" y valor en la línea siguiente (pdfjs A4).
+   * No usar `:?` tras la etiqueta: evita falsos positivos con "Nombre de …" en otros campos.
+   */
   const clienteMatch =
     fullText.match(/Cliente\s*:\s*(.+)/i) ??
-    fullText.match(/Nombres?\s*:\s*(.+)/i) ??
+    fullText.match(/Nombres?\s*:\s*(?:\n\s*)?([^\n]+)/i) ??
+    fullText.match(/Nombres\s*\n\s*([^\n]+)/i) ??
     fullText.match(/Señor(?:\(a\)|\(es\))?\s*:\s*(.+)/i) ??
     fullText.match(/Raz[oó]n\s+Social\s*:\s*(.+)/i);
   const clienteNombre = clienteMatch ? clienteMatch[1]!.replace(/\s+/g, " ").trim() : "";
@@ -160,29 +196,8 @@ export async function extractDataFromPdf(pdfUrl: string, token: string): Promise
       console.warn("[sunatFirestoreRecovery] PDF fetch HTTP", res.status, pdfUrl.slice(0, 96));
       return null;
     }
-    const buf = Buffer.from(await res.arrayBuffer());
-
-    const pdfjsLib = await import("pdfjs-dist/legacy/build/pdf.mjs");
-    const doc = await pdfjsLib
-      .getDocument({
-        data: new Uint8Array(buf),
-        disableFontFace: true,
-        useSystemFonts: true,
-        isEvalSupported: false,
-        verbosity: 0,
-      })
-      .promise;
-
-    let fullText = "";
-    for (let p = 1; p <= doc.numPages; p++) {
-      const page = await doc.getPage(p);
-      const content = await page.getTextContent();
-      const pageText = reconstructTextFromPdfItems(
-        content.items as Array<{ str?: string; transform?: number[] }>
-      );
-      fullText += pageText + "\n";
-    }
-
+    const buf = new Uint8Array(await res.arrayBuffer());
+    const fullText = await extractPlainTextFromPdfBytes(buf);
     return parseApisunatTicketPlainText(fullText);
   } catch (e) {
     console.warn("[sunatFirestoreRecovery] PDF parse error:", e instanceof Error ? e.message : e);
@@ -192,12 +207,17 @@ export async function extractDataFromPdf(pdfUrl: string, token: string): Promise
 
 const YMD_RE = /^\d{4}-\d{2}-\d{2}$/;
 
-function pdfDataUsableForRecovery(p: PdfData | null): p is PdfData {
+/** Misma regla que recuperación Firestore (scripts de diagnóstico). */
+export function isApisunatPdfExtractUsableForRecovery(p: PdfData | null): boolean {
   if (!p) return false;
   const amountOk = Number.isFinite(p.importeTotal) && p.importeTotal > 0;
   const fechaOk = YMD_RE.test(String(p.fechaEmision || "").trim());
   const clienteOk = p.clienteNombre.trim().length >= 2;
   return amountOk && fechaOk && clienteOk;
+}
+
+function pdfDataUsableForRecovery(p: PdfData | null): p is PdfData {
+  return isApisunatPdfExtractUsableForRecovery(p);
 }
 
 /** Un intento por URL: primero ticket apisunat, si no sirve el texto, A4. Sin reintentos en bucle. */
