@@ -236,10 +236,12 @@ export function BoletasDevSunatRecoverPanel(props: { onRestored?: () => void }) 
           {scan?.errors && scan.errors.length > 0 ? (
             <div className="rounded border border-amber-200 bg-amber-50/80 px-2 py-1.5 text-xs text-amber-950">
               <p className="font-semibold">Errores / omitidos en el escaneo</p>
-              <ul className="mt-1 list-inside list-disc">
+              <ul className="mt-1 list-disc space-y-1 pl-4">
                 {scan.errors.slice(0, 15).map((e) => (
-                  <li key={e.correlativo}>
-                    {e.correlativo}: {e.reason}
+                  <li key={e.correlativo} className="break-words text-left" title={e.reason}>
+                    <span className="font-mono tabular-nums">{e.correlativo}</span>
+                    {": "}
+                    <span className="break-all">{e.reason}</span>
                   </li>
                 ))}
               </ul>

@@ -212,6 +212,18 @@ async function extractFromTicketOrA4Pdf(
   return null;
 }
 
+/** Texto para mensajes de error (debug): URLs públicas del PDF en /status (requieren token apisunat al abrir). */
+function pdfApisunatUrlsForDebug(pdf: { ticket?: string; a4?: string } | undefined): string {
+  const ticket = typeof pdf?.ticket === "string" ? pdf.ticket.trim() : "";
+  const a4 = typeof pdf?.a4 === "string" ? pdf.a4.trim() : "";
+  const parts: string[] = [];
+  if (ticket.startsWith("http")) parts.push(`ticket=${ticket}`);
+  if (a4.startsWith("http")) parts.push(`a4=${a4}`);
+  return parts.length > 0
+    ? ` URLs PDF apisunat (GET con Authorization: Bearer): ${parts.join(" | ")}`
+    : "";
+}
+
 // ── apisunat ─────────────────────────────────────────────────────────────────
 
 function v1BaseFromDocumentsUrl(documentsUrl: string): string {
@@ -621,7 +633,7 @@ export async function scanMissingSunatInvoicesForFirestore(
       errors.push({
         correlativo: corr,
         reason: sunatOkPdf
-          ? "CPE aceptado y apisunat devolvió URL del PDF (ticket/A4); no extrajimos de ese PDF monto + fecha + cliente válidos en este entorno (no es “sin PDF”: es parse/descarga aquí)."
+          ? `CPE aceptado y apisunat devolvió URL del PDF (ticket/A4); no extrajimos de ese PDF monto + fecha + cliente válidos en este entorno (no es “sin PDF”: es parse/descarga aquí).${pdfApisunatUrlsForDebug(statusResp.payload.pdf)}`
           : "Sin datos: API de detalle vacía y en /status no hay URL de PDF (ticket/A4) para intentar leer.",
       });
       if (i < gaps.length - 1) await sleep(DELAY_MS);

@@ -178,7 +178,9 @@ export function BoletasPage() {
       if (statusFilter !== "all" && getInvoiceUiStatus(inv) !== statusFilter) return false;
 
       if (dateRangeFilter !== "historico") {
-        const dRaw = String(inv.fecha_emision_ymd || inv.created_at || "").trim();
+        // Rango operativo: cuándo quedó registrada en el panel (evita “perdidas” si la fecha SUNAT
+        // del CPE no coincide con el día de alta, típico desde /operaciones con emisión distinta).
+        const dRaw = String(inv.created_at || inv.fecha_emision_ymd || "").trim();
         const d = dRaw ? new Date(dRaw.length === 10 ? `${dRaw}T12:00:00` : dRaw) : null;
         if (!d || Number.isNaN(d.getTime())) return false;
         d.setHours(0, 0, 0, 0);
