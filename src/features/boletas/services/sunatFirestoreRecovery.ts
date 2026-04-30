@@ -220,12 +220,15 @@ function pdfDataUsableForRecovery(p: PdfData | null): p is PdfData {
   return isApisunatPdfExtractUsableForRecovery(p);
 }
 
-/** Un intento por URL: primero ticket apisunat, si no sirve el texto, A4. Sin reintentos en bucle. */
+/**
+ * Intenta por URL: primero **A4** (texto más estable para las regex), luego ticket.
+ * Sin reintentos en bucle.
+ */
 async function extractFromTicketOrA4Pdf(
   pdf: { ticket?: string; a4?: string } | undefined,
   token: string
 ): Promise<PdfData | null> {
-  const urls = [pdf?.ticket, pdf?.a4].filter((u): u is string => typeof u === "string" && u.startsWith("http"));
+  const urls = [pdf?.a4, pdf?.ticket].filter((u): u is string => typeof u === "string" && u.startsWith("http"));
   for (const url of urls) {
     const d = await extractDataFromPdf(url, token);
     if (pdfDataUsableForRecovery(d)) return d;
