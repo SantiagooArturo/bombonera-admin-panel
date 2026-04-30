@@ -6,7 +6,9 @@
  * `payload.xml` (UBL en línea, base64, o **URL** a `/xml/...` apisunat), luego PDF ticket/A4.
  */
 import type { Firestore as AdminFirestore } from "firebase-admin/firestore";
+import pdfParse from "pdf-parse/lib/pdf-parse.js";
 import { extractRecoveryFromApisunatStatusXml } from "@/features/boletas/services/extractRecoveryFromApisunatStatusXml";
+import { inferPhoneFromInvoiceDocsForRecovery } from "@/features/boletas/utils/inferPhoneFromReceptorCluster";
 import { receptorNombreSnapshot } from "@/features/boletas/utils/sanitizeReceptorNombre";
 
 // ── PDF ─────────────────────────────────────────────────────────────────────
@@ -19,59 +21,19 @@ export type PdfData = {
   descripcion: string;
 };
 
-function reconstructTextFromPdfItems(
-  items: Array<{ str?: string; transform?: number[] }>
-): string {
-  if (items.length === 0) return "";
-  const lines: string[][] = [];
-  let currentLine: string[] = [];
-  let lastY: number | null = null;
-
-  for (const item of items) {
-    const str = item.str ?? "";
-    if (!str) continue;
-    const y = item.transform?.[5] ?? 0;
-    if (lastY !== null && Math.abs(y - lastY) > 2) {
-      if (currentLine.length > 0) lines.push(currentLine);
-      currentLine = [];
-    }
-    currentLine.push(str);
-    lastY = y;
-  }
-  if (currentLine.length > 0) lines.push(currentLine);
-
-  return lines.map((words) => words.join(" ")).join("\n");
-}
-
 /**
- * Texto plano del PDF con las mismas opciones pdfjs que recuperación (para scripts / tests).
+ * Texto plano del PDF (servidor y scripts). `pdf-parse/lib/pdf-parse.js`: el `index` del paquete
+ * ejecuta código de prueba cuando `!module.parent` y rompe `next build` / análisis estático.
  */
 export async function extractPlainTextFromPdfBytes(data: Uint8Array | ArrayBuffer): Promise<string> {
-  const uint8 = data instanceof Uint8Array ? data : new Uint8Array(data);
-  const pdfjsLib = await import("pdfjs-dist/legacy/build/pdf.mjs");
-  const doc = await pdfjsLib
-    .getDocument({
-      data: uint8,
-      disableFontFace: true,
-      useSystemFonts: true,
-      isEvalSupported: false,
-      verbosity: 0,
-    })
-    .promise;
-  let fullText = "";
-  for (let p = 1; p <= doc.numPages; p++) {
-    const page = await doc.getPage(p);
-    const content = await page.getTextContent();
-    fullText +=
-      reconstructTextFromPdfItems(
-        content.items as Array<{ str?: string; transform?: number[] }>
-      ) + "\n";
-  }
-  return fullText;
+  const buf = Buffer.from(data instanceof Uint8Array ? data : new Uint8Array(data));
+  const result = await pdfParse(buf);
+  const text = typeof result.text === "string" ? result.text : "";
+  return text.replace(/\r\n/g, "\n");
 }
 
 /**
- * Heurísticas sobre el texto del ticket apisunat (salida de pdfjs o HTML a texto).
+ * Heurísticas sobre el texto del ticket apisunat (salida de extracción PDF o HTML a texto).
  * Exportado para scripts de diagnóstico (`scripts/experiment-sunat-ticket-extract.ts`).
  */
 export function parseApisunatTicketPlainText(fullText: string): PdfData {
@@ -479,6 +441,10 @@ export type SunatRecoveryPreviewRow = {
   sunat_estado: string;
   /** De dónde salieron monto/cliente/fecha (solo filas que ya se pueden persistir bien). */
   dataSource: "api" | "pdf" | "xml";
+  /** Teléfono que se persistirá (vacío si no hubo match en cluster). */
+  phone_number: string;
+  /** true si el teléfono se tomó de otra boleta misma serie por coincidencia de nombre. */
+  phone_inferred: boolean;
 };
 
 export type SunatRecoveryScanResult = {
@@ -695,15 +661,32 @@ export async function scanMissingSunatInvoicesForFirestore(
       continue;
     }
 
+    const clienteForPhone = String(firestoreDoc.cliente_denominacion ?? "").trim();
+    let phoneInferred = false;
+    if (clienteForPhone && !String(firestoreDoc.phone_number ?? "").trim()) {
+      const inferred = inferPhoneFromInvoiceDocsForRecovery(snap.docs, clienteForPhone);
+      if (inferred) {
+        firestoreDoc.phone_number = inferred.phone;
+        phoneInferred = true;
+        const prev = String(firestoreDoc.recovery_note ?? "");
+        firestoreDoc.recovery_note =
+          prev +
+          (prev.endsWith(".") || prev.endsWith("!") ? " " : ". ") +
+          `WhatsApp inferido desde otra boleta de la serie con receptor coincidente (${inferred.fromExact ? "nombre idéntico" : "mismo titular probable"}).`;
+      }
+    }
+
     toCreate.push({ correlativo: corr, doc: firestoreDoc });
     previewRows.push({
       correlativo: corr,
       serie_correlativo: `${SERIE}-${corr}`,
-      cliente_denominacion: String(firestoreDoc.cliente_denominacion ?? ""),
+      cliente_denominacion: clienteForPhone,
       amount: Number(firestoreDoc.amount) || 0,
       fecha_emision_ymd: String(firestoreDoc.fecha_emision_ymd ?? ""),
       sunat_estado: String(firestoreDoc.sunat_estado ?? ""),
       dataSource,
+      phone_number: String(firestoreDoc.phone_number ?? ""),
+      phone_inferred: phoneInferred,
     });
 
     if (i < gaps.length - 1) await sleep(DELAY_MS);

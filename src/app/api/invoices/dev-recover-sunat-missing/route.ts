@@ -10,7 +10,7 @@ import {
   commitRecoveredInvoiceDocs,
 } from "@/features/boletas/services/sunatFirestoreRecovery";
 
-/** pdfjs-dist debe ejecutarse en Node (misma pila que `tsx` local). */
+/** `pdf-parse` solo corre en Node (no Edge). */
 export const runtime = "nodejs";
 
 const APISUNAT_SERIE_BOLETA = process.env.APISUNAT_SERIE_BOLETA || "B001";

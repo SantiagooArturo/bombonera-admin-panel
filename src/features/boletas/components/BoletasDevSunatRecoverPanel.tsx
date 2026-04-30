@@ -31,6 +31,8 @@ type PreviewRow = {
   fecha_emision_ymd: string;
   sunat_estado: string;
   dataSource: "api" | "pdf" | "xml";
+  phone_number?: string;
+  phone_inferred?: boolean;
 };
 
 function labelDataSource(ds: PreviewRow["dataSource"]): string {
@@ -177,9 +179,8 @@ export function BoletasDevSunatRecoverPanel(props: { onRestored?: () => void }) 
           <p className="text-xs text-violet-800/85">
             Este botón y el script <code className="rounded bg-violet-100/80 px-0.5">recover-missing-invoices</code>{" "}
             usan la misma función de escaneo (<code className="rounded bg-violet-100/80 px-0.5">scanMissingSunatInvoicesForFirestore</code>
-            ). Si ves muchos omitidos “PDF presente, extracción falló”, SUNAT sí emitió; el límite está en leer el PDF
-            automáticamente en el host del panel (tiempos, red hacia apisunat, pdfjs en serverless). En tu PC el mismo
-            código a veces sí alcanza a parsear: no es otra lógica, es otro entorno.
+            ). Si el receptor coincide con otra boleta de la misma serie que ya tiene WhatsApp, se infiere el número (solo
+            si no hay ambigüedad). SUNAT no envía WSP en recuperación.
           </p>
           <div className="flex flex-wrap gap-2">
             <button
@@ -204,11 +205,12 @@ export function BoletasDevSunatRecoverPanel(props: { onRestored?: () => void }) 
 
           {scan?.previewRows && scan.previewRows.length > 0 ? (
             <div className="max-h-64 overflow-auto rounded-lg border border-violet-200 bg-white/90">
-              <table className="w-full min-w-[520px] text-left text-xs">
+              <table className="w-full min-w-[640px] text-left text-xs">
                 <thead className="sticky top-0 bg-violet-100/95 font-semibold text-violet-950">
                   <tr>
                     <th className="px-2 py-1.5">Comprobante</th>
                     <th className="px-2 py-1.5">Cliente</th>
+                    <th className="px-2 py-1.5">WhatsApp</th>
                     <th className="px-2 py-1.5">Monto</th>
                     <th className="px-2 py-1.5">Emisión</th>
                     <th className="px-2 py-1.5">SUNAT</th>
@@ -221,6 +223,20 @@ export function BoletasDevSunatRecoverPanel(props: { onRestored?: () => void }) 
                       <td className="px-2 py-1 font-mono">{r.serie_correlativo}</td>
                       <td className="max-w-[180px] truncate px-2 py-1" title={r.cliente_denominacion}>
                         {r.cliente_denominacion || "—"}
+                      </td>
+                      <td className="max-w-[120px] px-2 py-1 font-mono text-[11px]" title={r.phone_number || ""}>
+                        {r.phone_number?.trim() ? (
+                          <span>
+                            {r.phone_number}
+                            {r.phone_inferred ? (
+                              <span className="ml-0.5 text-violet-600" title="Inferido desde otra boleta misma serie">
+                                *
+                              </span>
+                            ) : null}
+                          </span>
+                        ) : (
+                          "—"
+                        )}
                       </td>
                       <td className="px-2 py-1 tabular-nums">S/ {Number(r.amount).toFixed(2)}</td>
                       <td className="px-2 py-1 font-mono">{r.fecha_emision_ymd || "—"}</td>
