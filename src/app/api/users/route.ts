@@ -2,68 +2,84 @@ import { NextRequest, NextResponse } from "next/server";
 import { getDb } from "@/lib/firebase-admin";
 import type { User, ClientType } from "@/lib/types";
 import { normalizePeruPhone, isValidPeruPhone } from "@/features/operaciones/utils";
+import { mapQueryDocToUser } from "@/lib/server/mapUserFromFirestore";
+import { userMatchesSearch } from "@/features/usuarios/utils/userMatchesSearch";
+
+const BROWSE_MAX = 280;
 
 /**
  * GET /api/users
- * Lista usuarios desde la colección `users`.
- * Atributos denormalizados: reservation_count, balance, client_type, is_automated.
- * Una sola query a users, sin queries anidadas.
+ * Sin query: lista completa (compatibilidad con `store.fetchUsers()` y otros consumidores).
+ *
+ * Query opcional para /usuarios con muchos registros:
+ * - `mode=summary` → `{ needsHelpCount }` (usuarios con needs_help o tipo fraude; sin leer toda la colección).
+ * - `mode=browse&limit=N` → top por `reservation_count` descendente (vista inicial).
+ * - `mode=search&q=...` → filtro con la misma lógica que el buscador del panel (puede leer toda la colección).
+ * - `mode=attention` → unión de needs_help y client_type sospechoso_fraude.
  */
-export async function GET() {
+export async function GET(request: NextRequest) {
   try {
+    const { searchParams } = new URL(request.url);
+    const mode = searchParams.get("mode");
     const db = getDb();
-    const snapshot = await db.collection("users").get();
+    const usersCol = db.collection("users");
 
-    const list: User[] = snapshot.docs.map((doc) => {
-      const data = doc.data();
-      const id = doc.id;
-      const balance = data.balance;
-      const reservationCount = data.reservation_count;
-      const clientType = data.client_type;
-      const isAutomated = data.is_automated;
-      const needsHelp = data.needs_help;
-      const helpReason = data.help_reason;
+    if (mode === "summary") {
+      const [helpSnap, fraudSnap] = await Promise.all([
+        usersCol.where("needs_help", "==", true).get(),
+        usersCol.where("client_type", "==", "sospechoso_fraude").get(),
+      ]);
+      const ids = new Set<string>();
+      helpSnap.docs.forEach((d) => ids.add(d.id));
+      fraudSnap.docs.forEach((d) => ids.add(d.id));
+      return NextResponse.json({ needsHelpCount: ids.size }, { headers: { "Cache-Control": "no-store" } });
+    }
 
-      return {
-        id,
-        chat_id: data.chat_id ?? id,
-        phone_number: data.phone_number ?? undefined,
-        contact_name: typeof data.contact_name === "string" ? data.contact_name : undefined,
-        push_name: typeof data.push_name === "string" ? data.push_name : undefined,
-        custom_name: typeof data.custom_name === "string" ? data.custom_name : undefined,
-        last_representative_name: typeof data.last_representative_name === "string" ? data.last_representative_name : undefined,
-        last_dni: typeof data.last_dni === "string" ? data.last_dni : undefined,
-        last_ruc: typeof data.last_ruc === "string" ? data.last_ruc : undefined,
-        last_factura_direccion:
-          typeof data.last_factura_direccion === "string" ? data.last_factura_direccion : undefined,
-        last_factura_razon_social:
-          typeof data.last_factura_razon_social === "string" ? data.last_factura_razon_social : undefined,
-        reservation_count: typeof reservationCount === "number" ? reservationCount : 0,
-        balance: typeof balance === "number" ? balance : 0,
-        client_type: (clientType === "casual" || clientType === "frecuente" || clientType === "academia" || clientType === "sospechoso_fraude"
-          ? clientType
-          : "casual") as ClientType,
-        is_automated: typeof isAutomated === "boolean" ? isAutomated : true,
-        needs_help: typeof needsHelp === "boolean" ? needsHelp : false,
-        help_reason: typeof helpReason === "string" ? helpReason : undefined,
-        last_interaction_at: data.last_interaction_at?.toDate
-          ? data.last_interaction_at.toDate().toISOString()
-          : typeof data.last_interaction_at === "string"
-            ? data.last_interaction_at
-            : undefined,
-        created_at: data.created_at?.toDate
-          ? data.created_at.toDate().toISOString()
-          : typeof data.created_at === "string"
-            ? data.created_at
-            : undefined,
-        profile_picture: typeof data.profile_picture === "string" ? data.profile_picture : undefined,
-        last_note: typeof data.last_note === "string" ? data.last_note : undefined,
-      };
-    });
+    if (mode === "browse") {
+      const limRaw = searchParams.get("limit");
+      const limit = Math.min(
+        Math.max(1, limRaw ? parseInt(limRaw, 10) || BROWSE_MAX : BROWSE_MAX),
+        500
+      );
+      const snapshot = await usersCol.orderBy("reservation_count", "desc").limit(limit).get();
+      const list = snapshot.docs.map(mapQueryDocToUser);
+      return NextResponse.json(list, {
+        headers: {
+          "Cache-Control": "public, s-maxage=30, stale-while-revalidate=300",
+        },
+      });
+    }
+
+    if (mode === "attention") {
+      const [helpSnap, fraudSnap] = await Promise.all([
+        usersCol.where("needs_help", "==", true).get(),
+        usersCol.where("client_type", "==", "sospechoso_fraude").get(),
+      ]);
+      const byId = new Map<string, User>();
+      for (const d of helpSnap.docs) byId.set(d.id, mapQueryDocToUser(d));
+      for (const d of fraudSnap.docs) byId.set(d.id, mapQueryDocToUser(d));
+      return NextResponse.json(Array.from(byId.values()), { headers: { "Cache-Control": "no-store" } });
+    }
+
+    if (mode === "search") {
+      const q = (searchParams.get("q") ?? "").trim();
+      if (!q) {
+        return NextResponse.json({ error: "Parámetro q requerido" }, { status: 400 });
+      }
+      const snapshot = await usersCol.get();
+      const list = snapshot.docs.map(mapQueryDocToUser).filter((u) => userMatchesSearch(u, q));
+      return NextResponse.json(list, { headers: { "Cache-Control": "no-store" } });
+    }
+
+    if (mode !== null && mode !== "") {
+      return NextResponse.json({ error: "mode inválido" }, { status: 400 });
+    }
+
+    const snapshot = await usersCol.get();
+    const list: User[] = snapshot.docs.map(mapQueryDocToUser);
 
     return NextResponse.json(list, {
       headers: {
-        // Edge cache corto para listar usuarios sin golpear Firestore en cada navegación.
         "Cache-Control": "public, s-maxage=30, stale-while-revalidate=300",
       },
     });

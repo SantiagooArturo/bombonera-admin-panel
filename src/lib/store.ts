@@ -249,11 +249,15 @@ class Store {
     }
   }
 
-  async toggleUserAutomation(userId: string) {
-    const user = this.users.find((u) => u.id === userId);
-    if (!user) return false;
-
-    const newValue = !(user.is_automated ?? true);
+  async toggleUserAutomation(userId: string, currentIsAutomated?: boolean) {
+    const fromStore = this.users.find((u) => u.id === userId);
+    const prev =
+      typeof currentIsAutomated === "boolean"
+        ? currentIsAutomated
+        : fromStore
+          ? !!(fromStore.is_automated ?? true)
+          : true;
+    const newValue = !prev;
     try {
       const res = await fetch("/api/users", {
         method: "PATCH",
@@ -262,16 +266,17 @@ class Store {
       });
       if (!res.ok) throw new Error("Failed to update");
 
-      // Si se activa el bot, también limpiamos needs_help en el estado local
-      this.users = this.users.map((u) =>
-        u.id === userId
-          ? {
-            ...u,
-            is_automated: newValue,
-            ...(newValue ? { needs_help: false, help_reason: undefined } : {}),
-          }
-          : u
-      );
+      if (this.users.some((u) => u.id === userId)) {
+        this.users = this.users.map((u) =>
+          u.id === userId
+            ? {
+              ...u,
+              is_automated: newValue,
+              ...(newValue ? { needs_help: false, help_reason: undefined } : {}),
+            }
+            : u
+        );
+      }
       this.notify();
       return true;
     } catch (error) {
@@ -288,7 +293,6 @@ class Store {
       if (!res.ok) {
         return { ok: false, error: typeof data.error === "string" ? data.error : "Error al actualizar" };
       }
-      await this.fetchUsers();
       return { ok: true, updated: typeof data.updated === "number" ? data.updated : 0 };
     } catch (error) {
       console.error("Error deactivateAutomationForAllUsers:", error);
@@ -348,7 +352,6 @@ class Store {
         const err = await res.json().catch(() => ({}));
         throw new Error(typeof err?.error === "string" ? err.error : "Error al crear usuario");
       }
-      await this.fetchUsers();
       return true;
     } catch (error) {
       console.error("Error creating user:", error);
@@ -934,21 +937,6 @@ class Store {
       return true;
     } catch (error) {
       console.error("Error deleting reservation:", error);
-      return false;
-    }
-  }
-
-  async sendInvoiceWhatsApp(chatId: string, fileUrl: string) {
-    try {
-      const res = await fetch("/api/invoices/send", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ chat_id: chatId, file_url: fileUrl }),
-      });
-      if (!res.ok) throw new Error("Failed to send invoice");
-      return true;
-    } catch (error) {
-      console.error("Error sending invoice via WhatsApp:", error);
       return false;
     }
   }

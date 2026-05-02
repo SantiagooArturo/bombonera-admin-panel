@@ -22,6 +22,7 @@ import AddUserModal from "@/features/usuarios/components/AddUserModal";
 import ActivateChatbotConfirmModal from "@/features/usuarios/components/ActivateChatbotConfirmModal";
 import { formatDisplayPhone, userWhatsAppPhone, wspLink } from "@/features/operaciones/utils";
 import { anchorPropsForHref } from "@/lib/internal-href";
+import { userMatchesSearch } from "@/features/usuarios/utils/userMatchesSearch";
 
 // ─── Helpers ────────────────────────────────────────────────────────────────
 
@@ -140,8 +141,11 @@ function UsuariosContent() {
   const store = useStore();
   const toast = useToastContext();
   const searchParams = useSearchParams();
-  const users = store.getUsers();
-  const loaded = store.isLoaded("users");
+  const [browseList, setBrowseList] = useState<User[]>([]);
+  const [attentionList, setAttentionList] = useState<User[]>([]);
+  const [searchList, setSearchList] = useState<User[] | null>(null);
+  const [needsHelpCount, setNeedsHelpCount] = useState<number | null>(null);
+  const [listLoading, setListLoading] = useState(true);
   const [sortBy, setSortBy] = useState<SortKey | null>("reservation_count");
   const [sortDir, setSortDir] = useState<SortDir>("desc");
   const [devMode, setDevMode] = useState(false);
@@ -179,17 +183,122 @@ function UsuariosContent() {
     return () => window.removeEventListener("storage", readDevMode);
   }, []);
 
+  const applyUserPatch = (userId: string, patch: Partial<User>) => {
+    setBrowseList((prev) => prev.map((u) => (u.id === userId ? { ...u, ...patch } : u)));
+    setAttentionList((prev) => prev.map((u) => (u.id === userId ? { ...u, ...patch } : u)));
+    setSearchList((prev) => (prev ? prev.map((u) => (u.id === userId ? { ...u, ...patch } : u)) : prev));
+  };
+
+  const removeUserFromLists = (userId: string) => {
+    setBrowseList((prev) => prev.filter((u) => u.id !== userId));
+    setAttentionList((prev) => prev.filter((u) => u.id !== userId));
+    setSearchList((prev) => (prev ? prev.filter((u) => u.id !== userId) : prev));
+  };
+
+  async function reloadUsuariosFromServer() {
+    const q = search.trim();
+    try {
+      const sum = await fetch("/api/users?mode=summary", { cache: "no-store" });
+      const sumData = await sum.json().catch(() => ({}));
+      if (typeof sumData.needsHelpCount === "number") setNeedsHelpCount(sumData.needsHelpCount);
+    } catch {
+      setNeedsHelpCount((c) => c ?? 0);
+    }
+    try {
+      if (filterNeedsHelp) {
+        const r = await fetch("/api/users?mode=attention", { cache: "no-store" });
+        if (r.ok) setAttentionList(await r.json());
+      } else if (q) {
+        const r = await fetch(`/api/users?mode=search&q=${encodeURIComponent(q)}`, { cache: "no-store" });
+        if (r.ok) setSearchList(await r.json());
+      } else {
+        const r = await fetch("/api/users?mode=browse&limit=280", { cache: "no-store" });
+        if (r.ok) setBrowseList(await r.json());
+      }
+    } catch {
+      /* ignore */
+    }
+  }
+
   useEffect(() => {
-    if (!loaded) {
-      void store.fetchUsers();
+    void fetch("/api/users?mode=summary", { cache: "no-store" })
+      .then((r) => r.json())
+      .then((d) => {
+        if (typeof d.needsHelpCount === "number") setNeedsHelpCount(d.needsHelpCount);
+        else setNeedsHelpCount(0);
+      })
+      .catch(() => setNeedsHelpCount(0));
+  }, []);
+
+  useEffect(() => {
+    if (filterNeedsHelp) return;
+    if (search.trim()) return;
+    const ac = new AbortController();
+    (async () => {
+      setListLoading(true);
+      try {
+        const r = await fetch("/api/users?mode=browse&limit=280", { cache: "no-store", signal: ac.signal });
+        if (!r.ok) throw new Error("browse");
+        const data: User[] = await r.json();
+        if (!ac.signal.aborted) setBrowseList(data);
+      } catch {
+        if (!ac.signal.aborted) setBrowseList([]);
+      } finally {
+        if (!ac.signal.aborted) setListLoading(false);
+      }
+    })();
+    return () => ac.abort();
+  }, [filterNeedsHelp, search]);
+
+  useEffect(() => {
+    if (!filterNeedsHelp) {
+      setAttentionList([]);
       return;
     }
-    // SWR simple: muestra lista ya cargada y refresca en segundo plano.
-    const refreshId = window.setTimeout(() => {
-      void store.fetchUsers();
-    }, 0);
-    return () => window.clearTimeout(refreshId);
-  }, [store, loaded]);
+    const ac = new AbortController();
+    (async () => {
+      setListLoading(true);
+      try {
+        const r = await fetch("/api/users?mode=attention", { cache: "no-store", signal: ac.signal });
+        if (!r.ok) throw new Error("attention");
+        const data: User[] = await r.json();
+        if (!ac.signal.aborted) setAttentionList(data);
+      } catch {
+        if (!ac.signal.aborted) setAttentionList([]);
+      } finally {
+        if (!ac.signal.aborted) setListLoading(false);
+      }
+    })();
+    return () => ac.abort();
+  }, [filterNeedsHelp]);
+
+  useEffect(() => {
+    if (filterNeedsHelp || !search.trim()) return;
+    let cancelled = false;
+    setListLoading(true);
+    const tid = window.setTimeout(() => {
+      void (async () => {
+        try {
+          const r = await fetch(
+            `/api/users?mode=search&q=${encodeURIComponent(search.trim())}`,
+            { cache: "no-store" }
+          );
+          if (!r.ok) throw new Error("search");
+          const data: User[] = await r.json();
+          if (!cancelled) setSearchList(data);
+        } catch {
+          if (!cancelled) setSearchList([]);
+        } finally {
+          if (!cancelled) setListLoading(false);
+        }
+      })();
+    }, 320);
+    return () => {
+      cancelled = true;
+      window.clearTimeout(tid);
+      setListLoading(false);
+    };
+  }, [search, filterNeedsHelp]);
 
   useEffect(() => {
     fetch("/api/settings")
@@ -242,8 +351,13 @@ function UsuariosContent() {
 
   async function handleToggleAutomation(userId: string, currentValue: boolean) {
     setTogglingId(userId);
-    const success = await store.toggleUserAutomation(userId);
+    const success = await store.toggleUserAutomation(userId, currentValue);
     if (success) {
+      const newVal = !currentValue;
+      applyUserPatch(userId, {
+        is_automated: newVal,
+        ...(newVal ? { needs_help: false, help_reason: undefined } : {}),
+      });
       toast(
         currentValue ? "Bot desactivado" : "Bot activado",
         currentValue ? "info" : "success"
@@ -268,6 +382,7 @@ function UsuariosContent() {
     setBulkBotDeactivating(false);
     if (r.ok) {
       toast(`Bot desactivado en ${r.updated ?? 0} usuario(s).`, "success");
+      void reloadUsuariosFromServer();
     } else {
       toast(r.error ?? "Error al desactivar", "error");
     }
@@ -276,8 +391,10 @@ function UsuariosContent() {
   async function handleResetUser() {
     if (!resetConfirmId) return;
     setResetting(true);
-    const success = await store.resetUser(resetConfirmId);
+    const id = resetConfirmId;
+    const success = await store.resetUser(id);
     if (success) {
+      removeUserFromLists(id);
       toast("Usuario eliminado correctamente", "success");
     } else {
       toast("Error al eliminar usuario", "error");
@@ -289,6 +406,7 @@ function UsuariosContent() {
   async function handleSaveCustomName(userId: string) {
     const success = await store.updateUserCustomName(userId, editingNameValue);
     if (success) {
+      applyUserPatch(userId, { custom_name: editingNameValue || undefined });
       toast("Nombre actualizado", "success");
     } else {
       toast("Error al actualizar nombre", "error");
@@ -301,6 +419,9 @@ function UsuariosContent() {
     setUpdatingClientType(userId);
     const success = await store.updateUserClientType(userId, newType);
     if (success) {
+      const patch: Partial<User> = { client_type: newType };
+      if (newType === "sospechoso_fraude") patch.is_automated = false;
+      applyUserPatch(userId, patch);
       toast(`Tipo actualizado: ${CLIENT_TYPE_LABELS[newType]}`, "success");
     } else {
       toast("Error al actualizar tipo de cliente", "error");
@@ -308,30 +429,18 @@ function UsuariosContent() {
     setUpdatingClientType(null);
   }
 
-  const filteredUsers = useMemo(() => {
-    const raw = search.trim();
-    if (!raw) return users;
-    const lower = raw.toLowerCase();
-    const digits = raw.replace(/\D/g, "");
-
-    return users.filter((u) => {
-      const wa = userWhatsAppPhone(u);
-      const phone = (wa || u.phone_number || u.chat_id?.replace(/@.*$/, "") || u.id || "").replace(/\D/g, "");
-      if (digits && phone.includes(digits)) return true;
-      if (digits && u.last_dni?.includes(digits)) return true;
-      const names = [u.custom_name, u.contact_name, u.last_representative_name]
-        .concat(u.push_name)
-        .filter(Boolean)
-        .map((n) => n!.toLowerCase());
-      return names.some((n) => n.includes(lower));
-    });
-  }, [users, search]);
-
-  const needsHelpCount = useMemo(() => users.filter(needsAttention).length, [users]);
+  const displayUsers = useMemo(() => {
+    if (filterNeedsHelp) {
+      const raw = search.trim();
+      if (!raw) return attentionList;
+      return attentionList.filter((u) => userMatchesSearch(u, raw));
+    }
+    if (search.trim()) return searchList ?? [];
+    return browseList;
+  }, [filterNeedsHelp, search, attentionList, browseList, searchList]);
 
   const sortedUsers = useMemo(() => {
-    let list = filteredUsers;
-    if (filterNeedsHelp) list = list.filter(needsAttention);
+    let list = displayUsers;
     if (filterClientType !== "all") list = list.filter((u) => u.client_type === filterClientType);
 
     list = [...list].sort((a, b) => {
@@ -353,7 +462,7 @@ function UsuariosContent() {
       return 0;
     });
     return list;
-  }, [filteredUsers, sortBy, sortDir, filterNeedsHelp, filterClientType]);
+  }, [displayUsers, sortBy, sortDir, filterClientType]);
 
   const tableColSpan = devMode ? 7 : 6;
 
@@ -372,7 +481,7 @@ function UsuariosContent() {
               <button
                 type="button"
                 onClick={() => void handleDeactivateAllBots()}
-                disabled={bulkBotDeactivating || !loaded}
+                disabled={bulkBotDeactivating || listLoading}
                 className="inline-flex items-center gap-2 px-4 py-3 font-semibold rounded-xl border-2 border-amber-300 bg-amber-50 text-amber-900 hover:bg-amber-100 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
               >
                 {bulkBotDeactivating ? (
@@ -443,6 +552,7 @@ function UsuariosContent() {
           onSubmit={async (data) => {
             try {
               await store.createUser(data);
+              void reloadUsuariosFromServer();
               toast("Usuario creado correctamente", "success");
               return true;
             } catch (e) {
@@ -453,19 +563,19 @@ function UsuariosContent() {
         />
 
         {/* Banner de alerta si hay usuarios que necesitan ayuda */}
-        {needsHelpCount > 0 && !filterNeedsHelp && (
+        {(needsHelpCount ?? 0) > 0 && !filterNeedsHelp && (
           <button
             onClick={() => setFilterNeedsHelp(true)}
             className="w-full mb-6 flex items-center gap-3 px-5 py-4 bg-red-50 border-2 border-red-200 rounded-xl text-left hover:bg-red-100 transition-colors"
           >
             <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-red-500 text-white font-bold text-body">
-              {needsHelpCount}
+              {needsHelpCount ?? 0}
             </span>
             <div>
               <p className="text-body font-bold text-red-800">
                 {needsHelpCount === 1
                   ? "1 usuario necesita atención"
-                  : `${needsHelpCount} usuarios necesitan atención`}
+                  : `${needsHelpCount ?? 0} usuarios necesitan atención`}
               </p>
               <p className="text-sm text-red-600">
                 Usuarios con peligro de fraude o que requieren intervención humana. Click para revisar.
@@ -529,11 +639,11 @@ function UsuariosContent() {
                 <path fillRule="evenodd" d="M8.257 3.099c.765-1.36 2.722-1.36 3.486 0l5.58 9.92c.75 1.334-.213 2.98-1.742 2.98H4.42c-1.53 0-2.493-1.646-1.743-2.98l5.58-9.92zM11 13a1 1 0 11-2 0 1 1 0 012 0zm-1-8a1 1 0 00-1 1v3a1 1 0 002 0V6a1 1 0 00-1-1z" clipRule="evenodd" />
               </svg>
               Requieren atención
-              {needsHelpCount > 0 && (
+              {(needsHelpCount ?? 0) > 0 && (
                 <span className={`px-1.5 py-0.5 rounded-full text-xs font-bold leading-none ${
                   filterNeedsHelp ? "bg-white/25" : "bg-red-500 text-white"
                 }`}>
-                  {needsHelpCount}
+                  {needsHelpCount ?? 0}
                 </span>
               )}
             </button>
@@ -541,12 +651,17 @@ function UsuariosContent() {
         </div>
 
         <p className="text-body text-gray-500 mb-4 font-medium">
-          {!loaded ? (
+          {listLoading ? (
             "Cargando usuarios…"
           ) : (
             <>
               {sortedUsers.length} usuario{sortedUsers.length !== 1 ? "s" : ""}{" "}
               {search ? "encontrado" : ""}{sortedUsers.length !== 1 && search ? "s" : ""}
+              {!filterNeedsHelp && !search.trim() ? (
+                <span className="block text-sm font-normal text-gray-500 mt-1.5 max-w-xl">
+                  Localizar a cualquier cliente, usa el buscador.
+                </span>
+              ) : null}
             </>
           )}
         </p>
@@ -576,7 +691,7 @@ function UsuariosContent() {
                 </tr>
               </thead>
               <tbody>
-                  {!loaded ? (
+                  {listLoading ? (
                     <tr>
                       <td colSpan={tableColSpan} className="px-4 py-12 text-center text-sm text-gray-400">
                         Cargando…

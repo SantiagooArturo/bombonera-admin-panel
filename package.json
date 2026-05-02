@@ -16,6 +16,8 @@
     "recover:missing-invoices": "tsx scripts/recover-missing-invoices.ts",
     "experiment:sunat-ticket-extract": "tsx scripts/experiment-sunat-ticket-extract.ts",
     "debug:apisunat-pdf-urls": "tsx scripts/debug-apisunat-pdf-urls.ts",
+    "lookup:invoice-firestore": "tsx scripts/lookup-invoice-firestore.ts",
+    "probe:apisunat-correlativo": "tsx scripts/probe-apisunat-one-correlativo.ts",
     "recurrent-rebooking:run": "tsx scripts/run-recurrent-rebooking.ts",
     "dev": "next dev",
     "build": "next build",
