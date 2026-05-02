@@ -19,19 +19,25 @@ import {
   type User,
 } from "@/lib/types";
 import AddUserModal from "@/features/usuarios/components/AddUserModal";
-import ActivateChatbotConfirmModal from "@/features/usuarios/components/ActivateChatbotConfirmModal";
 import { formatDisplayPhone, userWhatsAppPhone, wspLink } from "@/features/operaciones/utils";
 import { anchorPropsForHref } from "@/lib/internal-href";
 import { userMatchesSearch } from "@/features/usuarios/utils/userMatchesSearch";
+import {
+  readBrowseCache,
+  writeBrowseCache,
+  readAttentionCache,
+  writeAttentionCache,
+  readSummaryCache,
+  writeSummaryCache,
+  readSearchCache,
+  writeSearchCache,
+  USUARIOS_BROWSE_CACHE_LIMIT,
+} from "@/features/usuarios/utils/usuariosListCache";
 
 // ─── Helpers ────────────────────────────────────────────────────────────────
 
-type SortKey = "reservation_count" | "client_type" | "bot";
+type SortKey = "reservation_count" | "client_type";
 type SortDir = "asc" | "desc";
-
-function userBotActivated(u: User): boolean {
-  return u.is_automated ?? true;
-}
 
 const CLIENT_TYPE_ORDER: ClientType[] = [
   "casual",
@@ -145,11 +151,12 @@ function UsuariosContent() {
   const [attentionList, setAttentionList] = useState<User[]>([]);
   const [searchList, setSearchList] = useState<User[] | null>(null);
   const [needsHelpCount, setNeedsHelpCount] = useState<number | null>(null);
-  const [listLoading, setListLoading] = useState(true);
+  /** Sin datos aún y esperando red (sin caché útil). */
+  const [listBlocking, setListBlocking] = useState(true);
+  /** Hay datos en pantalla (p. ej. caché) y se está refrescando en segundo plano. */
+  const [listRevalidating, setListRevalidating] = useState(false);
   const [sortBy, setSortBy] = useState<SortKey | null>("reservation_count");
   const [sortDir, setSortDir] = useState<SortDir>("desc");
-  const [devMode, setDevMode] = useState(false);
-  const [togglingId, setTogglingId] = useState<string | null>(null);
   const [updatingClientType, setUpdatingClientType] = useState<string | null>(null);
   const [editingNameId, setEditingNameId] = useState<string | null>(null);
   const [editingNameValue, setEditingNameValue] = useState("");
@@ -161,28 +168,6 @@ function UsuariosContent() {
   const [filterClientType] = useState<ClientType | "all">(
     (searchParams.get("type") as ClientType | null) || "all"
   );
-  const [recurrentReminderEnabled, setRecurrentReminderEnabled] = useState<boolean | null>(null);
-  const [recurrentReminderLoading, setRecurrentReminderLoading] = useState(false);
-  const [bulkBotDeactivating, setBulkBotDeactivating] = useState(false);
-  /** Confirmación antes de activar el chatbot (evita clics accidentales). */
-  const [activateBotPending, setActivateBotPending] = useState<{
-    userId: string;
-    label: string;
-  } | null>(null);
-  useEffect(() => {
-    const readDevMode = () => {
-      try {
-        const raw = window.localStorage.getItem("devMode");
-        setDevMode(raw === "true" || raw === "1");
-      } catch {
-        setDevMode(false);
-      }
-    };
-    readDevMode();
-    window.addEventListener("storage", readDevMode);
-    return () => window.removeEventListener("storage", readDevMode);
-  }, []);
-
   const applyUserPatch = (userId: string, patch: Partial<User>) => {
     setBrowseList((prev) => prev.map((u) => (u.id === userId ? { ...u, ...patch } : u)));
     setAttentionList((prev) => prev.map((u) => (u.id === userId ? { ...u, ...patch } : u)));
@@ -200,20 +185,38 @@ function UsuariosContent() {
     try {
       const sum = await fetch("/api/users?mode=summary", { cache: "no-store" });
       const sumData = await sum.json().catch(() => ({}));
-      if (typeof sumData.needsHelpCount === "number") setNeedsHelpCount(sumData.needsHelpCount);
+      if (typeof sumData.needsHelpCount === "number") {
+        setNeedsHelpCount(sumData.needsHelpCount);
+        writeSummaryCache(sumData.needsHelpCount);
+      }
     } catch {
       setNeedsHelpCount((c) => c ?? 0);
     }
     try {
       if (filterNeedsHelp) {
         const r = await fetch("/api/users?mode=attention", { cache: "no-store" });
-        if (r.ok) setAttentionList(await r.json());
+        if (r.ok) {
+          const data: User[] = await r.json();
+          setAttentionList(data);
+          writeAttentionCache(data);
+        }
       } else if (q) {
         const r = await fetch(`/api/users?mode=search&q=${encodeURIComponent(q)}`, { cache: "no-store" });
-        if (r.ok) setSearchList(await r.json());
+        if (r.ok) {
+          const data: User[] = await r.json();
+          setSearchList(data);
+          writeSearchCache(q, data);
+        }
       } else {
-        const r = await fetch("/api/users?mode=browse&limit=280", { cache: "no-store" });
-        if (r.ok) setBrowseList(await r.json());
+        const r = await fetch(
+          `/api/users?mode=browse&limit=${USUARIOS_BROWSE_CACHE_LIMIT}`,
+          { cache: "no-store" }
+        );
+        if (r.ok) {
+          const data: User[] = await r.json();
+          setBrowseList(data);
+          writeBrowseCache(data);
+        }
       }
     } catch {
       /* ignore */
@@ -221,33 +224,60 @@ function UsuariosContent() {
   }
 
   useEffect(() => {
+    const cached = readSummaryCache();
+    if (cached !== null) setNeedsHelpCount(cached);
     void fetch("/api/users?mode=summary", { cache: "no-store" })
       .then((r) => r.json())
       .then((d) => {
-        if (typeof d.needsHelpCount === "number") setNeedsHelpCount(d.needsHelpCount);
-        else setNeedsHelpCount(0);
+        if (typeof d.needsHelpCount === "number") {
+          setNeedsHelpCount(d.needsHelpCount);
+          writeSummaryCache(d.needsHelpCount);
+        } else {
+          setNeedsHelpCount(0);
+          writeSummaryCache(0);
+        }
       })
-      .catch(() => setNeedsHelpCount(0));
+      .catch(() => setNeedsHelpCount((c) => c ?? 0));
   }, []);
 
   useEffect(() => {
     if (filterNeedsHelp) return;
     if (search.trim()) return;
     const ac = new AbortController();
+    const cached = readBrowseCache();
+    if (cached?.length) {
+      setBrowseList(cached);
+      setListBlocking(false);
+      setListRevalidating(true);
+    } else {
+      setListBlocking(true);
+      setListRevalidating(false);
+    }
     (async () => {
-      setListLoading(true);
       try {
-        const r = await fetch("/api/users?mode=browse&limit=280", { cache: "no-store", signal: ac.signal });
+        const r = await fetch(
+          `/api/users?mode=browse&limit=${USUARIOS_BROWSE_CACHE_LIMIT}`,
+          { cache: "no-store", signal: ac.signal }
+        );
         if (!r.ok) throw new Error("browse");
         const data: User[] = await r.json();
-        if (!ac.signal.aborted) setBrowseList(data);
+        if (!ac.signal.aborted) {
+          setBrowseList(data);
+          writeBrowseCache(data);
+        }
       } catch {
-        if (!ac.signal.aborted) setBrowseList([]);
+        if (!ac.signal.aborted && !cached?.length) setBrowseList([]);
       } finally {
-        if (!ac.signal.aborted) setListLoading(false);
+        if (!ac.signal.aborted) {
+          setListBlocking(false);
+          setListRevalidating(false);
+        }
       }
     })();
-    return () => ac.abort();
+    return () => {
+      ac.abort();
+      setListRevalidating(false);
+    };
   }, [filterNeedsHelp, search]);
 
   useEffect(() => {
@@ -256,137 +286,89 @@ function UsuariosContent() {
       return;
     }
     const ac = new AbortController();
+    const cached = readAttentionCache();
+    if (cached !== null) {
+      setAttentionList(cached);
+      setListBlocking(false);
+      setListRevalidating(true);
+    } else {
+      setListBlocking(true);
+      setListRevalidating(false);
+    }
     (async () => {
-      setListLoading(true);
       try {
         const r = await fetch("/api/users?mode=attention", { cache: "no-store", signal: ac.signal });
         if (!r.ok) throw new Error("attention");
         const data: User[] = await r.json();
-        if (!ac.signal.aborted) setAttentionList(data);
+        if (!ac.signal.aborted) {
+          setAttentionList(data);
+          writeAttentionCache(data);
+        }
       } catch {
-        if (!ac.signal.aborted) setAttentionList([]);
+        if (!ac.signal.aborted && cached === null) setAttentionList([]);
       } finally {
-        if (!ac.signal.aborted) setListLoading(false);
+        if (!ac.signal.aborted) {
+          setListBlocking(false);
+          setListRevalidating(false);
+        }
       }
     })();
-    return () => ac.abort();
+    return () => {
+      ac.abort();
+      setListRevalidating(false);
+    };
   }, [filterNeedsHelp]);
 
   useEffect(() => {
     if (filterNeedsHelp || !search.trim()) return;
+    const q = search.trim();
+    const disk = readSearchCache(q);
+    if (disk !== null) {
+      setSearchList(disk);
+      setListBlocking(false);
+      setListRevalidating(true);
+    } else {
+      setSearchList(null);
+      setListBlocking(true);
+      setListRevalidating(false);
+    }
     let cancelled = false;
-    setListLoading(true);
     const tid = window.setTimeout(() => {
       void (async () => {
         try {
-          const r = await fetch(
-            `/api/users?mode=search&q=${encodeURIComponent(search.trim())}`,
-            { cache: "no-store" }
-          );
+          const r = await fetch(`/api/users?mode=search&q=${encodeURIComponent(q)}`, { cache: "no-store" });
           if (!r.ok) throw new Error("search");
           const data: User[] = await r.json();
-          if (!cancelled) setSearchList(data);
+          if (!cancelled) {
+            setSearchList(data);
+            writeSearchCache(q, data);
+          }
         } catch {
-          if (!cancelled) setSearchList([]);
+          if (!cancelled && disk === null) setSearchList([]);
         } finally {
-          if (!cancelled) setListLoading(false);
+          if (!cancelled) {
+            setListBlocking(false);
+            setListRevalidating(false);
+          }
         }
       })();
     }, 320);
     return () => {
       cancelled = true;
       window.clearTimeout(tid);
-      setListLoading(false);
+      setListRevalidating(false);
     };
   }, [search, filterNeedsHelp]);
-
-  useEffect(() => {
-    fetch("/api/settings")
-      .then((r) => r.json())
-      .then((data) => {
-        if (typeof data.recurrent_reminder_enabled === "boolean") {
-          setRecurrentReminderEnabled(data.recurrent_reminder_enabled);
-        } else {
-          setRecurrentReminderEnabled(false);
-        }
-      })
-      .catch(() => setRecurrentReminderEnabled(false));
-  }, []);
-
-  async function handleToggleRecurrentReminder() {
-    if (recurrentReminderEnabled === null) return;
-    setRecurrentReminderLoading(true);
-    try {
-      const res = await fetch("/api/settings", {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ recurrent_reminder_enabled: !recurrentReminderEnabled }),
-      });
-      const data = await res.json().catch(() => ({}));
-      if (res.ok) {
-        setRecurrentReminderEnabled(data.recurrent_reminder_enabled ?? !recurrentReminderEnabled);
-        toast(
-          data.recurrent_reminder_enabled ? "Recordatorio a recurrentes activado" : "Recordatorio a recurrentes desactivado",
-          "success"
-        );
-      } else {
-        toast(data.error || "Error al actualizar", "error");
-      }
-    } catch {
-      toast("Error al actualizar configuración", "error");
-    } finally {
-      setRecurrentReminderLoading(false);
-    }
-  }
 
   const handleSort = (key: SortKey) => {
     if (sortBy === key) {
       setSortDir((d) => (d === "asc" ? "desc" : "asc"));
     } else {
       setSortBy(key);
-      /** Bot y reservas: primer clic descendente. */
-      setSortDir(key === "bot" || key === "reservation_count" ? "desc" : "asc");
+      /** Reservas: primer clic descendente. */
+      setSortDir(key === "reservation_count" ? "desc" : "asc");
     }
   };
-
-  async function handleToggleAutomation(userId: string, currentValue: boolean) {
-    setTogglingId(userId);
-    const success = await store.toggleUserAutomation(userId, currentValue);
-    if (success) {
-      const newVal = !currentValue;
-      applyUserPatch(userId, {
-        is_automated: newVal,
-        ...(newVal ? { needs_help: false, help_reason: undefined } : {}),
-      });
-      toast(
-        currentValue ? "Bot desactivado" : "Bot activado",
-        currentValue ? "info" : "success"
-      );
-    } else {
-      toast("Error al cambiar estado", "error");
-    }
-    setTogglingId(null);
-    setActivateBotPending(null);
-  }
-
-  async function handleDeactivateAllBots() {
-    if (
-      !window.confirm(
-        "¿Desactivar el bot para todos los usuarios que lo tienen activo? Solo actualiza el interruptor en la base de datos; no borra usuarios ni historial."
-      )
-    ) {
-      return;
-    }
-    setBulkBotDeactivating(true);
-    const r = await store.deactivateAutomationForAllUsers();
-    setBulkBotDeactivating(false);
-    if (r.ok) {
-      toast(`Bot desactivado en ${r.updated ?? 0} usuario(s).`, "success");
-      void reloadUsuariosFromServer();
-    } else {
-      toast(r.error ?? "Error al desactivar", "error");
-    }
-  }
 
   async function handleResetUser() {
     if (!resetConfirmId) return;
@@ -448,12 +430,8 @@ function UsuariosContent() {
       let cmp = 0;
       if (sortBy === "reservation_count") {
         cmp = a.reservation_count - b.reservation_count;
-      } else if (sortBy === "client_type") {
-        cmp = clientTypeSortValue(a.client_type) - clientTypeSortValue(b.client_type);
       } else {
-        const sa = userBotActivated(a) ? 1 : 0;
-        const sb = userBotActivated(b) ? 1 : 0;
-        cmp = sa - sb;
+        cmp = clientTypeSortValue(a.client_type) - clientTypeSortValue(b.client_type);
       }
       if (cmp !== 0) return sortDir === "asc" ? cmp : -cmp;
       const ha = needsAttention(a) ? 0 : 1;
@@ -464,7 +442,9 @@ function UsuariosContent() {
     return list;
   }, [displayUsers, sortBy, sortDir, filterClientType]);
 
-  const tableColSpan = devMode ? 7 : 6;
+  const showTableSpinner = listBlocking && sortedUsers.length === 0;
+
+  const tableColSpan = 6;
 
   return (
     <ClientLayout>
@@ -477,26 +457,9 @@ function UsuariosContent() {
           </p>
         </div>
           <div className="flex flex-wrap items-center gap-2">
-            {devMode ? (
-              <button
-                type="button"
-                onClick={() => void handleDeactivateAllBots()}
-                disabled={bulkBotDeactivating || listLoading}
-                className="inline-flex items-center gap-2 px-4 py-3 font-semibold rounded-xl border-2 border-amber-300 bg-amber-50 text-amber-900 hover:bg-amber-100 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-              >
-                {bulkBotDeactivating ? (
-                  <svg className="w-5 h-5 animate-spin" fill="none" viewBox="0 0 24 24" aria-hidden>
-                    <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
-                    <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
-                  </svg>
-                ) : (
-                  <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" aria-hidden>
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M18.364 18.364A9 9 0 005.636 5.636m12.728 12.728A9 9 0 015.636 5.636m12.728 12.728L5.636 5.636" />
-                  </svg>
-                )}
-                Desactivar para todos
-              </button>
-            ) : null}
+            {/*
+              Desactivar para todos (bots): deshabilitado. Requiere botón + handleDeactivateAllBots + estado bulkBotDeactivating.
+            */}
             <button
               type="button"
               onClick={() => setAddUserOpen(true)}
@@ -510,41 +473,9 @@ function UsuariosContent() {
           </div>
         </div>
 
-        {/* Switch recordatorio recurrentes */}
-        {devMode ? (
-          <div className="mb-6 flex items-center justify-between gap-4 p-4 rounded-xl border-2 border-gray-200 bg-white">
-            <div>
-              <p className="font-semibold text-gray-900">Recordatorio a clientes recurrentes</p>
-              <p className="text-sm text-gray-500 mt-0.5">
-                Si está desactivado, no se envían recordatorios a clientes recurrentes (solo a quienes tienen bot activado).
-              </p>
-            </div>
-            <button
-              type="button"
-              role="switch"
-              aria-checked={recurrentReminderEnabled ?? false}
-              disabled={recurrentReminderLoading || recurrentReminderEnabled === null}
-              onClick={handleToggleRecurrentReminder}
-              className={`relative inline-flex h-7 w-12 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors focus:outline-none focus:ring-2 focus:ring-bombonera-500 focus:ring-offset-2 disabled:opacity-50 disabled:cursor-not-allowed ${
-                recurrentReminderEnabled === null
-                  ? "bg-gray-300"
-                  : recurrentReminderEnabled
-                    ? "bg-bombonera-600"
-                    : "bg-gray-200"
-              }`}
-            >
-              <span
-                className={`pointer-events-none inline-block h-6 w-6 transform rounded-full bg-white shadow ring-0 transition ${
-                  recurrentReminderEnabled === null
-                    ? "translate-x-3 opacity-70"
-                    : recurrentReminderEnabled
-                      ? "translate-x-5"
-                      : "translate-x-1"
-                }`}
-              />
-            </button>
-          </div>
-        ) : null}
+        {/*
+          Recordatorio a clientes recurrentes: deshabilitado. Requiere fetch /api/settings, handleToggleRecurrentReminder y el switch anterior.
+        */}
 
         <AddUserModal
           open={addUserOpen}
@@ -561,31 +492,6 @@ function UsuariosContent() {
             }
           }}
         />
-
-        {/* Banner de alerta si hay usuarios que necesitan ayuda */}
-        {(needsHelpCount ?? 0) > 0 && !filterNeedsHelp && (
-          <button
-            onClick={() => setFilterNeedsHelp(true)}
-            className="w-full mb-6 flex items-center gap-3 px-5 py-4 bg-red-50 border-2 border-red-200 rounded-xl text-left hover:bg-red-100 transition-colors"
-          >
-            <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-red-500 text-white font-bold text-body">
-              {needsHelpCount ?? 0}
-            </span>
-            <div>
-              <p className="text-body font-bold text-red-800">
-                {needsHelpCount === 1
-                  ? "1 usuario necesita atención"
-                  : `${needsHelpCount ?? 0} usuarios necesitan atención`}
-              </p>
-              <p className="text-sm text-red-600">
-                Usuarios con peligro de fraude o que requieren intervención humana. Click para revisar.
-              </p>
-            </div>
-            <svg className="h-5 w-5 text-red-400 ml-auto shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
-            </svg>
-          </button>
-        )}
 
         {/* Buscador + filtro */}
         <div className="mb-6 space-y-3">
@@ -651,15 +557,24 @@ function UsuariosContent() {
         </div>
 
         <p className="text-body text-gray-500 mb-4 font-medium">
-          {listLoading ? (
+          {showTableSpinner ? (
             "Cargando usuarios…"
           ) : (
             <>
               {sortedUsers.length} usuario{sortedUsers.length !== 1 ? "s" : ""}{" "}
               {search ? "encontrado" : ""}{sortedUsers.length !== 1 && search ? "s" : ""}
+              {listRevalidating ? (
+                <span className="inline-flex items-center gap-1.5 text-sm font-normal text-bombonera-600 mt-1.5 ml-1">
+                  <svg className="h-3.5 w-3.5 shrink-0 animate-spin" fill="none" viewBox="0 0 24 24" aria-hidden>
+                    <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                    <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
+                  </svg>
+                  Actualizando datos…
+                </span>
+              ) : null}
               {!filterNeedsHelp && !search.trim() ? (
                 <span className="block text-sm font-normal text-gray-500 mt-1.5 max-w-xl">
-                  Localizar a cualquier cliente, usa el buscador.
+                  Vista rápida (más reservas). Para localizar a cualquier cliente, usa el buscador.
                 </span>
               ) : null}
             </>
@@ -676,9 +591,6 @@ function UsuariosContent() {
                   </th>
                   <SortHeader label="Reservas" sortKey="reservation_count" onSort={handleSort} />
                   <SortHeader label="Tipo de cliente" sortKey="client_type" onSort={handleSort} />
-                  {devMode ? (
-                    <SortHeader label="Bot" sortKey="bot" onSort={handleSort} className="text-center" />
-                  ) : null}
                   <th className="px-4 py-4 text-center text-xs font-bold uppercase tracking-wide text-gray-600 whitespace-nowrap lg:px-5">
                     Pagos
                   </th>
@@ -691,7 +603,7 @@ function UsuariosContent() {
                 </tr>
               </thead>
               <tbody>
-                  {listLoading ? (
+                  {showTableSpinner ? (
                     <tr>
                       <td colSpan={tableColSpan} className="px-4 py-12 text-center text-sm text-gray-400">
                         Cargando…
@@ -826,46 +738,6 @@ function UsuariosContent() {
                                 <option value="sospechoso_fraude">Peligro de fraude</option>
                               </select>
                             </td>
-                          {devMode ? (
-                            <td className="p-6 text-center">
-                              <button
-                                onClick={() => {
-                                  const botOn = user.is_automated ?? true;
-                                  if (botOn) {
-                                    void handleToggleAutomation(user.id, true);
-                                    return;
-                                  }
-                                  if (user.client_type === "sospechoso_fraude") {
-                                    toast("Cambia el tipo de cliente antes de activar el bot", "error");
-                                    return;
-                                  }
-                                  const display = getDisplayName(user);
-                                  const waPhone = userWhatsAppPhone(user);
-                                  setActivateBotPending({
-                                    userId: user.id,
-                                    label:
-                                      display.name !== "Sin nombre"
-                                        ? display.name
-                                        : waPhone
-                                          ? formatDisplayPhone(waPhone)
-                                          : user.id,
-                                  });
-                                }}
-                                disabled={togglingId === user.id}
-                                className={`relative inline-flex h-7 w-12 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none disabled:opacity-50 ${
-                                  (user.is_automated ?? true) ? "bg-green-500" : "bg-gray-300"
-                                }`}
-                                role="switch"
-                                aria-checked={user.is_automated ?? true}
-                              >
-                                <span
-                                  className={`pointer-events-none inline-block h-6 w-6 transform rounded-full bg-white shadow-md ring-0 transition duration-200 ease-in-out ${
-                                    (user.is_automated ?? true) ? "translate-x-5" : "translate-x-0"
-                                  }`}
-                                />
-                              </button>
-                            </td>
-                          ) : null}
                           <td className="p-6 text-center align-middle">
                             {wa ? (
                               <CooldownNewTabLink
@@ -952,29 +824,9 @@ function UsuariosContent() {
         </div>
       </div>
 
-      <ActivateChatbotConfirmModal
-        open={!!activateBotPending}
-        title="¿Estás seguro de activar el chatbot?"
-        onCancel={() => setActivateBotPending(null)}
-        onConfirm={() => {
-          if (!activateBotPending) return;
-          void handleToggleAutomation(activateBotPending.userId, false);
-        }}
-        loading={togglingId === activateBotPending?.userId}
-      >
-        <p className="text-lg sm:text-xl font-bold text-red-900 leading-snug">
-          Vas a permitir que el <span className="underline decoration-red-600 decoration-4">bot responda automáticamente</span> por WhatsApp a este cliente.
-        </p>
-        <ul className="list-disc pl-5 space-y-2 text-base font-semibold text-red-900">
-          <li>Un clic por error puede generar respuestas automáticas y confusión para el cliente.</li>
-          <li>Solo confirma si es <strong>deliberado</strong>.</li>
-        </ul>
-        {activateBotPending && (
-          <p className="rounded-xl border-2 border-red-300 bg-white px-4 py-3 text-base font-bold text-red-950">
-            Cliente: <span className="font-mono">{activateBotPending.label}</span>
-          </p>
-        )}
-      </ActivateChatbotConfirmModal>
+      {/*
+        Modal confirmación activar chatbot (columna Bot): deshabilitado junto con ActivateChatbotConfirmModal.
+      */}
 
       {/* Modal de confirmación: eliminar usuario */}
       {resetConfirmId && (

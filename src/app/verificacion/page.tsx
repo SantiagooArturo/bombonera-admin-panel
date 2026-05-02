@@ -89,7 +89,9 @@ function VerificacionContent() {
             return (
                 r.phone_number?.includes(search) ||
                 r.representative_name?.toLowerCase().includes(search) ||
-                (COURT_LABELS[r.court_type as keyof typeof COURT_LABELS] ?? r.court_type).toLowerCase().includes(search) ||
+                (COURT_LABELS[r.court_type as keyof typeof COURT_LABELS] ?? r.court_type ?? "")
+                    .toLowerCase()
+                    .includes(search) ||
                 r.field?.toString().includes(search)
             );
         }
