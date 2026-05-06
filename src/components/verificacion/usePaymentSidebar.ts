@@ -562,7 +562,7 @@ export function usePaymentSidebar(options?: UsePaymentSidebarOptions) {
 
   const handleCancelReservation = useCallback(async () => {
     if (!selectedReservation) return false;
-    const confirmed = confirm("¿Eliminar esta reserva y todos sus pagos/boletas?");
+    const confirmed = confirm("¿Eliminar esta reserva y todos sus pagos? Las boletas emitidas no se eliminarán (ya están registradas en SUNAT).");
     if (!confirmed) return false;
     setCancellingReservation(true);
     const ok = await store.deleteReservationHard(selectedReservation.id);

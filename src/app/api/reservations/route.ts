@@ -466,12 +466,10 @@ export async function DELETE(request: NextRequest) {
     }
 
     const transfersSnap = await db.collection("transfers").where("reservation_id", "==", id).get();
-    const invoicesSnap = await db.collection("invoices").where("reservation_id", "==", id).get();
 
     const batch = db.batch();
     batch.delete(db.collection("reservations").doc(id));
     transfersSnap.docs.forEach((doc) => batch.delete(doc.ref));
-    invoicesSnap.docs.forEach((doc) => batch.delete(doc.ref));
 
     // Si la reserva era dueña de un horario recurrente, limpiar el registro
     const resDoc = await db.collection("reservations").doc(id).get();

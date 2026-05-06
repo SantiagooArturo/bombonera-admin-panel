@@ -31,6 +31,8 @@ const APISUNAT_SERIE_FACTURA = process.env.APISUNAT_SERIE_FACTURA || "F001";
 // o si el contador quedó desincronizado por cualquier razón.
 const MAX_EMISSION_RETRIES = 5;
 
+const APISUNAT_FETCH_TIMEOUT_MS = 45_000;
+
 const MISC_PANEL_USER_ID = "misc_panel";
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
@@ -487,7 +489,9 @@ export async function POST(request: NextRequest) {
 
     for (let attempt = 0; attempt < MAX_EMISSION_RETRIES; attempt++) {
       correlativo = await getNextCorrelativo(db, serieSunat);
+      const intentoLabel = `${serieSunat}-${correlativo}`;
 
+      try {
       const emitRes = await fetch(APISUNAT_URL_VAL, {
       method: "POST",
       headers: {
@@ -495,16 +499,28 @@ export async function POST(request: NextRequest) {
           Authorization: `Bearer ${APISUNAT_TOKEN_VAL}`,
       },
         body: JSON.stringify({ ...apisunatBaseBody, numero: correlativo }),
+        signal: AbortSignal.timeout(APISUNAT_FETCH_TIMEOUT_MS),
     });
 
       emitStatus = emitRes.status;
       emitData = (await emitRes.json()) as Record<string, unknown>;
+      } catch (fetchErr) {
+        console.warn(
+          `[invoice] fetch/parse error para ${serieSunat}-${correlativo} (intento ${attempt + 1}/${MAX_EMISSION_RETRIES}), reintentando...`,
+          fetchErr
+        );
+        emitData = null;
+        continue;
+      }
 
-      if (emitData.success) break;
+      if (emitData.success) {
+        console.log(`[invoice] SUNAT OK ${intentoLabel} (intento ${attempt + 1})`);
+        break;
+      }
 
       // Si NO es error de duplicado, es un error real → no reintentar
       if (!isDuplicateError(emitData.message as string)) {
-        console.error("apisunat emission error:", emitData);
+        console.error(`[invoice] SUNAT rechazó ${intentoLabel}:`, emitData);
       return NextResponse.json(
           { error: `Error de SUNAT: ${(emitData.message as string) || "Error desconocido"}` },
           { status: emitStatus === 401 ? 401 : 400 }
@@ -513,13 +529,13 @@ export async function POST(request: NextRequest) {
 
       // Duplicado: el counter ya se incrementó, el siguiente loop obtendrá el próximo número
       console.warn(
-        `Correlativo ${serieSunat}-${correlativo} duplicado en apisunat (intento ${attempt + 1}/${MAX_EMISSION_RETRIES}), reintentando...`
+        `[invoice] ${intentoLabel} duplicado en apisunat (intento ${attempt + 1}/${MAX_EMISSION_RETRIES}), reintentando...`
       );
     }
 
     // Si agotamos los reintentos sin éxito
     if (!emitData?.success) {
-      console.error("apisunat: se agotaron reintentos por duplicados", emitData);
+      console.error(`[invoice] apisunat: se agotaron reintentos (${MAX_EMISSION_RETRIES})`, emitData);
       return NextResponse.json(
         { error: `Error de SUNAT: no se pudo asignar un correlativo válido tras ${MAX_EMISSION_RETRIES} intentos` },
         { status: 400 }
@@ -579,7 +595,24 @@ export async function POST(request: NextRequest) {
     if (tipoComprobante === "factura") {
       invoiceDataPhase1.cliente_direccion = clienteDireccionSunat;
     }
-    const docRef = await db.collection("invoices").add(invoiceDataPhase1);
+    let docRef!: FirebaseFirestore.DocumentReference;
+    for (let firestoreAttempt = 0; firestoreAttempt < 3; firestoreAttempt++) {
+      try {
+        docRef = await db.collection("invoices").add(invoiceDataPhase1);
+        console.log(`[invoice] Firestore OK ${serieCorrelativo} (doc ${docRef.id})`);
+        break;
+      } catch (fsErr) {
+        if (firestoreAttempt === 2) {
+          console.error(`[invoice] Firestore FAIL definitivo para ${serieCorrelativo} tras 3 intentos:`, fsErr);
+          throw fsErr;
+        }
+        console.warn(
+          `[invoice] Firestore add falló (intento ${firestoreAttempt + 1}/3) para ${serieCorrelativo}, reintentando...`,
+          fsErr
+        );
+        await new Promise((r) => setTimeout(r, 600 * (firestoreAttempt + 1)));
+      }
+    }
 
     // 7b. PDFs: plantilla del panel (formal + QR) y ticket oficial apisunat, cada uno en Storage.
     const pathFormal = `invoices/${serieCorrelativo}-formal.pdf`;
@@ -774,7 +807,7 @@ export async function POST(request: NextRequest) {
   } catch (error) {
     const msg =
       error instanceof Error ? error.message : String(error);
-    console.error("Error creating invoice:", error);
+    console.error("[invoice] Error interno en POST:", error);
     return NextResponse.json(
       { error: `Error al crear boleta: ${msg}` },
       { status: 500 }
