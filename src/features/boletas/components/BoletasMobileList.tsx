@@ -4,7 +4,7 @@ import type { Invoice } from "@/lib/types";
 import { WHATSAPP_ICON_PATH } from "@/features/operaciones/whatsappIconPath";
 import { wspLink } from "@/features/operaciones/utils";
 import { anchorPropsForHref } from "@/lib/internal-href";
-import { formatInvoiceEmissionDate } from "../utils/formatInvoiceEmissionDate";
+import { invoiceEmissionDateDisplay } from "../utils/formatInvoiceEmissionDate";
 import { formatSolesAmountDisplay } from "../utils/formatSolesAmountDisplay";
 import {
   invoiceDescripcionOnly,
@@ -109,7 +109,7 @@ export function BoletasMobileList({
                 <p className="text-sm font-bold tabular-nums text-gray-900">
                   S/ {formatSolesAmountDisplay(inv.amount ?? 0)}
                 </p>
-                <p className="mt-0.5 text-xs text-gray-500">{formatInvoiceEmissionDate(inv.created_at)}</p>
+                <p className="mt-0.5 text-xs text-gray-500">{invoiceEmissionDateDisplay(inv)}</p>
               </div>
             </div>
 

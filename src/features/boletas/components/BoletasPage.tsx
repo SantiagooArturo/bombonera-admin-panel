@@ -7,7 +7,7 @@ import type { Invoice } from "@/lib/types";
 import { useStore } from "@/lib/hooks";
 import { useToastContext } from "@/components/ClientLayout";
 import { WHATSAPP_ICON_PATH } from "@/features/operaciones/whatsappIconPath";
-import { formatInvoiceEmissionDate } from "../utils/formatInvoiceEmissionDate";
+import { invoiceEmissionDateDisplay } from "../utils/formatInvoiceEmissionDate";
 import { formatSolesAmountDisplay } from "../utils/formatSolesAmountDisplay";
 import { wspLink } from "@/features/operaciones/utils";
 import { anchorPropsForHref } from "@/lib/internal-href";
@@ -546,7 +546,7 @@ export function BoletasPage() {
                         </span>
                       </td>
                       <td className="border-t border-gray-100 px-2 py-5 text-center align-middle text-xs text-gray-700 lg:px-3 xl:px-3.5 xl:text-sm">
-                        {formatInvoiceEmissionDate(inv.created_at)}
+                        {invoiceEmissionDateDisplay(inv)}
                       </td>
                       <td className="w-[6.75rem] max-w-[6.75rem] border-t border-gray-100 px-1.5 py-5 align-middle lg:px-2">
                         <div className="flex flex-wrap items-center justify-center gap-1">
