@@ -57,13 +57,6 @@ function ymdToMonthLabel(ym: string): string {
   return `${d.toLocaleDateString("es-PE", { month: "long" })} ${y}`;
 }
 
-function buildPeriodLabel(desde: string, hasta: string): string {
-  const mDesde = desde.slice(0, 7);
-  const mHasta = hasta.slice(0, 7);
-  if (mDesde === mHasta) return ymdToMonthLabel(desde);
-  return `${ymdToMonthLabel(desde)} — ${ymdToMonthLabel(hasta)}`;
-}
-
 /**
  * Cuando el nombre del cliente ocupa múltiples columnas en el Excel,
  * todas las columnas siguientes se desplazan a la derecha.
@@ -187,7 +180,6 @@ export async function POST(request: NextRequest) {
       .map((r) => r.fechaEmision)
       .filter((f): f is string => YMD_RE.test(f))
       .sort();
-    const fechaDesde = sireFechas[0] || "";
     const fechaHasta = sireFechas[sireFechas.length - 1] || "";
     const fechaPartes = fechaHasta ? fechaHasta.split("-") : [];
     const periodoLabel =
@@ -233,7 +225,6 @@ export async function POST(request: NextRequest) {
     const sorted = Array.from(allCodigos).sort((a, b) => a - b);
     let sumSire = 0;
     let sumPlataforma = 0;
-    let sumDiferencia = 0;
     let corregidasCount = 0;
 
     for (const cod of sorted) {
@@ -252,20 +243,8 @@ export async function POST(request: NextRequest) {
       else if (sire && !plat) estado = "📋 Solo SIRE";
       else if (diff != null && Math.abs(diff) > 0.01) estado = "❌ Diferencia";
 
-      // Detectar si esta boleta fue corregida (shifted)
-      if (sire && sire.total > 0 && Number.isFinite(sire.total)) {
-        const rawTotalCol = header.indexOf("Total CP");
-        // Si el Total CP original era 0 pero extractRealTotal encontró el monto, fue corregida
-        // No podemos saberlo directamente del SireRow, así que lo inferimos:
-        // Si el monto match con plataforma y el SIRE lo tenía en una columna corrida
-        if (estado === "✅ OK" && sire.total > 0) {
-          // Asumimos que si está OK, pudo haber sido corregida
-        }
-      }
-
       if (valorSire != null) sumSire += valorSire;
       if (valorPlat != null) sumPlataforma += valorPlat;
-      if (diff != null) sumDiferencia += diff;
 
       rows.push({
         codigo: cod,
