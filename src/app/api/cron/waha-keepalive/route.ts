@@ -1,42 +1,24 @@
 import { NextResponse } from "next/server";
 import { recordKeepaliveExecution } from "@/features/salud/services/wahaKeepaliveHealth";
+import { getWaha } from "@/lib/waha-client";
 
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
 
-const RAILWAY_CHATBOT_URL =
-  (process.env.CHATBOT_API_URL || "https://bombonera-booking-agent-production.up.railway.app").replace(/\/$/, "");
+const KEEPALIVE_PHONE = "51982242312@c.us";
+const KEEPALIVE_MESSAGE = "ping keepalive waha";
 
 /**
  * GET /api/cron/waha-keepalive
- * Endpoint para Vercel Cron.
- * Llama a Railway para ejecutar keepalive de WAHA.
+ * Endpoint para Vercel Cron. Mantiene viva la sesión WAHA (envío directo, ya sin Railway).
  */
 export async function GET() {
   try {
-    const response = await fetch(`${RAILWAY_CHATBOT_URL}/chatbot/keepalive/`, {
-      method: "GET",
-      cache: "no-store",
-      headers: { "Cache-Control": "no-store" },
-    });
-    const data = await response.json().catch(() => ({}));
-    if (!response.ok) {
-      await recordKeepaliveExecution({
-        ok: false,
-        httpStatus: response.status,
-        errorMessage: data?.message || "Railway keepalive failed",
-      }).catch((err) => {
-        console.error("No se pudo guardar estado keepalive (error):", err);
-      });
-      return NextResponse.json(
-        { success: false, error: data?.message || "Railway keepalive failed" },
-        { status: response.status, headers: { "Cache-Control": "no-store, max-age=0" } }
-      );
-    }
+    await getWaha().sendMessage(KEEPALIVE_PHONE, KEEPALIVE_MESSAGE, false);
 
     await recordKeepaliveExecution({
       ok: true,
-      httpStatus: response.status,
+      httpStatus: 200,
       errorMessage: null,
     }).catch((err) => {
       console.error("No se pudo guardar estado keepalive (ok):", err);
@@ -45,10 +27,8 @@ export async function GET() {
     return NextResponse.json(
       {
         success: true,
-        sent: data?.sent === true || data?.status === "success",
-        target: data?.target || null,
-        railway_status: data?.status || "ok",
-        detail: data,
+        sent: true,
+        target: KEEPALIVE_PHONE,
       },
       { headers: { "Cache-Control": "no-store, max-age=0" } }
     );

@@ -19,6 +19,10 @@
     {
       "path": "/api/cron/waha-keepalive",
       "schedule": "0 */4 * * *"
+    },
+    {
+      "path": "/api/cron/backlog-cleaner",
+      "schedule": "*/30 * * * *"
     }
   ]
 }

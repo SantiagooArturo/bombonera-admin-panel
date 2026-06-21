@@ -1,11 +1,5 @@
 import { getDb } from "@/lib/firebase-admin";
-import { getChatbotApiUrl } from "@/lib/chatbot-api-url";
-import {
-  getWahaApiKey,
-  getWahaSession,
-  getWahaUrl,
-  isWahaConfigured,
-} from "@/lib/waha-server-config";
+import { getWaha } from "@/lib/waha-client";
 
 function normalizeChatId(chatId: string): string {
   const raw = (chatId || "").trim();
@@ -75,74 +69,9 @@ export async function resolveWhatsAppTarget(input: string): Promise<{ chatId: st
 
 /**
  * Envía un mensaje de WhatsApp y lo guarda en el historial de Firebase.
- * Si CHATBOT_API_URL está configurado, delega al servidor Python (centralizado).
- * Si no, llama a WAHA directamente (fallback).
+ * Usa el cliente WAHA en proceso (ya no delega al backend Python).
  */
 export async function sendWhatsAppMessage(chatId: string, text: string) {
   const resolved = await resolveWhatsAppTarget(chatId);
-  const normalizedChatId = resolved.chatId;
-  const firebaseId = resolved.firebaseId;
-
-  const chatbotUrl = getChatbotApiUrl();
-  if (chatbotUrl) {
-    const res = await fetch(`${chatbotUrl}/chatbot/send-bot-message/`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        chat_id: normalizedChatId,
-        firebase_id: firebaseId,
-        message: text,
-      }),
-    });
-
-    if (!res.ok) {
-      const error = await res.text();
-      throw new Error(`Chatbot API error: ${res.status} - ${error}`);
-    }
-
-    const data = await res.json().catch(() => ({}));
-    if (data?.status && data.status !== "success") {
-      throw new Error(`Chatbot API error: ${JSON.stringify(data)}`);
-    }
-    return data;
-  }
-
-  // Fallback: llamar a WAHA directamente (sin guardar en historial)
-  if (!isWahaConfigured()) {
-    throw new Error(
-      "WAHA no configurado: defina WAHA_URL y WAHA_API_KEY en el entorno para el fallback de envío."
-    );
-  }
-
-  const headers: Record<string, string> = {
-    "Content-Type": "application/json",
-    "X-Api-Key": getWahaApiKey(),
-  };
-
-  const res = await fetch(`${getWahaUrl()}/api/sendText`, {
-    method: "POST",
-    headers,
-    body: JSON.stringify({
-      session: getWahaSession(),
-      chatId: normalizedChatId,
-      text,
-    }),
-  });
-
-  if (!res.ok) {
-    const error = await res.text();
-    throw new Error(`WAHA error: ${res.status} - ${error}`);
-  }
-
-  // Marcar interacción en Firestore (manual fallback)
-  try {
-    const db = getDb();
-    await db.collection("users").doc(resolved.firebaseId).set({
-      last_interaction_at: new Date().toISOString()
-    }, { merge: true });
-  } catch (e) {
-    console.warn(`No se pudo actualizar last_interaction_at para ${resolved.firebaseId}:`, e);
-  }
-
-  return res.json();
+  return getWaha().sendMessage(resolved.chatId, text, true);
 }
