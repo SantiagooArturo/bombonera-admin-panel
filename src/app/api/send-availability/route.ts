@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getChatbotApiUrl } from "@/lib/chatbot-api-url";
 import { resolveWhatsAppTarget } from "@/lib/waha";
+import { executeShowSchedule } from "@/lib/agent/tools";
+
+export const maxDuration = 60;
 
 export async function POST(request: NextRequest) {
   try {
@@ -11,32 +13,22 @@ export async function POST(request: NextRequest) {
     if (!date || typeof date !== "string") {
       return NextResponse.json({ error: "date es obligatorio" }, { status: 400 });
     }
-    const chatbotUrl = getChatbotApiUrl();
-    if (!chatbotUrl) {
-      return NextResponse.json(
-        { error: "CHATBOT_API_URL no configurado para enviar imagen de horarios." },
-        { status: 500 }
-      );
-    }
 
     const target = await resolveWhatsAppTarget(chat_id);
-    const botRes = await fetch(`${chatbotUrl}/chatbot/send-schedule-image/`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        chat_id: target.chatId,
-        firebase_id: target.firebaseId,
-        date,
-      }),
-    });
+    const result = await executeShowSchedule(target.chatId, date, null);
 
-    const responseData = await botRes.json().catch(() => ({}));
-    if (!botRes.ok || responseData?.status === "error") {
-      const message =
-        typeof responseData?.message === "string"
-          ? responseData.message
-          : "No se pudo enviar la imagen de horarios.";
-      return NextResponse.json({ error: message }, { status: botRes.ok ? 500 : botRes.status });
+    if (
+      !result ||
+      result.startsWith("Error") ||
+      result.startsWith("No se pueden") ||
+      result.startsWith("Solo se puede") ||
+      result.startsWith("Formato de fecha inválido") ||
+      result.startsWith("ERROR")
+    ) {
+      return NextResponse.json(
+        { error: result || "No se pudo enviar la imagen de horarios." },
+        { status: 500 }
+      );
     }
 
     return NextResponse.json({ success: true });

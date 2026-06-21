@@ -4,8 +4,8 @@ import {
   getInvoicePdfBufferForSend,
   getInvoiceXmlBufferForSend,
 } from "@/features/boletas/services/invoicePdfBufferForSend";
-import { getChatbotApiUrl } from "@/lib/chatbot-api-url";
 import { resolveWhatsAppTarget, sendWhatsAppMessage } from "@/lib/waha";
+import { getWaha } from "@/lib/waha-client";
 
 /**
  * Panel genera el PDF en servidor y lo manda al bot en base64 (mismo patrón que disponibilidad:
@@ -29,7 +29,6 @@ function xmlFilenameFromPdfFilename(pdfName: string): string {
   return "comprobante.xml";
 }
 
-const BOT_TIMEOUT_MS = 120_000;
 const BOT_MEDIA_RETRY_DELAY_MS = 900;
 
 function shouldRetryBotMediaSend(message: string | undefined): boolean {
@@ -48,36 +47,25 @@ function sleep(ms: number): Promise<void> {
 }
 
 async function postSendFileToBot(params: {
-  chatbotUrl: string;
   chatId: string;
   fileBase64: string;
   filename: string;
   caption: string;
 }): Promise<{ ok: boolean; message?: string; status: number }> {
   for (let attempt = 1; attempt <= 2; attempt++) {
-    const botRes = await fetch(`${params.chatbotUrl}/chatbot/send-file/`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        chat_id: params.chatId,
-        file_base64: params.fileBase64,
-        caption: params.caption,
-        filename: params.filename,
-      }),
-      signal: AbortSignal.timeout(BOT_TIMEOUT_MS),
+    const [success, errMsg] = await getWaha().sendFile(params.chatId, {
+      fileBase64: params.fileBase64,
+      filename: params.filename,
+      caption: params.caption || undefined,
+      mimetype: params.filename.toLowerCase().endsWith(".xml")
+        ? "application/xml"
+        : "application/pdf",
     });
-
-    const responseData = await botRes.json().catch(() => ({}));
-    const errMsg =
-      typeof (responseData as { message?: string })?.message === "string"
-        ? (responseData as { message: string }).message
-        : undefined;
-    const failed = !botRes.ok || (responseData as { status?: string })?.status === "error";
-    if (!failed) {
-      return { ok: true, status: botRes.status };
+    if (success) {
+      return { ok: true, status: 200 };
     }
 
-    const retryable = shouldRetryBotMediaSend(errMsg);
+    const retryable = shouldRetryBotMediaSend(errMsg ?? undefined);
     if (attempt < 2 && retryable) {
       await sleep(BOT_MEDIA_RETRY_DELAY_MS);
       continue;
@@ -86,7 +74,7 @@ async function postSendFileToBot(params: {
     return {
       ok: false,
       message: errMsg || "No se pudo enviar el archivo.",
-      status: botRes.ok ? 500 : botRes.status,
+      status: 500,
     };
   }
 
@@ -103,14 +91,6 @@ export async function POST(request: NextRequest) {
 
     if (!chat_id) {
       return NextResponse.json({ error: "Faltan chat_id" }, { status: 400 });
-    }
-
-    const chatbotUrl = getChatbotApiUrl();
-    if (!chatbotUrl) {
-      return NextResponse.json(
-        { error: "CHATBOT_API_URL no configurado para enviar boleta por WhatsApp." },
-        { status: 500 }
-      );
     }
 
     const target = await resolveWhatsAppTarget(chat_id);
@@ -162,7 +142,6 @@ export async function POST(request: NextRequest) {
         const xmlFilename = xmlFilenameFromPdfFilename(pdfFilename);
 
         const pdfSend = await postSendFileToBot({
-          chatbotUrl,
           chatId: target.chatId,
           fileBase64: pdfBase64,
           filename: pdfFilename,
@@ -176,7 +155,6 @@ export async function POST(request: NextRequest) {
         }
 
         const xmlSend = await postSendFileToBot({
-          chatbotUrl,
           chatId: target.chatId,
           fileBase64: xmlBuf.toString("base64"),
           filename: xmlFilename,
@@ -204,7 +182,6 @@ export async function POST(request: NextRequest) {
     }
 
     const botRes = await postSendFileToBot({
-      chatbotUrl,
       chatId: target.chatId,
       fileBase64: pdfBase64,
       filename: pdfFilename,
