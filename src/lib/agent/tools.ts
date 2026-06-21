@@ -7,6 +7,7 @@ import { getWaha, normalizeChatIdToPhone } from "@/lib/waha-client";
 import {
   RESPUESTA_OBLIGATORIA_MSG_PREFIX,
   LIMIT_BOT_ADVANCE_DAYS,
+  MAX_ADVANCE_DAYS,
   isoFromLimaOffset,
   formatDateForUser,
   generateDaySchedulePng,
@@ -20,11 +21,16 @@ function isValidIsoDate(date: string): boolean {
   return dt.getUTCFullYear() === y && dt.getUTCMonth() === m - 1 && dt.getUTCDate() === d;
 }
 
-/** show_schedule: genera y envía la cuadrícula del día. */
+/**
+ * show_schedule: genera y envía la cuadrícula del día.
+ * bypassBotLimit: el panel admin puede enviar hasta MAX_ADVANCE_DAYS (13);
+ * el agente conserva el límite del bot (LIMIT_BOT_ADVANCE_DAYS = 6).
+ */
 export async function executeShowSchedule(
   chatId: string,
   date: string,
-  timeSlot?: string | null
+  timeSlot?: string | null,
+  opts?: { bypassBotLimit?: boolean }
 ): Promise<string> {
   try {
     const cleanDate = (date || "").trim();
@@ -32,11 +38,12 @@ export async function executeShowSchedule(
       return "Formato de fecha inválido. Usa YYYY-MM-DD (ej: 2024-12-25)";
     }
 
+    const advanceLimit = opts?.bypassBotLimit ? MAX_ADVANCE_DAYS : LIMIT_BOT_ADVANCE_DAYS;
     const today = isoFromLimaOffset(0);
-    const maxDate = isoFromLimaOffset(LIMIT_BOT_ADVANCE_DAYS);
+    const maxDate = isoFromLimaOffset(advanceLimit);
     if (cleanDate < today) return "No se pueden ver horarios de fechas pasadas.";
     if (cleanDate > maxDate) {
-      return `ERROR: El chatbot solo puede dar disponibilidad hasta el ${formatDateForUser(maxDate)}.`;
+      return `ERROR: Solo se puede dar disponibilidad hasta el ${formatDateForUser(maxDate)}.`;
     }
 
     const imgBase64 = await generateDaySchedulePng(cleanDate);

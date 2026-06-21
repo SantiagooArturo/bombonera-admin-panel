@@ -15,19 +15,13 @@ export async function POST(request: NextRequest) {
     }
 
     const target = await resolveWhatsAppTarget(chat_id);
-    const result = await executeShowSchedule(target.chatId, date, null);
+    const result = await executeShowSchedule(target.chatId, date, null, { bypassBotLimit: true });
 
-    if (
-      !result ||
-      result.startsWith("Error") ||
-      result.startsWith("No se pueden") ||
-      result.startsWith("Solo se puede") ||
-      result.startsWith("Formato de fecha inválido") ||
-      result.startsWith("ERROR")
-    ) {
+    if (!result.startsWith("✅")) {
+      const isInternal = result.startsWith("Error") || result.startsWith("❌");
       return NextResponse.json(
         { error: result || "No se pudo enviar la imagen de horarios." },
-        { status: 500 }
+        { status: isInternal ? 500 : 400 }
       );
     }
 

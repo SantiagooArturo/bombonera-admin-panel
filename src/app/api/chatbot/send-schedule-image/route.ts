@@ -23,17 +23,13 @@ export async function POST(request: NextRequest) {
     }
     chatId = normalizeChatId(chatId);
 
-    const result = await executeShowSchedule(chatId, date, null);
-    if (!result || result.startsWith("Error")) {
-      return NextResponse.json({ status: "error", message: result || "No se pudo enviar la imagen" }, { status: 500 });
-    }
-    if (
-      result.startsWith("No se pueden") ||
-      result.startsWith("Solo se puede") ||
-      result.startsWith("Formato de fecha inválido") ||
-      result.startsWith("ERROR")
-    ) {
-      return NextResponse.json({ status: "error", message: result }, { status: 400 });
+    const result = await executeShowSchedule(chatId, date, null, { bypassBotLimit: true });
+    if (!result.startsWith("✅")) {
+      const isInternal = result.startsWith("Error") || result.startsWith("❌");
+      return NextResponse.json(
+        { status: "error", message: result || "No se pudo enviar la imagen" },
+        { status: isInternal ? 500 : 400 }
+      );
     }
     return NextResponse.json({ status: "success", message: result });
   } catch (error) {
