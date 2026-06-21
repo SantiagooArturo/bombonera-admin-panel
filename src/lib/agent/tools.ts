@@ -50,7 +50,12 @@ export async function executeShowSchedule(
     if (!imgBase64) return "Error al generar la imagen de horarios.";
 
     const caption = `📅 Horarios disponibles - ${formatDateForUser(cleanDate)}`;
-    const ok = await getWaha().sendImage(chatId, { imageBase64: imgBase64, caption });
+    const ok = await getWaha().sendImage(chatId, {
+      imageBase64: imgBase64,
+      caption,
+      mimetype: "image/png",
+      filename: "schedule.png",
+    });
     if (!ok) return "Error al enviar la imagen.";
 
     if (timeSlot) {

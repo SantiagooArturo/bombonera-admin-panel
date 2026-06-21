@@ -1,11 +1,28 @@
 /**
  * Horarios, disponibilidad e imagen de cuadrícula (port de utils/tools/tool_show_schedule.py).
- * La imagen se genera como SVG y se rasteriza a JPEG con sharp (compatible con Vercel).
+ * La imagen se genera como SVG y se rasteriza a PNG con @resvg/resvg-js usando una
+ * tipografía empacada (DejaVuSans.ttf), para que el texto renderice igual en Vercel (Linux),
+ * donde no hay fuentes del sistema.
  */
 import { getDb } from "@/lib/firebase-admin";
 import { Timestamp } from "firebase-admin/firestore";
+import { existsSync } from "fs";
+import path from "path";
 import { isHoliday } from "@/lib/feriados-peru";
 import { getCourtConfigByField, normalizeCourtSize } from "@/lib/agent/court-config";
+
+let _fontPath: string | null | undefined;
+function fontFilePath(): string | null {
+  if (_fontPath !== undefined) return _fontPath;
+  const p = path.join(process.cwd(), "src", "lib", "agent", "assets", "DejaVuSans.ttf");
+  if (existsSync(p)) {
+    _fontPath = p;
+  } else {
+    console.warn(`No se encontró la tipografía en ${p}; se usará la fuente del sistema.`);
+    _fontPath = null;
+  }
+  return _fontPath;
+}
 
 export const ALL_FIELDS = Array.from({ length: 12 }, (_, i) => i + 1);
 export const RESPUESTA_OBLIGATORIA_MSG_PREFIX = "RESPUESTA_OBLIGATORIA_MSG: ";
@@ -325,7 +342,7 @@ export async function generateDaySchedulePng(fullDate: string): Promise<string |
     );
     parts.push(`<rect width="${totalW}" height="${totalH}" fill="#FFFFFF"/>`);
     parts.push(
-      `<text x="${totalW / 2}" y="${titleH / 2}" font-family="Arial, sans-serif" font-size="22" font-weight="bold" fill="#111827" text-anchor="middle" dominant-baseline="central">${xmlEscape(headerText)}</text>`
+      `<text x="${totalW / 2}" y="${titleH / 2}" font-family="DejaVu Sans" font-size="22" font-weight="bold" fill="#111827" text-anchor="middle" dominant-baseline="central">${xmlEscape(headerText)}</text>`
     );
 
     // Headers de columna
@@ -338,10 +355,10 @@ export async function generateDaySchedulePng(fullDate: string): Promise<string |
         `<rect x="${x}" y="${y}" width="${cellW}" height="${colHeaderH}" fill="${colors.bg}" stroke="${colors.border}"/>`
       );
       parts.push(
-        `<text x="${x + cellW / 2}" y="${y + colHeaderH / 2 - 7}" font-family="Arial, sans-serif" font-size="13" fill="#1F2937" text-anchor="middle" dominant-baseline="central">Cancha ${fieldNum}</text>`
+        `<text x="${x + cellW / 2}" y="${y + colHeaderH / 2 - 7}" font-family="DejaVu Sans" font-size="13" fill="#1F2937" text-anchor="middle" dominant-baseline="central">Cancha ${fieldNum}</text>`
       );
       parts.push(
-        `<text x="${x + cellW / 2}" y="${y + colHeaderH / 2 + 10}" font-family="Arial, sans-serif" font-size="11" fill="#6B7280" text-anchor="middle" dominant-baseline="central">${xmlEscape(fieldType || "?")}</text>`
+        `<text x="${x + cellW / 2}" y="${y + colHeaderH / 2 + 10}" font-family="DejaVu Sans" font-size="11" fill="#6B7280" text-anchor="middle" dominant-baseline="central">${xmlEscape(fieldType || "?")}</text>`
       );
     });
 
@@ -350,7 +367,7 @@ export async function generateDaySchedulePng(fullDate: string): Promise<string |
       const y = gridTop + rowIdx * cellH;
       const timeText = formatTime12h(slot);
       parts.push(
-        `<text x="${(timeColW - 4) / 2}" y="${y + cellH / 2}" font-family="Arial, sans-serif" font-size="12" fill="#374151" text-anchor="middle" dominant-baseline="central">${xmlEscape(timeText)}</text>`
+        `<text x="${(timeColW - 4) / 2}" y="${y + cellH / 2}" font-family="DejaVu Sans" font-size="12" fill="#374151" text-anchor="middle" dominant-baseline="central">${xmlEscape(timeText)}</text>`
       );
 
       const taken = occupied.get(`${dayName}-${slot}`) || new Set<number>();
@@ -370,7 +387,7 @@ export async function generateDaySchedulePng(fullDate: string): Promise<string |
         parts.push(`<rect x="${x}" y="${y}" width="${cellW}" height="${cellH}" fill="${fill}" stroke="${border}"/>`);
         if (label) {
           parts.push(
-            `<text x="${x + cellW / 2}" y="${y + cellH / 2}" font-family="Arial, sans-serif" font-size="13" fill="${labelColor}" text-anchor="middle" dominant-baseline="central">${label}</text>`
+            `<text x="${x + cellW / 2}" y="${y + cellH / 2}" font-family="DejaVu Sans" font-size="13" fill="${labelColor}" text-anchor="middle" dominant-baseline="central">${label}</text>`
           );
         }
       });
@@ -378,13 +395,20 @@ export async function generateDaySchedulePng(fullDate: string): Promise<string |
 
     const endLabel = formatTime12h("22:50");
     parts.push(
-      `<text x="${(timeColW - 4) / 2}" y="${gridTop + rowH + footerH / 2}" font-family="Arial, sans-serif" font-size="12" fill="#374151" text-anchor="middle" dominant-baseline="central">${xmlEscape(endLabel)}</text>`
+      `<text x="${(timeColW - 4) / 2}" y="${gridTop + rowH + footerH / 2}" font-family="DejaVu Sans" font-size="12" fill="#374151" text-anchor="middle" dominant-baseline="central">${xmlEscape(endLabel)}</text>`
     );
     parts.push("</svg>");
 
-    const sharp = (await import("sharp")).default;
-    const buffer = await sharp(Buffer.from(parts.join(""))).jpeg({ quality: 95 }).toBuffer();
-    return buffer.toString("base64");
+    const { Resvg } = await import("@resvg/resvg-js");
+    const fontPath = fontFilePath();
+    const resvg = new Resvg(parts.join(""), {
+      font: fontPath
+        ? { fontFiles: [fontPath], loadSystemFonts: false, defaultFontFamily: "DejaVu Sans" }
+        : { loadSystemFonts: true, defaultFontFamily: "DejaVu Sans" },
+      fitTo: { mode: "original" },
+    });
+    const png = resvg.render().asPng();
+    return Buffer.from(png).toString("base64");
   } catch (e) {
     console.error("Error generando imagen de horario:", e);
     return null;
