@@ -13,5 +13,5 @@ export function getInvoiceUiStatus(inv: Invoice): InvoiceUiStatus {
 
 export function invoiceIsVigenteForExport(inv: Invoice): boolean {
   const s = getInvoiceUiStatus(inv);
-  return s === "aprobado" || s === "pendiente";
+  return s === "aprobado" || s === "pendiente" || s === "anulado";
 }

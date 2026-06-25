@@ -1,5 +1,5 @@
 import type { Invoice } from "@/lib/types";
-import { invoiceIsVigenteForExport } from "./invoiceUiStatus";
+import { getInvoiceUiStatus, invoiceIsVigenteForExport } from "./invoiceUiStatus";
 import { sanitizeReceptorNombre } from "./sanitizeReceptorNombre";
 
 export type ExportInvoiceKind = "boleta" | "factura";
@@ -214,13 +214,14 @@ function buildRows(invoices: Invoice[]): Array<ExportRow & { _date: Date | null 
   return invoices.map((inv) => {
     const d = parseInvoiceDate(inv);
     const { serie, code } = getSerieAndCode(inv);
+    const isAnulado = getInvoiceUiStatus(inv) === "anulado";
     return {
       Fecha: d ? toYmdFromDate(d) : "",
       "Prefijo/Serie": serie,
       Codigo: code,
       "DNI/RUC cliente": getClientDoc(inv),
       "Nombre cliente": getClientName(inv),
-      Monto: Number(inv.amount || 0),
+      Monto: isAnulado ? 0 : Number(inv.amount || 0),
       _date: d,
     };
   });
