@@ -220,7 +220,7 @@ function buildRows(invoices: Invoice[]): Array<ExportRow & { _date: Date | null 
       "Prefijo/Serie": serie,
       Codigo: code,
       "DNI/RUC cliente": getClientDoc(inv),
-      "Nombre cliente": getClientName(inv),
+      "Nombre cliente": isAnulado ? "ANULADO" : getClientName(inv),
       Monto: isAnulado ? 0 : Number(inv.amount || 0),
       _date: d,
     };
