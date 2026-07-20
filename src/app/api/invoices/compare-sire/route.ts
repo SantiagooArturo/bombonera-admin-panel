@@ -1,5 +1,10 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getDb } from "@/lib/firebase-admin";
+import { getEmisorSunatFromEnv } from "@/features/boletas/pdf/emisorSunatEnv";
+import {
+  scanMissingSunatInvoicesForFirestore,
+  commitRecoveredInvoiceDocs,
+} from "@/features/boletas/services/sunatFirestoreRecovery";
 
 const APISUNAT_SERIE_BOLETA = process.env.APISUNAT_SERIE_BOLETA || "B001";
 
@@ -189,6 +194,28 @@ export async function POST(request: NextRequest) {
 
     // ── Fetch plataforma ── filtrar por rango de correlativos ──
     const db = getDb();
+
+    // Recuperación automática de boletas SUNAT ausentes en segundo plano
+    const APISUNAT_URL = process.env.APISUNAT_URL?.trim();
+    const APISUNAT_TOKEN = process.env.APISUNAT_TOKEN?.trim();
+    if (APISUNAT_URL && APISUNAT_TOKEN) {
+      try {
+        const emisor = getEmisorSunatFromEnv();
+        const scan = await scanMissingSunatInvoicesForFirestore(db, {
+          serie: APISUNAT_SERIE_BOLETA,
+          apisunatUrl: APISUNAT_URL,
+          apisunatToken: APISUNAT_TOKEN,
+          rucEmisor: emisor.ruc.replace(/\D/g, ""),
+          recoverySourceForDocs: "api_compare_sire_auto_recover",
+        });
+        if (scan.toCreate && scan.toCreate.length > 0) {
+          await commitRecoveredInvoiceDocs(db, APISUNAT_SERIE_BOLETA, scan.toCreate);
+        }
+      } catch (err) {
+        console.error("Error al recuperar boletas perdidas en compare-sire:", err);
+      }
+    }
+
     const invoicesSnap = await db
       .collection("invoices")
       .where("serie", "==", APISUNAT_SERIE_BOLETA)
