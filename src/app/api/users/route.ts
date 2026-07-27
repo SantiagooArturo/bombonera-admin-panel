@@ -338,7 +338,7 @@ export async function DELETE(request: NextRequest) {
       try {
         const body = await request.json();
         id = body?.id;
-      } catch (e) {
+      } catch {
         // Ignore JSON parsing errors for empty/non-JSON bodies
       }
     }
