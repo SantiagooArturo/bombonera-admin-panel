@@ -331,7 +331,17 @@ export async function PATCH(request: NextRequest) {
 export async function DELETE(request: NextRequest) {
   try {
     const db = getDb();
-    const { id } = await request.json();
+    const { searchParams } = new URL(request.url);
+    let id = searchParams.get("id");
+
+    if (!id) {
+      try {
+        const body = await request.json();
+        id = body?.id;
+      } catch (e) {
+        // Ignore JSON parsing errors for empty/non-JSON bodies
+      }
+    }
 
     if (!id) {
       return NextResponse.json({ error: "Se requiere id del usuario" }, { status: 400 });
