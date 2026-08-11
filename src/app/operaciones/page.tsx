@@ -503,6 +503,7 @@ export default function OperacionesPage() {
     const ok = printAvailabilitySheet({
       date: selectedDate,
       reservations,
+      blockedSlots,
     });
     if (!ok) {
       toast("No se pudo abrir la vista de impresión. Revisa si tu navegador bloqueó la ventana emergente.", "error");

@@ -1,4 +1,4 @@
-import { TIME_SLOTS, type Reservation } from "@/lib/types";
+import { TIME_SLOTS, type Reservation, type BlockedSlot } from "@/lib/types";
 
 function escapeHtml(input: string): string {
   return input
@@ -49,27 +49,46 @@ function normalizeName(value: string | undefined): string {
   return clean.length > 0 ? clean : "Sin nombre";
 }
 
-function getCellData(reservations: Reservation[], field: number, slot: string) {
+function getCellData(reservations: Reservation[], blockedSlots: BlockedSlot[] | undefined, field: number, slot: string) {
   const match = reservations.find((r) => r.field === field && (r.time_slots || []).includes(slot));
-  if (!match) return null;
+  if (match) {
+    const name = escapeHtml(normalizeName(match.representative_name));
+    const total = match.total_price || 0;
+    const paid = match.amount_paid || 0;
+    const rest = Math.max(0, total - paid);
 
-  const name = escapeHtml(normalizeName(match.representative_name));
-  const total = match.total_price || 0;
-  const paid = match.amount_paid || 0;
-  const rest = Math.max(0, total - paid);
+    const html = `
+      <div class="client-name">${name}</div>
+      <div class="payment-info">
+        <div>Total: S/ ${total}</div>
+        <div>Resta: S/ ${rest}</div>
+      </div>
+    `;
 
-  const html = `
-    <div class="client-name">${name}</div>
-    <div class="payment-info">
-      <div>Total: S/ ${total}</div>
-      <div>Resta: S/ ${rest}</div>
-    </div>
-  `;
+    return {
+      id: match.id,
+      html,
+      isBlocked: false,
+    };
+  }
 
-  return {
-    id: match.id,
-    html,
-  };
+  if (blockedSlots) {
+    const matchBlocked = blockedSlots.find((b) => b.field === field && b.time_slot === slot);
+    if (matchBlocked) {
+      const reason = escapeHtml(matchBlocked.reason || "Bloqueado");
+      const html = `
+        <div class="blocked-title">BLOQUEADO</div>
+        <div class="blocked-reason">${reason}</div>
+      `;
+      return {
+        id: matchBlocked.rule_id || `block-${matchBlocked.reason}`,
+        html,
+        isBlocked: true,
+      };
+    }
+  }
+
+  return null;
 }
 
 const FIELD_GROUPS: number[][] = [
@@ -81,8 +100,9 @@ const FIELD_GROUPS: number[][] = [
 export function printAvailabilitySheet(params: {
   date: string;
   reservations: Reservation[];
+  blockedSlots?: BlockedSlot[];
 }): boolean {
-  const { date, reservations } = params;
+  const { date, reservations, blockedSlots } = params;
   const safeDate = escapeHtml(formatPrintableDateEs(date));
 
   const pages = FIELD_GROUPS.map((group, pageIdx) => {
@@ -98,14 +118,14 @@ export function printAvailabilitySheet(params: {
             return "";
           }
 
-          const data = getCellData(reservations, field, slot);
+          const data = getCellData(reservations, blockedSlots, field, slot);
           if (!data) {
             return "<td>&nbsp;</td>";
           }
 
           let rowspan = 1;
           for (let i = slotIdx + 1; i < TIME_SLOTS.length; i++) {
-            const nextData = getCellData(reservations, field, TIME_SLOTS[i]);
+            const nextData = getCellData(reservations, blockedSlots, field, TIME_SLOTS[i]);
             if (nextData && nextData.id === data.id) {
               rowspan++;
             } else {
@@ -118,7 +138,8 @@ export function printAvailabilitySheet(params: {
           }
 
           const rowspanAttr = rowspan > 1 ? ` rowspan="${rowspan}"` : "";
-          return `<td${rowspanAttr}>${data.html}</td>`;
+          const tdClass = data.isBlocked ? ' class="blocked-cell"' : '';
+          return `<td${tdClass}${rowspanAttr}>${data.html}</td>`;
         })
         .join("");
 
@@ -222,6 +243,23 @@ export function printAvailabilitySheet(params: {
           color: #000000;
           padding: 0 4px;
           line-height: 1.3;
+        }
+        td.blocked-cell {
+          background-color: #fef2f2 !important;
+          color: #991b1b;
+          -webkit-print-color-adjust: exact;
+          print-color-adjust: exact;
+          text-align: center;
+        }
+        .blocked-title {
+          font-weight: 700;
+          font-size: 14px;
+          margin-bottom: 4px;
+          color: #991b1b;
+        }
+        .blocked-reason {
+          font-size: 12px;
+          color: #7f1d1d;
         }
       </style>
     </head>
