@@ -1977,6 +1977,10 @@ const PaymentSidebar = memo(function PaymentSidebar({
   }, [reservation.id, userCustomName, displayName, reservation.representative_name]);
 
   useEffect(() => {
+    setEmitModalTransfer(null);
+  }, [reservation.id]);
+
+  useEffect(() => {
     if (!pendingEmitFromAmountEdit?.id) return;
     setEmitModalTransfer(pendingEmitFromAmountEdit);
     onClearPendingEmitFromAmountEdit?.();
@@ -2210,6 +2214,7 @@ const PaymentSidebar = memo(function PaymentSidebar({
 
       {emitModalTransfer ? (
         <EmitInvoiceModal
+          key={`${reservation.id}-${emitModalTransfer.id}-${emitModalTransfer.amount}`}
           transfer={emitModalTransfer}
           clientDni={clientDniForEmit || undefined}
           clientRuc={clientRuc ?? undefined}

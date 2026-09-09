@@ -146,6 +146,7 @@ export const EmitComprobanteModal = memo(function EmitComprobanteModal(props: Em
   const [formaPagoCuenta, setFormaPagoCuenta] = useState("");
   const [miscEmitting, setMiscEmitting] = useState(false);
   const [miscError, setMiscError] = useState<string | null>(null);
+  const [transferError, setTransferError] = useState<string | null>(null);
 
   const [transferSubmitting, setTransferSubmitting] = useState(false);
   const [transferSuccessInvoice, setTransferSuccessInvoice] = useState<Invoice | null>(null);
@@ -182,15 +183,20 @@ export const EmitComprobanteModal = memo(function EmitComprobanteModal(props: Em
   }, [misc, docType, clientDni, clientRuc]);
 
   const transferIdForReset = misc ? null : props.transfer.id;
+  const transferAmountForReset = misc ? null : props.transfer.amount;
+  const initialClienteForReset = misc ? null : props.initialCliente;
+  const initialDescripcionForReset = misc ? null : props.initialDescripcion;
+
   useEffect(() => {
     if (transferIdForReset == null) return;
     setTransferSuccessInvoice(null);
     setTransferSubmitting(false);
+    setTransferError(null);
     invoicePostInFlightRef.current = false;
     setWspSendStatus("idle");
     setWspSendError(null);
     setEmitPreviewLightboxSrc(null);
-  }, [transferIdForReset]);
+  }, [transferIdForReset, transferAmountForReset, initialClienteForReset, initialDescripcionForReset]);
 
   useEffect(() => {
     if (!misc) return;
@@ -602,6 +608,7 @@ export const EmitComprobanteModal = memo(function EmitComprobanteModal(props: Em
     if (invoicePostInFlightRef.current) return;
     invoicePostInFlightRef.current = true;
     setTransferSubmitting(true);
+    setTransferError(null);
     try {
       const inv = await props.onEmitInvoice(props.transfer, {
         tipo_comprobante: docType,
@@ -615,7 +622,13 @@ export const EmitComprobanteModal = memo(function EmitComprobanteModal(props: Em
         cliente_direccion: docType === "factura" ? facturaDireccion.trim() || undefined : undefined,
         ...depositFieldsForApi,
       });
-      if (inv) setTransferSuccessInvoice(inv);
+      if (inv) {
+        setTransferSuccessInvoice(inv);
+      } else {
+        setTransferError("No se pudo emitir el comprobante. Por favor verifica los datos o intenta nuevamente.");
+      }
+    } catch (err) {
+      setTransferError(err instanceof Error ? err.message : "Error inesperado al emitir comprobante.");
     } finally {
       invoicePostInFlightRef.current = false;
       setTransferSubmitting(false);
@@ -1012,6 +1025,12 @@ export const EmitComprobanteModal = memo(function EmitComprobanteModal(props: Em
         {misc && miscError ? (
           <div className="mt-4 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-800">
             {miscError}
+          </div>
+        ) : null}
+
+        {!misc && transferError ? (
+          <div className="mt-4 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-800">
+            {transferError}
           </div>
         ) : null}
 

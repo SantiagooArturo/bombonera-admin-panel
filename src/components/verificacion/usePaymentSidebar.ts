@@ -117,6 +117,9 @@ export function usePaymentSidebar(options?: UsePaymentSidebarOptions) {
       allReservationsChatIdRef.current = null;
     }
     setSelectedReservation(reservation);
+    setPendingEmitFromAmountEdit(null);
+    emitInvoiceInFlightRef.current = false;
+    setEmittingInvoiceId(null);
     amountPaidDeltaPromptRef.current = null;
     setAmountPaidDeltaPrompt(null);
     setLoadingData(true);
@@ -290,6 +293,8 @@ export function usePaymentSidebar(options?: UsePaymentSidebarOptions) {
     setClientTypeUpdating(false);
     setUserNames({});
     setPendingEmitFromAmountEdit(null);
+    emitInvoiceInFlightRef.current = false;
+    setEmittingInvoiceId(null);
     setAmountPaidDeltaPrompt(null);
     setNotes([]);
     setLoadingNotes(false);
