@@ -17,7 +17,9 @@ import { PagosRecibidosMobileList } from "./PagosRecibidosMobileList";
 import { RegistrarPagoModal } from "./RegistrarPagoModal";
 import { TransferVerifiedSelect } from "./TransferVerifiedSelect";
 
-const POLL_MS = 15_000;
+const POLL_MS = 30_000;
+const PAGE_SIZE_OPTIONS = [25, 50, 100] as const;
+const DEFAULT_PAGE_SIZE = 25;
 
 export function PagosRecibidosPage() {
   const toast = useToastContext();
@@ -26,12 +28,25 @@ export function PagosRecibidosPage() {
   const [initialLoading, setInitialLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const urlSearch = searchParams.get("search")?.trim() ?? "";
-  const [searchQuery, setSearchQuery] = useState(() => urlSearch);
+  const [searchInput, setSearchInput] = useState(() => urlSearch);
+  const [debouncedSearch, setDebouncedSearch] = useState(() => urlSearch);
+  const [currentPage, setCurrentPage] = useState(1);
+  const [pageSize, setPageSize] = useState<number>(DEFAULT_PAGE_SIZE);
   const [registerOpen, setRegisterOpen] = useState(false);
 
   useEffect(() => {
-    setSearchQuery(urlSearch);
+    setSearchInput(urlSearch);
+    setDebouncedSearch(urlSearch);
   }, [urlSearch]);
+
+  // Debounce search input to keep typing instantaneous on low-end CPUs
+  useEffect(() => {
+    const handle = setTimeout(() => {
+      setDebouncedSearch(searchInput);
+      setCurrentPage(1);
+    }, 250);
+    return () => clearTimeout(handle);
+  }, [searchInput]);
 
   const load = useCallback(
     async (opts?: { silent?: boolean }) => {
@@ -68,9 +83,21 @@ export function PagosRecibidosPage() {
   }, [load]);
 
   const rows = useMemo(
-    () => transfers.filter((t) => transferMatchesSearch(t, searchQuery)),
-    [transfers, searchQuery]
+    () => transfers.filter((t) => transferMatchesSearch(t, debouncedSearch)),
+    [transfers, debouncedSearch]
   );
+
+  const totalItems = rows.length;
+  const totalPages = Math.max(1, Math.ceil(totalItems / pageSize));
+  const safePage = Math.min(Math.max(1, currentPage), totalPages);
+
+  const paginatedRows = useMemo(() => {
+    const start = (safePage - 1) * pageSize;
+    return rows.slice(start, start + pageSize);
+  }, [rows, safePage, pageSize]);
+
+  const startItem = totalItems === 0 ? 0 : (safePage - 1) * pageSize + 1;
+  const endItem = Math.min(safePage * pageSize, totalItems);
 
   const handleVerifiedUpdated = useCallback((id: string, verified: boolean) => {
     setTransfers((prev) =>
@@ -98,6 +125,77 @@ export function PagosRecibidosPage() {
     void load({ silent: true });
   }, [toast, load]);
 
+  const renderPagination = () => {
+    if (totalItems === 0) return null;
+    return (
+      <div className="flex flex-col sm:flex-row items-center justify-between gap-3 py-3 px-2 text-xs sm:text-sm text-gray-600 border-t border-gray-100 bg-gray-50/50">
+        <div className="text-gray-600">
+          Mostrando <strong className="text-gray-900 font-semibold">{startItem}–{endItem}</strong> de{" "}
+          <strong className="text-gray-900 font-semibold">{totalItems}</strong>{" "}
+          {debouncedSearch.trim() ? "pagos filtrados" : "pagos"}
+        </div>
+        <div className="flex flex-wrap items-center gap-3">
+          <div className="flex items-center gap-1.5 text-xs text-gray-500">
+            <span>Mostrar:</span>
+            <select
+              value={pageSize}
+              onChange={(e) => {
+                setPageSize(Number(e.target.value));
+                setCurrentPage(1);
+              }}
+              className="rounded-lg border border-gray-300 bg-white px-2 py-1 text-xs font-semibold text-gray-700 shadow-sm focus:border-field-dark focus:outline-none"
+            >
+              {PAGE_SIZE_OPTIONS.map((size) => (
+                <option key={size} value={size}>
+                  {size}
+                </option>
+              ))}
+            </select>
+          </div>
+          <div className="flex items-center gap-1">
+            <button
+              type="button"
+              disabled={safePage <= 1}
+              onClick={() => setCurrentPage(1)}
+              className="rounded-lg border border-gray-300 bg-white px-2 py-1 text-xs font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-40 disabled:cursor-not-allowed shadow-sm transition-colors"
+              title="Primera página"
+            >
+              «
+            </button>
+            <button
+              type="button"
+              disabled={safePage <= 1}
+              onClick={() => setCurrentPage((p) => Math.max(1, p - 1))}
+              className="rounded-lg border border-gray-300 bg-white px-2.5 py-1 text-xs font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-40 disabled:cursor-not-allowed shadow-sm transition-colors"
+            >
+              Anterior
+            </button>
+            <span className="px-2 text-xs font-semibold text-gray-800">
+              {safePage} / {totalPages}
+            </span>
+            <button
+              type="button"
+              disabled={safePage >= totalPages}
+              onClick={() => setCurrentPage((p) => Math.min(totalPages, p + 1))}
+              className="rounded-lg border border-gray-300 bg-white px-2.5 py-1 text-xs font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-40 disabled:cursor-not-allowed shadow-sm transition-colors"
+            >
+              Siguiente
+            </button>
+            <button
+              type="button"
+              disabled={safePage >= totalPages}
+              onClick={() => setCurrentPage(totalPages)}
+              className="rounded-lg border border-gray-300 bg-white px-2 py-1 text-xs font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-40 disabled:cursor-not-allowed shadow-sm transition-colors"
+              title="Última página"
+            >
+              »
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  };
+
   return (
     <div className="mx-auto w-full max-w-[min(100%,120rem)] px-3 py-8 sm:px-4 md:px-5 lg:px-6 xl:px-8 2xl:px-10">
       <div className="mb-6 flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
@@ -123,19 +221,41 @@ export function PagosRecibidosPage() {
         />
       ) : null}
 
-      <div className="mb-6">
+      <div className="mb-6 relative">
         <label htmlFor="pagos-recibidos-search" className="sr-only">
           Buscar pagos
         </label>
         <input
           id="pagos-recibidos-search"
-          type="search"
-          value={searchQuery}
-          onChange={(e) => setSearchQuery(e.target.value)}
+          type="text"
+          value={searchInput}
+          onChange={(e) => setSearchInput(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key === "Enter") {
+              setDebouncedSearch(searchInput);
+              setCurrentPage(1);
+            }
+          }}
           placeholder="Buscar por nombre, DNI, WhatsApp, operación, monto…"
           autoComplete="off"
-          className="w-full rounded-xl border border-gray-200 bg-white px-4 py-3 text-sm text-gray-900 shadow-sm placeholder:text-gray-400 focus:border-field-dark focus:outline-none focus:ring-2 focus:ring-field-dark/25"
+          className="w-full rounded-xl border border-gray-200 bg-white pl-4 pr-10 py-3 text-sm text-gray-900 shadow-sm placeholder:text-gray-400 focus:border-field-dark focus:outline-none focus:ring-2 focus:ring-field-dark/25"
         />
+        {searchInput ? (
+          <button
+            type="button"
+            onClick={() => {
+              setSearchInput("");
+              setDebouncedSearch("");
+              setCurrentPage(1);
+            }}
+            aria-label="Limpiar búsqueda"
+            className="absolute right-3 top-1/2 -translate-y-1/2 rounded-full p-1 text-gray-400 hover:text-gray-600 hover:bg-gray-100 transition-colors"
+          >
+            <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+            </svg>
+          </button>
+        ) : null}
       </div>
 
       {error ? (
@@ -144,12 +264,13 @@ export function PagosRecibidosPage() {
 
       <div className="lg:hidden">
         <PagosRecibidosMobileList
-          rows={rows}
-          searchActive={Boolean(searchQuery.trim())}
+          rows={paginatedRows}
+          searchActive={Boolean(debouncedSearch.trim())}
           loading={initialLoading}
           onVerifiedUpdated={handleVerifiedUpdated}
           onVerifiedError={handleVerifiedError}
         />
+        {renderPagination()}
       </div>
 
       <div className="hidden overflow-hidden rounded-xl border border-gray-200 bg-white shadow-sm lg:block">
@@ -201,7 +322,7 @@ export function PagosRecibidosPage() {
               {!initialLoading && rows.length === 0 ? (
                 <tr>
                   <td colSpan={9} className="px-4 py-12 text-center text-sm text-gray-500">
-                    {searchQuery.trim()
+                    {debouncedSearch.trim()
                       ? "Ningún pago coincide con tu búsqueda."
                       : "No hay pagos en esta vista."}
                   </td>
@@ -214,7 +335,7 @@ export function PagosRecibidosPage() {
                   </td>
                 </tr>
               ) : (
-                rows.map((t, idx) => {
+                paginatedRows.map((t, idx) => {
                   const name = transferClientDisplayName(t);
                   const phone = t.phone_number?.trim();
                   const transferWspHref = phone ? wspLink(phone) : null;
@@ -300,6 +421,7 @@ export function PagosRecibidosPage() {
             </tbody>
           </table>
         </div>
+        {renderPagination()}
       </div>
     </div>
   );
