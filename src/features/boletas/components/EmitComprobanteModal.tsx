@@ -140,7 +140,7 @@ export const EmitComprobanteModal = memo(function EmitComprobanteModal(props: Em
     misc ? "" : String(props.transfer.amount ?? 0)
   );
   const [fechaEmision, setFechaEmision] = useState(getLimaTodayYmd);
-  const [horaEmision, setHoraEmision] = useState(getLimaNowTimeHm);
+  const [horaEmision] = useState(getLimaNowTimeHm);
   const [condicionVenta, setCondicionVenta] = useState<string>("Transferencia");
   const [formaPagoBanco, setFormaPagoBanco] = useState("");
   const [formaPagoCuenta, setFormaPagoCuenta] = useState("");

@@ -1,5 +1,4 @@
 import {
-  getPeruNow,
   getPeruTimeHm,
   getPeruTimeHms,
   getPeruTodayYmd,
