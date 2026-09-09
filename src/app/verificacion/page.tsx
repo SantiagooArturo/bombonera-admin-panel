@@ -299,7 +299,7 @@ function VerificacionContent() {
                     onClose={sidebar.close}
                     courtConfigs={courtConfigs}
                     allReservationsThisWeek={sidebar.allReservationsThisWeek}
-                    onSelectReservationFromList={(r) => sidebar.open(r)}
+                    onSelectReservationFromList={sidebar.open}
                 />
             )}
         </ClientLayout>

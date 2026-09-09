@@ -39,7 +39,8 @@ function loadPdfJs(): Promise<any> {
  * Renderiza la primera página de un PDF (desde URL) a una data URL PNG.
  * Carga pdf.js v3 desde CDN (UMD build) para evitar conflictos con webpack.
  */
-export async function renderPdfToDataUrl(source: string, scale = 2): Promise<string | null> {
+export async function renderPdfToDataUrl(source: string, scale = 1.0): Promise<string | null> {
+  let pdf: any = null;
   try {
     const pdfjsLib = await loadPdfJs();
 
@@ -53,7 +54,7 @@ export async function renderPdfToDataUrl(source: string, scale = 2): Promise<str
 
     const response = await fetch(fetchUrl);
     const data = new Uint8Array(await response.arrayBuffer());
-    const pdf = await pdfjsLib.getDocument({ data }).promise;
+    pdf = await pdfjsLib.getDocument({ data }).promise;
     const page = await pdf.getPage(1);
     const viewport = page.getViewport({ scale });
 
@@ -66,10 +67,17 @@ export async function renderPdfToDataUrl(source: string, scale = 2): Promise<str
       viewport,
     }).promise;
 
-    return canvas.toDataURL("image/png");
+    const result = canvas.toDataURL("image/png");
+    canvas.width = 0;
+    canvas.height = 0;
+    return result;
   } catch (err) {
     console.error("=== PDF PREVIEW ERROR ===");
     console.error(err);
     return null;
+  } finally {
+    try {
+      if (pdf) void pdf.destroy();
+    } catch {}
   }
 }

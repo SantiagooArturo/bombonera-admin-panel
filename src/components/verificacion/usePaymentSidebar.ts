@@ -21,6 +21,34 @@ export type AmountPaidDeltaPrompt = {
   delta: number;
 };
 
+interface RecurrentScheduleItem {
+  day_of_week?: number;
+  field?: number;
+  start_time?: string;
+  chat_id?: string | null;
+  [key: string]: unknown;
+}
+
+let cachedRecurrentSchedules: { data: RecurrentScheduleItem[]; timestamp: number } | null = null;
+const RECURRENT_CACHE_TTL_MS = 60_000;
+
+async function getRecurrentSchedulesCached(): Promise<RecurrentScheduleItem[]> {
+  const now = Date.now();
+  if (cachedRecurrentSchedules && now - cachedRecurrentSchedules.timestamp < RECURRENT_CACHE_TTL_MS) {
+    return cachedRecurrentSchedules.data;
+  }
+  try {
+    const res = await fetch("/api/recurrent-schedules");
+    if (!res.ok) return [];
+    const data = await res.json();
+    const list = Array.isArray(data) ? (data as RecurrentScheduleItem[]) : [];
+    cachedRecurrentSchedules = { data: list, timestamp: now };
+    return list;
+  } catch {
+    return [];
+  }
+}
+
 export function usePaymentSidebar(options?: UsePaymentSidebarOptions) {
   const store = useStore();
   const toast = useToastContext();
@@ -89,6 +117,7 @@ export function usePaymentSidebar(options?: UsePaymentSidebarOptions) {
       allReservationsChatIdRef.current = null;
     }
     setSelectedReservation(reservation);
+    amountPaidDeltaPromptRef.current = null;
     setAmountPaidDeltaPrompt(null);
     setLoadingData(true);
     setClientTypeLoading(true);
@@ -123,12 +152,12 @@ export function usePaymentSidebar(options?: UsePaymentSidebarOptions) {
       const rawChatId = String(reservation.chat_id || reservation.phone_number || "").replace(/\D/g, "");
       const chatIdForApi = reservation.chat_id || rawChatId || reservation.phone_number;
       const userDocId = rawChatId.length >= 9 ? normalizePeruPhone(rawChatId) : rawChatId;
-      const [transfersByClientRaw, freshResReq, clientTypeRes, clientReservationsRes, recurrentRes] = await Promise.all([
+      const [transfersByClientRaw, freshResReq, clientTypeRes, clientReservationsRes, recurrentSchedulesList] = await Promise.all([
         store.fetchTransfersByChatId(chatIdForApi || ""),
         fetch(`/api/reservations?id=${reservation.id}`),
         fetch(`/api/users/client-type?chat_id=${encodeURIComponent(userDocId)}`, { cache: "no-store" }),
         chatIdForApi ? fetch(`/api/reservations?phone_number=${encodeURIComponent(String(chatIdForApi))}`) : Promise.resolve(new Response("[]")),
-        fetch("/api/recurrent-schedules", { cache: "no-store" }),
+        getRecurrentSchedulesCached(),
       ]);
 
       let transfersByClient = transfersByClientRaw;
@@ -153,20 +182,17 @@ export function usePaymentSidebar(options?: UsePaymentSidebarOptions) {
 
       // ── Sincronizar recurrencia desde SSoT ─────────────────────────────────
       let isRecurrentActual = false;
-      if (recurrentRes && recurrentRes.ok) {
-        const allSchedules = await recurrentRes.json();
-        if (Array.isArray(allSchedules)) {
-          isRecurrentActual = allSchedules.some(s => {
-            const dayOfRes = new Date(freshReservation.date + "T12:00:00").getDay();
-            const startTimeRes = freshReservation.time_slots?.[0] || "";
-            return (
-              s.day_of_week === dayOfRes &&
-              s.field === freshReservation.field &&
-              s.start_time === startTimeRes &&
-              normalizePhoneKey(s.chat_id) === normalizePhoneKey(freshReservation.chat_id)
-            );
-          });
-        }
+      if (Array.isArray(recurrentSchedulesList)) {
+        isRecurrentActual = recurrentSchedulesList.some((s) => {
+          const dayOfRes = new Date(freshReservation.date + "T12:00:00").getDay();
+          const startTimeRes = freshReservation.time_slots?.[0] || "";
+          return (
+            s.day_of_week === dayOfRes &&
+            s.field === freshReservation.field &&
+            s.start_time === startTimeRes &&
+            normalizePhoneKey(s.chat_id) === normalizePhoneKey(freshReservation.chat_id)
+          );
+        });
       }
 
       setSelectedReservation({ ...freshReservation, is_recurrent: isRecurrentActual });
@@ -323,6 +349,7 @@ export function usePaymentSidebar(options?: UsePaymentSidebarOptions) {
         return false;
       }
       
+      cachedRecurrentSchedules = null;
       setSelectedReservation(prev => prev ? { ...prev, is_recurrent: isRecurrent } : prev);
       options?.onReservationUpdated?.(selectedReservation.id, { is_recurrent: isRecurrent });
       toast(isRecurrent ? "Horario marcado como recurrente" : "Recurrencia removida", "success");
@@ -395,6 +422,43 @@ export function usePaymentSidebar(options?: UsePaymentSidebarOptions) {
     }
   }, [store, toast]);
 
+  const persistDirectAmountPaid = useCallback(
+    async (id: string, amountPaid: number): Promise<boolean> => {
+      const prevReservations = allReservationsThisWeek;
+      const prevSelected = selectedReservation;
+      const patch: Partial<Reservation> = { amount_paid: amountPaid, amount_paid_manual: true };
+      setAllReservationsThisWeek((prev) => prev.map((r) => (r.id === id ? { ...r, ...patch } : r)));
+      setSelectedReservation((prev) => (prev?.id === id ? { ...prev, ...patch } : prev));
+      options?.onReservationUpdated?.(id, patch);
+      try {
+        const res = await fetch("/api/reservations", {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ id, amount_paid: amountPaid, amount_paid_direct: true }),
+        });
+        if (!res.ok) {
+          setSelectedReservation(prevSelected);
+          toast("No se pudo actualizar el monto pagado", "error");
+          return false;
+        }
+        const resForChat = prevReservations.find((r) => r.id === id) ?? prevSelected;
+        const chatId = resForChat?.chat_id || resForChat?.phone_number || "";
+        if (chatId) {
+          store.fetchTransfersByChatId(chatId).then((newTransfers) => {
+            setTransfers(newTransfers || []);
+          });
+        }
+        toast("Monto pagado actualizado", "success");
+        return true;
+      } catch {
+        setSelectedReservation(prevSelected);
+        toast("Error al actualizar monto pagado", "error");
+        return false;
+      }
+    },
+    [allReservationsThisWeek, selectedReservation, options, toast, store]
+  );
+
   const handleEmitInvoice = useCallback(
     async (transfer: Transfer, params: EmitComprobanteParams): Promise<Invoice | null> => {
       if (!selectedReservation) {
@@ -415,7 +479,14 @@ export function usePaymentSidebar(options?: UsePaymentSidebarOptions) {
 
         if (transfer.id === TRANSFER_ID_EMIT_THEN_REGISTER_PAYMENT) {
           const billed = invoice.amount;
-          const phoneNumber = String(selectedReservation.phone_number || "").trim();
+          const rawPhone = String(
+            selectedReservation.phone_number ||
+            selectedReservation.chat_id ||
+            ""
+          ).replace(/\D/g, "");
+          const phoneNumber = rawPhone.length >= 9 ? normalizePeruPhone(rawPhone) : rawPhone;
+          let paymentRegistered = false;
+
           if (phoneNumber) {
             const pay = await store.processManualPayment(
               selectedReservation.id,
@@ -424,6 +495,7 @@ export function usePaymentSidebar(options?: UsePaymentSidebarOptions) {
               "digital"
             );
             if (pay?.success && pay.transfer_id) {
+              paymentRegistered = true;
               await store.linkInvoiceToTransfer(invoice.id, pay.transfer_id);
               if (pay.new_amount_paid != null) {
                 const patch: Partial<Reservation> = {
@@ -442,6 +514,13 @@ export function usePaymentSidebar(options?: UsePaymentSidebarOptions) {
                 options?.onReservationUpdated?.(rid, patch);
               }
             }
+          }
+
+          // Respaldo de seguridad: si processManualPayment no pudo vincular transfer_id,
+          // persistir el nuevo amount_paid directamente para que la reserva jamás se regrese a 0
+          if (!paymentRegistered) {
+            const fallbackAmount = Math.max(0, (selectedReservation.amount_paid || 0) + billed);
+            await persistDirectAmountPaid(selectedReservation.id, fallbackAmount);
           }
         }
 
@@ -484,7 +563,7 @@ export function usePaymentSidebar(options?: UsePaymentSidebarOptions) {
         setEmittingInvoiceId(null);
       }
     },
-    [store, toast, selectedReservation, userNames.last_dni, userNames.last_ruc, options]
+    [store, toast, selectedReservation, userNames.last_dni, userNames.last_ruc, options, persistDirectAmountPaid]
   );
 
   const handleUpdateName = useCallback(async (name: string) => {
@@ -692,46 +771,9 @@ export function usePaymentSidebar(options?: UsePaymentSidebarOptions) {
     setPendingEmitFromAmountEdit(null);
   }, []);
 
-  const persistDirectAmountPaid = useCallback(
-    async (id: string, amountPaid: number): Promise<boolean> => {
-      const prevReservations = allReservationsThisWeek;
-      const prevSelected = selectedReservation;
-      const patch: Partial<Reservation> = { amount_paid: amountPaid, amount_paid_manual: true };
-      setAllReservationsThisWeek((prev) => prev.map((r) => (r.id === id ? { ...r, ...patch } : r)));
-      setSelectedReservation((prev) => (prev?.id === id ? { ...prev, ...patch } : prev));
-      options?.onReservationUpdated?.(id, patch);
-      try {
-        const res = await fetch("/api/reservations", {
-          method: "PATCH",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ id, amount_paid: amountPaid, amount_paid_direct: true }),
-        });
-        if (!res.ok) {
-          setSelectedReservation(prevSelected);
-          toast("No se pudo actualizar el monto pagado", "error");
-          return false;
-        }
-        const resForChat = prevReservations.find((r) => r.id === id) ?? prevSelected;
-        const chatId = resForChat?.chat_id || resForChat?.phone_number || "";
-        if (chatId) {
-          store.fetchTransfersByChatId(chatId).then((newTransfers) => {
-            setTransfers(newTransfers || []);
-          });
-        }
-        toast("Monto pagado actualizado", "success");
-        return true;
-      } catch {
-        setSelectedReservation(prevSelected);
-        toast("Error al actualizar monto pagado", "error");
-        return false;
-      }
-    },
-    [allReservationsThisWeek, selectedReservation, options, toast, store]
-  );
-
   const resolveAmountPaidDeltaPrompt = useCallback(
-    async (choice: "direct" | "emit"): Promise<boolean> => {
-      const p = amountPaidDeltaPromptRef.current;
+    async (choice: "direct" | "emit", explicitPrompt?: AmountPaidDeltaPrompt): Promise<boolean> => {
+      const p = explicitPrompt ?? amountPaidDeltaPromptRef.current ?? amountPaidDeltaPrompt;
       if (!p) return false;
 
       const { reservationId: id, amountPaid, delta } = p;
@@ -746,7 +788,14 @@ export function usePaymentSidebar(options?: UsePaymentSidebarOptions) {
         if (choice === "direct") {
           ok = await persistDirectAmountPaid(id, amountPaid);
         } else {
-          const phoneNumber = String(resSnapshot?.phone_number || selectedReservation?.phone_number || "").trim();
+          const rawPhone = String(
+            resSnapshot?.phone_number ||
+            resSnapshot?.chat_id ||
+            selectedReservation?.phone_number ||
+            selectedReservation?.chat_id ||
+            ""
+          ).replace(/\D/g, "");
+          const phoneNumber = rawPhone.length >= 9 ? normalizePeruPhone(rawPhone) : rawPhone;
           setPendingEmitFromAmountEdit({
             id: TRANSFER_ID_EMIT_THEN_REGISTER_PAYMENT,
             amount: delta,
@@ -759,17 +808,18 @@ export function usePaymentSidebar(options?: UsePaymentSidebarOptions) {
             source: "manual",
             payment_method: "digital",
             created_at: new Date().toISOString(),
-            chat_id: resSnapshot?.chat_id ?? resSnapshot?.phone_number ?? null,
+            chat_id: resSnapshot?.chat_id ?? resSnapshot?.phone_number ?? selectedReservation?.chat_id ?? null,
           });
           ok = true;
         }
         return ok;
       } finally {
+        amountPaidDeltaPromptRef.current = null;
         setAmountPaidDeltaPrompt(null);
         setPaymentLoading(false);
       }
     },
-    [selectedReservation, allReservationsThisWeek, persistDirectAmountPaid]
+    [selectedReservation, allReservationsThisWeek, persistDirectAmountPaid, amountPaidDeltaPrompt]
   );
 
   const handleUpdateAmountPaid = useCallback(
@@ -785,7 +835,9 @@ export function usePaymentSidebar(options?: UsePaymentSidebarOptions) {
       const delta = amountPaid - prevPaid;
 
       if (delta > 0.005) {
-        setAmountPaidDeltaPrompt({ reservationId: id, amountPaid, delta });
+        const promptData = { reservationId: id, amountPaid, delta };
+        amountPaidDeltaPromptRef.current = promptData;
+        setAmountPaidDeltaPrompt(promptData);
         return false;
       }
 

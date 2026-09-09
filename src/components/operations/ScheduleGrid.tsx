@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useEffect, useRef } from "react";
+import { useMemo, useEffect, useRef, memo } from "react";
 import { TIME_SLOTS, type Reservation, type BlockedSlot, isReservationActive, type RecurrentSchedule } from "@/lib/types";
 import type { CourtFieldConfig } from "@/lib/court-config";
 import { getCourtSizeLabel } from "@/lib/court-config";
@@ -88,7 +88,7 @@ export interface ScheduleGridProps {
 
 // ─── Component ──────────────────────────────────────────────────────────────
 
-export default function ScheduleGrid({
+const ScheduleGrid = memo(function ScheduleGrid({
   reservations,
   blockedSlots,
   autoAssignments,
@@ -345,4 +345,6 @@ export default function ScheduleGrid({
       </table>
     </div>
   );
-}
+});
+
+export default ScheduleGrid;

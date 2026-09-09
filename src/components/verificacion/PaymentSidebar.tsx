@@ -84,7 +84,7 @@ interface PaymentSidebarProps {
   onClearPendingEmitFromAmountEdit?: () => void;
   /** Subida de «Pagado» con delta > 0: modal en app (no confirm del navegador). */
   amountPaidDeltaPrompt?: AmountPaidDeltaPrompt | null;
-  onResolveAmountPaidDeltaPrompt?: (choice: "direct" | "emit") => Promise<boolean>;
+  onResolveAmountPaidDeltaPrompt?: (choice: "direct" | "emit", explicitPrompt?: AmountPaidDeltaPrompt) => Promise<boolean>;
   /** Apuntes del cliente. */
   notes?: Note[];
   loadingNotes?: boolean;
@@ -1409,7 +1409,7 @@ const CobrosTabContent = memo(function CobrosTabContent({
     };
   }, [transfers, weekStart, weekEnd]);
 
-  const [openNearby, setOpenNearby] = useState({ prev: true, same: true, next: true });
+  const [openNearby, setOpenNearby] = useState({ prev: false, same: true, next: false });
 
   const nearbySections = useMemo(
     () =>
@@ -1979,7 +1979,6 @@ const PaymentSidebar = memo(function PaymentSidebar({
   useEffect(() => {
     if (!pendingEmitFromAmountEdit?.id) return;
     setEmitModalTransfer(pendingEmitFromAmountEdit);
-    setActiveTab("cobros");
     onClearPendingEmitFromAmountEdit?.();
   }, [pendingEmitFromAmountEdit, onClearPendingEmitFromAmountEdit]);
 
@@ -2245,7 +2244,7 @@ const PaymentSidebar = memo(function PaymentSidebar({
                 disabled={paymentLoading}
                 onClick={() => {
                   void (async () => {
-                    const ok = await onResolveAmountPaidDeltaPrompt("emit");
+                    const ok = await onResolveAmountPaidDeltaPrompt("emit", amountPaidDeltaPrompt);
                     if (ok) setAmountPaidEditCloseSignal((s) => s + 1);
                   })();
                 }}
@@ -2258,7 +2257,7 @@ const PaymentSidebar = memo(function PaymentSidebar({
                 disabled={paymentLoading}
                 onClick={() => {
                   void (async () => {
-                    const ok = await onResolveAmountPaidDeltaPrompt("direct");
+                    const ok = await onResolveAmountPaidDeltaPrompt("direct", amountPaidDeltaPrompt);
                     if (ok) setAmountPaidEditCloseSignal((s) => s + 1);
                   })();
                 }}

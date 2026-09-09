@@ -4,7 +4,7 @@ import { useEffect, useState, useMemo, useCallback, useRef } from "react";
 import ClientLayout, { useToastContext } from "@/components/ClientLayout";
 import { useStore } from "@/lib/hooks";
 
-import { TIME_SLOTS, type Reservation, type BlockedSlot, isReservationActive, type RecurrentSchedule } from "@/lib/types";
+import { TIME_SLOTS, type Reservation, type BlockedSlot, isReservationActive, type RecurrentSchedule, type ClientType } from "@/lib/types";
 import type { CourtFieldConfig } from "@/lib/court-config";
 import ScheduleGrid from "@/components/operations/ScheduleGrid";
 import PaymentSidebar from "@/components/verificacion/PaymentSidebar";
@@ -528,6 +528,30 @@ export default function OperacionesPage() {
     }
   }
 
+  const { handleUpdateClientType: sidebarUpdateClientType, open: openSidebar } = sidebar;
+
+  const handleSidebarUpdateClientType = useCallback(async (type: ClientType) => {
+    ignoreListClickRef.current = true;
+    const ok = await sidebarUpdateClientType(type);
+    setTimeout(() => { ignoreListClickRef.current = false; }, 300);
+    return ok;
+  }, [sidebarUpdateClientType]);
+
+  const handleSelectReservationFromList = useCallback((r: Reservation) => {
+    if (ignoreListClickRef.current) return;
+    preserveSidebarOnDayChangeRef.current = true;
+    skipBlockingLoaderRef.current = true;
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    const resDate = new Date(r.date + "T12:00:00");
+    resDate.setHours(0, 0, 0, 0);
+    const diffMs = resDate.getTime() - today.getTime();
+    const offset = Math.round(diffMs / (24 * 60 * 60 * 1000));
+    const clamped = Math.max(minDayOffset, Math.min(MAX_DAY_OFFSET, offset));
+    setDayOffset(clamped);
+    openSidebar(r);
+  }, [minDayOffset, openSidebar]);
+
   // ── Render ────────────────────────────────────────────────────────────
 
   return (
@@ -634,12 +658,7 @@ export default function OperacionesPage() {
           clientType={sidebar.clientType}
           clientTypeLoading={sidebar.clientTypeLoading}
           clientTypeUpdating={sidebar.clientTypeUpdating}
-          onUpdateClientType={async (type) => {
-            ignoreListClickRef.current = true;
-            const ok = await sidebar.handleUpdateClientType(type);
-            setTimeout(() => { ignoreListClickRef.current = false; }, 300);
-            return ok;
-          }}
+          onUpdateClientType={handleSidebarUpdateClientType}
           onUpdateStatus={sidebar.handleUpdateStatus}
           statusUpdating={sidebar.statusUpdating}
           onClose={sidebar.close}
@@ -649,20 +668,7 @@ export default function OperacionesPage() {
           loadingNotes={sidebar.loadingNotes}
           onAddNote={sidebar.handleAddNote}
           onDeleteNote={sidebar.handleDeleteNote}
-          onSelectReservationFromList={(r) => {
-            if (ignoreListClickRef.current) return;
-            preserveSidebarOnDayChangeRef.current = true;
-            skipBlockingLoaderRef.current = true;
-            const today = new Date();
-            today.setHours(0, 0, 0, 0);
-            const resDate = new Date(r.date + "T12:00:00");
-            resDate.setHours(0, 0, 0, 0);
-            const diffMs = resDate.getTime() - today.getTime();
-            const offset = Math.round(diffMs / (24 * 60 * 60 * 1000));
-            const clamped = Math.max(minDayOffset, Math.min(MAX_DAY_OFFSET, offset));
-            setDayOffset(clamped);
-            sidebar.open(r);
-          }}
+          onSelectReservationFromList={handleSelectReservationFromList}
         />
       )}
 
