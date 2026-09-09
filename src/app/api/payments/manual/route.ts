@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { getDb } from "@/lib/firebase-admin";
 import { FieldValue } from "firebase-admin/firestore";
 import { normalizePeruPhone } from "@/features/operaciones/utils";
+import { getPeruTimeHm, getPeruTodayYmd } from "@/lib/peruTime";
 
 /**
  * POST /api/payments/manual
@@ -39,9 +40,9 @@ export async function POST(request: NextRequest) {
         : null;
     const dateTrim = typeof transactionDateIn === "string" ? transactionDateIn.trim() : "";
     const ymdOk = /^\d{4}-\d{2}-\d{2}$/.test(dateTrim);
-    const transactionDateFinal = ymdOk ? dateTrim : now.split("T")[0];
+    const transactionDateFinal = ymdOk ? dateTrim : getPeruTodayYmd();
     const timeRaw = typeof transactionTimeIn === "string" ? transactionTimeIn.trim() : "";
-    const timeHm = /^([01]?\d|2[0-3]):[0-5]\d$/.test(timeRaw) ? timeRaw : null;
+    const timeHm = /^([01]?\d|2[0-3]):[0-5]\d$/.test(timeRaw) ? timeRaw : getPeruTimeHm();
     const dniClean =
       typeof client_dni === "string" ? client_dni.replace(/\D/g, "").slice(0, 8) : "";
     const dniOk = dniClean.length === 0 || dniClean.length === 8;

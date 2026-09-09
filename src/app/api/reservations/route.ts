@@ -6,6 +6,7 @@ import {
   normalizePeruPhone,
   type CourtConfigMap,
 } from "@/features/operaciones/utils";
+import { getPeruTodayYmd } from "@/lib/peruTime";
 
 export async function GET(request: NextRequest) {
   try {
@@ -284,7 +285,7 @@ export async function PATCH(request: NextRequest) {
             phone_number: phoneNumber,
             recipient_name: null,
             amount: adjustmentAmount,
-            transaction_date: now.split("T")[0],
+            transaction_date: getPeruTodayYmd(),
             operation_id: null,
             reservation_id: id,
             chat_id: chatId,

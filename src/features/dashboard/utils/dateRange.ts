@@ -1,10 +1,12 @@
-/** Formato YYYY-MM-DD */
+import { formatPeruDateISO, getPeruNow, getPeruTodayYmd } from "@/lib/peruTime";
+
+/** Formato YYYY-MM-DD en hora oficial de Lima, Perú */
 export function toDateStr(d: Date): string {
-  return d.toISOString().split("T")[0];
+  return formatPeruDateISO(d);
 }
 
 export function getToday(): string {
-  return toDateStr(new Date());
+  return getPeruTodayYmd();
 }
 
 export type DateRangePreset = "hoy" | "ayer" | "7dias" | "mes" | "personalizado";
@@ -16,8 +18,8 @@ export interface DateRange {
 }
 
 export function getDateRangeForPreset(preset: DateRangePreset): { start: string; end: string } {
-  const now = new Date();
-  const today = toDateStr(now);
+  const now = getPeruNow();
+  const today = getPeruTodayYmd(now);
 
   switch (preset) {
     case "hoy":

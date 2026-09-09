@@ -5,6 +5,7 @@ import Sidebar, { COLLAPSED_W, EXPANDED_W } from "./Sidebar";
 import ToastContainer from "./Toast";
 import { useToast } from "@/lib/hooks";
 import { createContext, useContext } from "react";
+import "@/lib/peruTime";
 
 type ToastFn = (message: string, type?: "success" | "error" | "info") => void;
 const ToastContext = createContext<ToastFn>(() => {});

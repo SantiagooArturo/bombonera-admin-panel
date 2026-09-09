@@ -831,14 +831,15 @@ export const EmitComprobanteModal = memo(function EmitComprobanteModal(props: Em
             </div>
             <div>
               <label htmlFor="emit-hora" className={labelClass}>
-                Hora
+                Hora (Perú)
               </label>
               <input
                 id="emit-hora"
-                type="time"
-                value={horaEmision}
-                onChange={(e) => setHoraEmision(e.target.value)}
-                className={inputClass}
+                type="text"
+                readOnly
+                value={`${horaEmision} (automática Lima)`}
+                className={`${inputClass} cursor-not-allowed bg-gray-50 text-gray-600`}
+                title="La hora oficial de Lima se asigna automáticamente al emitir"
               />
             </div>
           </div>

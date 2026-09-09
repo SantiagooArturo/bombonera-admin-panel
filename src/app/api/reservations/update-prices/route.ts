@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { getDb } from "@/lib/firebase-admin";
 import { courtConfigDocId, getFullFieldConfig } from "@/lib/court-config";
 import { calculateReservationPrice, type CourtConfigMap } from "@/features/operaciones/utils";
+import { getPeruTodayYmd } from "@/lib/peruTime";
 
 /**
  * Obtiene el mapa de configuración de canchas.
@@ -28,9 +29,7 @@ export async function POST() {
     const configMap = await getCourtConfigMap(db);
     
     // Obtener fecha actual en formato YYYY-MM-DD (Lima)
-    const now = new Date();
-    now.setHours(now.getHours() - 5); // Ajuste manual a Lima (UTC-5) simplificado
-    const todayStr = now.toISOString().split("T")[0];
+    const todayStr = getPeruTodayYmd();
 
     // Traer reservas desde hoy en adelante que no estén canceladas/expiradas
     const snapshot = await db.collection("reservations")

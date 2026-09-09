@@ -1,6 +1,11 @@
 import { TIME_SLOTS, type Reservation, type User } from "@/lib/types";
 import { isHoliday } from "@/lib/feriados-peru";
 import { type CourtFieldConfig, getFullFieldConfig } from "@/lib/court-config";
+import {
+  formatPeruDateISO,
+  getPeruHour,
+  getPeruTodayYmd,
+} from "@/lib/peruTime";
 
 export const MAX_DAY_OFFSET = 14;
 
@@ -27,19 +32,19 @@ export const FIELD_TO_COURT_TYPE: Record<number, Reservation["court_type"]> = {
 };
 
 export function getCurrentSlot(): string {
-  const hour = new Date().getHours();
+  const hour = getPeruHour();
   const slot = `${hour}:00`;
   return TIME_SLOTS.includes(slot) ? slot : TIME_SLOTS[0];
 }
 
 export function formatDateISO(date: Date): string {
-  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")}`;
+  return formatPeruDateISO(date);
 }
 
 export function getDateWithOffset(offset: number): Date {
-  const d = new Date();
-  d.setDate(d.getDate() + offset);
-  return d;
+  const todayStr = getPeruTodayYmd();
+  const [y, m, d] = todayStr.split("-").map(Number);
+  return new Date(y, m - 1, d + offset, 12, 0, 0);
 }
 
 export function formatHour12(slot: string) {

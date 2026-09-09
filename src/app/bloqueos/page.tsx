@@ -5,6 +5,7 @@ import ClientLayout, { useToastContext } from "@/components/ClientLayout";
 import { useStore } from "@/lib/hooks";
 import { TIME_SLOTS, COURT_FIELDS } from "@/lib/types";
 import { isValidPeruPhone } from "@/features/operaciones/utils";
+import { formatPeruDateISO, getPeruTodayYmd } from "@/lib/peruTime";
 
 // ─── Helpers ────────────────────────────────────────────────────────────────
 
@@ -37,7 +38,7 @@ function formatHour12(slot: string) {
 }
 
 function formatDateISO(d: Date) {
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+  return formatPeruDateISO(d);
 }
 
 function formatDateDisplay(dateStr: string) {
@@ -77,13 +78,13 @@ export default function BloqueosPage() {
   const [timeFrom, setTimeFrom] = useState(TIME_SLOTS[0]);
   const [timeTo, setTimeTo] = useState(TIME_SLOTS[2]);
   const [mode, setMode] = useState<"single" | "recurring">("single");
-  const [singleDate, setSingleDate] = useState(formatDateISO(new Date()));
+  const [singleDate, setSingleDate] = useState(getPeruTodayYmd);
   const [recurringWeekdays, setRecurringWeekdays] = useState<number[]>([]);
-  const [recurringFrom, setRecurringFrom] = useState(formatDateISO(new Date()));
+  const [recurringFrom, setRecurringFrom] = useState(getPeruTodayYmd);
   const [recurringTo, setRecurringTo] = useState(() => {
-    const d = new Date();
-    d.setMonth(d.getMonth() + 1);
-    return formatDateISO(d);
+    const today = getPeruTodayYmd();
+    const [y, m, d] = today.split("-").map(Number);
+    return formatPeruDateISO(new Date(y, m, d, 12, 0, 0));
   });
   const [reason, setReason] = useState(REASONS[0]);
   const [contactPhone, setContactPhone] = useState("");

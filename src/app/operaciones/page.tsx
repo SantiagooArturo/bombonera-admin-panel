@@ -31,6 +31,11 @@ import {
   normalizePeruPhone,
   normalizePhoneKey,
 } from "@/features/operaciones/utils";
+import {
+  diffPeruCalendarDays,
+  getPeruHour,
+  getPeruTodayYmd,
+} from "@/lib/peruTime";
 
 // ─── Page ───────────────────────────────────────────────────────────────────
 
@@ -122,14 +127,9 @@ export default function OperacionesPage() {
 
 
   const selectedDate = useMemo(() => formatDateISO(getDateWithOffset(dayOffset)), [dayOffset]);
-  const todayDate = useMemo(() => formatDateISO(new Date()), []);
+  const todayDate = useMemo(() => getPeruTodayYmd(), []);
   const minDayOffset = useMemo(() => {
-    const today = new Date();
-    today.setHours(0, 0, 0, 0);
-    const minDate = new Date(`${MIN_OPERATIONS_DATE}T12:00:00`);
-    minDate.setHours(0, 0, 0, 0);
-    const diffMs = minDate.getTime() - today.getTime();
-    return Math.round(diffMs / (24 * 60 * 60 * 1000));
+    return diffPeruCalendarDays(getPeruTodayYmd(), MIN_OPERATIONS_DATE);
   }, [MIN_OPERATIONS_DATE]);
   const availabilityDayOptions = useMemo(
     () => Array.from({ length: MAX_DAY_OFFSET + 1 }, (_, idx) => formatDateISO(getDateWithOffset(idx))),
@@ -340,7 +340,7 @@ export default function OperacionesPage() {
 
   function isDateAvailabilitySendable(date: string): boolean {
     if (date < todayDate) return false;
-    if (date === todayDate) return new Date().getHours() < 22;
+    if (date === todayDate) return getPeruHour() < 22;
     return true;
   }
 

@@ -1,65 +1,46 @@
+import {
+  getPeruNow,
+  getPeruTimeHm,
+  getPeruTimeHms,
+  getPeruTodayYmd,
+} from "@/lib/peruTime";
+
 /** Fecha local Lima en formato AAAA-MM-DD (para <input type="date">). */
 export function getLimaTodayYmd(): string {
-  return new Date().toLocaleDateString("en-CA", { timeZone: "America/Lima" });
+  return getPeruTodayYmd();
 }
 
 /** Hora Lima HH:mm para <input type="time">. */
 export function getLimaNowTimeHm(): string {
-  const d = new Date();
-  const fmt = new Intl.DateTimeFormat("en-CA", {
-    timeZone: "America/Lima",
-    hour: "2-digit",
-    minute: "2-digit",
-    hour12: false,
-  });
-  const p = fmt.formatToParts(d);
-  const h = p.find((x) => x.type === "hour")?.value ?? "00";
-  const m = p.find((x) => x.type === "minute")?.value ?? "00";
-  return `${h.padStart(2, "0")}:${m.padStart(2, "0")}`;
+  return getPeruTimeHm();
 }
 
-function getLimaNowHms(): string {
-  const d = new Date();
-  const fmt = new Intl.DateTimeFormat("en-CA", {
-    timeZone: "America/Lima",
-    hour: "2-digit",
-    minute: "2-digit",
-    second: "2-digit",
-    hour12: false,
-  });
-  const p = fmt.formatToParts(d);
-  const h = p.find((x) => x.type === "hour")?.value ?? "00";
-  const m = p.find((x) => x.type === "minute")?.value ?? "00";
-  const s = p.find((x) => x.type === "second")?.value ?? "00";
-  return `${h.padStart(2, "0")}:${m.padStart(2, "0")}:${s.padStart(2, "0")}`;
-}
-
-function timeToSec(t: string): number {
-  const [h, m, s] = t.split(":").map((x) => parseInt(x, 10) || 0);
-  return h * 3600 + m * 60 + s;
+export function getLimaNowHms(): string {
+  return getPeruTimeHms();
 }
 
 /**
- * Valida fecha/hora de emisión para SUNAT (huso Lima).
- * Si no vienen, usa ahora en Lima.
- * No limitamos cuán antigua puede ser la fecha: SUNAT/apisunat decidirán si la rechazan.
+ * Valida fecha/hora de emisión para SUNAT (huso Lima, Perú).
+ *
+ * REGLA ESTRICTA:
+ * - Para emisiones de hoy (o si no se indica fecha), la hora de emisión SIEMPRE es la
+ *   hora oficial actual de Lima generada en el servidor (getPeruTimeHms).
+ *   Bajo ningún concepto se utiliza la hora del dispositivo o laptop del cliente para hoy.
+ * - Para fechas anteriores (retroactivas permitidas por SUNAT), se puede admitir la hora indicada o por defecto la actual.
+ * - Fechas futuras para hoy o después de hoy quedan prohibidas por normativa SUNAT.
  */
 export function validateEmissionDateTimeForApi(
   fechaInput: string | undefined,
   horaInput: string | undefined
 ): { fechaEmision: string; horaEmision: string } | { error: string } {
-  const todayLima = getLimaTodayYmd();
+  const todayLima = getPeruTodayYmd();
+  const nowHms = getPeruTimeHms();
 
   const fRaw = typeof fechaInput === "string" ? fechaInput.trim() : "";
-  const hRaw = typeof horaInput === "string" ? horaInput.trim() : "";
-
-  if (!fRaw && !hRaw) {
-    return { fechaEmision: todayLima, horaEmision: getLimaNowHms() };
-  }
-
   const fecha = fRaw || todayLima;
+
   if (!/^\d{4}-\d{2}-\d{2}$/.test(fecha)) {
-    return { error: "Fecha inválida. Use el calendario (formato AAAA-MM-DD)." };
+    return { error: "Fecha inválida. Use el formato AAAA-MM-DD." };
   }
 
   const [y, mo, da] = fecha.split("-").map(Number);
@@ -72,6 +53,14 @@ export function validateEmissionDateTimeForApi(
     return { error: "La fecha de emisión no puede ser después de hoy (hora de Lima)." };
   }
 
+  // Si la fecha es hoy: SIEMPRE la hora oficial actual de Lima en el servidor.
+  // Esto garantiza que SUNAT jamás rechace el comprobante por desfase de reloj del cliente.
+  if (fecha === todayLima) {
+    return { fechaEmision: todayLima, horaEmision: nowHms };
+  }
+
+  // Emisión con fecha anterior (permitida por SUNAT para regularizaciones):
+  const hRaw = typeof horaInput === "string" ? horaInput.trim() : "";
   let hora: string;
   if (hRaw) {
     let hnorm = hRaw;
@@ -79,30 +68,17 @@ export function validateEmissionDateTimeForApi(
       hnorm = `${hnorm}:00`;
     }
     if (!/^\d{2}:\d{2}:\d{2}$/.test(hnorm)) {
-      return { error: "Hora inválida (use 24 horas, ej. 15:30)." };
-    }
-    const [hh, mm, ss] = hnorm.split(":").map((x) => parseInt(x, 10));
-    if (hh > 23 || mm > 59 || ss > 59) {
-      return { error: "Hora inválida." };
-    }
-    hora = `${String(hh).padStart(2, "0")}:${String(mm).padStart(2, "0")}:${String(ss).padStart(2, "0")}`;
-  } else {
-    hora = getLimaNowHms();
-  }
-
-  if (fecha === todayLima) {
-    const nowHms = getLimaNowHms();
-    const diffSec = timeToSec(hora) - timeToSec(nowHms);
-    if (diffSec > 0) {
-      // Si la hora indicada para hoy está adelantada por desfase de reloj (hasta 15 min),
-      // se ajusta automáticamente a la hora actual de Lima en el servidor para que SUNAT
-      // no rechace el comprobante.
-      if (diffSec <= 15 * 60) {
+      hora = nowHms;
+    } else {
+      const [hh, mm, ss] = hnorm.split(":").map((x) => parseInt(x, 10));
+      if (hh > 23 || mm > 59 || ss > 59) {
         hora = nowHms;
       } else {
-        return { error: "Para hoy no puede indicar una hora futura (Lima)." };
+        hora = `${String(hh).padStart(2, "0")}:${String(mm).padStart(2, "0")}:${String(ss).padStart(2, "0")}`;
       }
     }
+  } else {
+    hora = nowHms;
   }
 
   return { fechaEmision: fecha, horaEmision: hora };
