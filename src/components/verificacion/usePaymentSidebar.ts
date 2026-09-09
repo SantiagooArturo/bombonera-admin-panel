@@ -562,7 +562,7 @@ export function usePaymentSidebar(options?: UsePaymentSidebarOptions) {
         const msg =
           error instanceof Error ? error.message : "Error inesperado al emitir comprobante";
         toast(msg, "error");
-        return null;
+        throw error;
       } finally {
         emitInvoiceInFlightRef.current = false;
         setEmittingInvoiceId(null);

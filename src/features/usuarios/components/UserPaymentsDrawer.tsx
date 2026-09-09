@@ -358,7 +358,7 @@ export default function UserPaymentsDrawer({ user, onClose, onUserUpdated }: Use
         return invoice;
       } catch (e) {
         toast(e instanceof Error ? e.message : "Error al emitir", "error");
-        return null;
+        throw e;
       } finally {
         emitInvoiceInFlightRef.current = false;
         setEmittingId(null);

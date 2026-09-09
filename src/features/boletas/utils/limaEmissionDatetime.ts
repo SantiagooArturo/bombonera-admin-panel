@@ -90,8 +90,19 @@ export function validateEmissionDateTimeForApi(
     hora = getLimaNowHms();
   }
 
-  if (fecha === todayLima && timeToSec(hora) > timeToSec(getLimaNowHms())) {
-    return { error: "Para hoy no puede indicar una hora futura (Lima)." };
+  if (fecha === todayLima) {
+    const nowHms = getLimaNowHms();
+    const diffSec = timeToSec(hora) - timeToSec(nowHms);
+    if (diffSec > 0) {
+      // Si la hora indicada para hoy está adelantada por desfase de reloj (hasta 15 min),
+      // se ajusta automáticamente a la hora actual de Lima en el servidor para que SUNAT
+      // no rechace el comprobante.
+      if (diffSec <= 15 * 60) {
+        hora = nowHms;
+      } else {
+        return { error: "Para hoy no puede indicar una hora futura (Lima)." };
+      }
+    }
   }
 
   return { fechaEmision: fecha, horaEmision: hora };
