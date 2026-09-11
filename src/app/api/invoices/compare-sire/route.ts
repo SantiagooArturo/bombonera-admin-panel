@@ -55,11 +55,34 @@ function excelSerialToYmd(serial: number): string | null {
   return `${y}-${m}-${d}`;
 }
 
+function parseFechaToYmd(val: unknown): string | null {
+  if (val == null || val === "") return null;
+  if (typeof val === "number") {
+    return excelSerialToYmd(val);
+  }
+  const str = String(val).trim();
+  if (YMD_RE.test(str)) return str;
+  // Formato peruano DD/MM/YYYY
+  const m = str.match(/^(\d{1,2})[\/\-\.](\d{1,2})[\/\-\.](\d{4})/);
+  if (m) {
+    const d = m[1].padStart(2, "0");
+    const mo = m[2].padStart(2, "0");
+    const y = m[3];
+    return `${y}-${mo}-${d}`;
+  }
+  return null;
+}
+
 function ymdToMonthLabel(ym: string): string {
   const [y, m] = ym.split("-");
   if (!y || !m) return ym;
-  const d = new Date(`${ym}-01T12:00:00`);
-  return `${d.toLocaleDateString("es-PE", { month: "long" })} ${y}`;
+  const monthNames = [
+    "Enero", "Febrero", "Marzo", "Abril", "Mayo", "Junio",
+    "Julio", "Agosto", "Setiembre", "Octubre", "Noviembre", "Diciembre"
+  ];
+  const idx = parseInt(m, 10) - 1;
+  const name = monthNames[idx] || m;
+  return `${name} ${y}`;
 }
 
 /**
@@ -103,16 +126,29 @@ function extractRealTotal(row: unknown[], colTotal: number, colMoneda: number): 
   return 0;
 }
 
-function parseSireRows(rawData: unknown[][], header: string[]): SireRow[] {
-  const colSerie = header.indexOf("Serie del CDP");
-  const colNro = header.indexOf("Nro CP o Doc. Nro Inicial (Rango)");
-  const colFecha = header.indexOf("Fecha de emisión");
-  const colCliente = header.indexOf("Apellidos Nombres/ Razón Social");
-  const colTotal = header.indexOf("Total CP");
-  const colEstado = header.indexOf("Est. Comp");
-  const colMoneda = header.indexOf("Moneda");
+function parseSireRows(rawData: unknown[][], header: string[]): { rows: SireRow[]; detectedPeriodo?: string } {
+  const colSerie = header.findIndex((h) => /serie/i.test(String(h || "")));
+  const colNro = header.findIndex((h) => /nro\s*cp|inicial/i.test(String(h || "")));
+  const colFecha = header.findIndex((h) => /fecha.*emisi/i.test(String(h || "")));
+  const colCliente = header.findIndex((h) => /apellidos|raz[oó]n\s*social/i.test(String(h || "")));
+  const colTotal = header.findIndex((h) => /total\s*cp/i.test(String(h || "")));
+  const colEstado = header.findIndex((h) => /est.*comp/i.test(String(h || "")));
+  const colMoneda = header.findIndex((h) => /moneda/i.test(String(h || "")));
+  const colPeriodo = header.findIndex((h) => /periodo/i.test(String(h || "")));
 
-  if (colSerie < 0 || colNro < 0 || colTotal < 0) return [];
+  let detectedPeriodo: string | undefined = undefined;
+  if (colPeriodo >= 0) {
+    for (let i = 1; i < rawData.length; i++) {
+      const rawP = String((rawData[i] as unknown[])?.[colPeriodo] ?? "").trim();
+      const pMatch = rawP.match(/^(\d{4})(\d{2})$/);
+      if (pMatch) {
+        detectedPeriodo = `${pMatch[1]}-${pMatch[2]}`;
+        break;
+      }
+    }
+  }
+
+  if (colSerie < 0 || colNro < 0 || colTotal < 0) return { rows: [] };
 
   const result: SireRow[] = [];
   for (let i = 1; i < rawData.length; i++) {
@@ -170,7 +206,7 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const sireRows = parseSireRows(rawAoa, header);
+    const { rows: sireRows, detectedPeriodo } = parseSireRows(rawAoa, header);
 
     const sireVigentes = sireRows
       .filter((r) => r.estado !== 2)
@@ -180,17 +216,22 @@ export async function POST(request: NextRequest) {
     const sireMin = sireVigentes[0]?.codigo ?? 0;
     const sireMax = sireVigentes[sireVigentes.length - 1]?.codigo ?? 0;
 
-    // ── Periodo ──
-    const sireFechas = sireVigentes
-      .map((r) => r.fechaEmision)
-      .filter((f): f is string => YMD_RE.test(f))
-      .sort();
-    const fechaHasta = sireFechas[sireFechas.length - 1] || "";
-    const fechaPartes = fechaHasta ? fechaHasta.split("-") : [];
-    const periodoLabel =
-      fechaPartes.length >= 2
-        ? ymdToMonthLabel(`${fechaPartes[0]}-${fechaPartes[1]}`)
-        : `B001 ${sireMin} — ${sireMax}`;
+        // ── Periodo ──
+    let periodoLabel = "";
+    if (detectedPeriodo) {
+      periodoLabel = ymdToMonthLabel(detectedPeriodo);
+    } else {
+      const sireFechas = sireVigentes
+        .map((r) => r.fechaEmision)
+        .filter((f): f is string => YMD_RE.test(f))
+        .sort();
+      const fechaHasta = sireFechas[sireFechas.length - 1] || "";
+      const fechaPartes = fechaHasta ? fechaHasta.split("-") : [];
+      periodoLabel =
+        fechaPartes.length >= 2
+          ? ymdToMonthLabel(`${fechaPartes[0]}-${fechaPartes[1]}`)
+          : `B001 ${sireMin} – ${sireMax}`;
+    }
 
     // ── Fetch plataforma ── filtrar por rango de correlativos ──
     const db = getDb();
