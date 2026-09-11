@@ -28,6 +28,7 @@ import { BoletasDevSunatRecoverPanel } from "./BoletasDevSunatRecoverPanel";
 import { BoletasMobileList } from "./BoletasMobileList";
 import { IconOpenInNewTab, SerieCorrelativoCell } from "./boletasSharedUi";
 import { ExportExcelModal } from "./ExportExcelModal";
+import { ExportSireModal } from "./ExportSireModal";
 import type { ExportInvoiceKind } from "../utils/exportInvoicesExcel";
 import { SireCompareModal } from "./SireCompareModal";
 import { getInvoiceUiStatus } from "../utils/invoiceUiStatus";
@@ -90,6 +91,7 @@ export function BoletasPage() {
   const [voidingInvoiceId, setVoidingInvoiceId] = useState<string | null>(null);
   const [miscModalOpen, setMiscModalOpen] = useState(false);
   const [excelModalOpen, setExcelModalOpen] = useState(false);
+  const [sireExportOpen, setSireExportOpen] = useState(false);
   const [sireCompareOpen, setSireCompareOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState(() => searchParams.get("search")?.trim() ?? "");
   /** Evita depender de `didStart` tras setState (Strict Mode / batching puede dejar la petición sin ejecutar). */
@@ -304,6 +306,14 @@ export function BoletasPage() {
           </button>
           <button
             type="button"
+            onClick={() => setSireExportOpen(true)}
+            className="shrink-0 inline-flex items-center gap-2 rounded-xl border border-purple-300 bg-purple-50 px-5 py-3 text-sm font-bold text-purple-900 shadow-sm hover:bg-purple-100"
+          >
+            <DocumentArrowDownIcon className="h-5 w-5 text-purple-700" />
+            Exportar reemplazo SIRE
+          </button>
+          <button
+            type="button"
             onClick={() => setSireCompareOpen(true)}
             className="shrink-0 inline-flex items-center gap-2 rounded-xl border border-indigo-300 bg-indigo-50 px-5 py-3 text-sm font-bold text-indigo-800 shadow-sm hover:bg-indigo-100"
           >
@@ -345,6 +355,11 @@ export function BoletasPage() {
         onError={(message) => {
           toast(message, "error");
         }}
+      />
+      <ExportSireModal
+        open={sireExportOpen}
+        onClose={() => setSireExportOpen(false)}
+        invoices={invoices}
       />
       <SireCompareModal
         open={sireCompareOpen}
