@@ -11,6 +11,8 @@ type CompareSummary = {
   soloSire: number;
   soloPlataforma: number;
   diferencias: number;
+  anuladasPlataforma: number;
+  sumAnuladasPlataforma: number;
   corregidas: number;
   sumSire: number;
   sumPlataforma: number;
@@ -262,15 +264,47 @@ export function SireCompareModal({
                 </div>
                 <div className="rounded-xl bg-gray-50 p-4 text-center ring-1 ring-gray-200">
                   <p className="text-xs font-medium uppercase tracking-wide text-gray-500">Diferencia</p>
-                  <p className={`mt-1 text-xl font-bold tracking-tight ${summary.sumDiferencia === 0 ? "text-emerald-700" : "text-red-700"}`}>
+                  <p className={`mt-1 text-xl font-bold tracking-tight ${
+                    summary.sumDiferencia === 0
+                      ? "text-emerald-700"
+                      : summary.soloSire === 0 && summary.soloPlataforma === 0 && summary.diferencias === 0 && summary.anuladasPlataforma > 0
+                        ? "text-purple-700"
+                        : "text-red-700"
+                  }`}>
                     {formatMonto(summary.sumDiferencia)}
                   </p>
+                  {summary.soloSire === 0 && summary.soloPlataforma === 0 && summary.diferencias === 0 && summary.anuladasPlataforma > 0 && (
+                    <p className="mt-0.5 text-[11px] font-medium text-purple-600">Explicada por boletas anuladas</p>
+                  )}
                 </div>
               </div>
 
+              {/* Info banner for voided vouchers */}
+              {summary.anuladasPlataforma > 0 && (
+                <div className="mb-5 rounded-xl border border-purple-200 bg-purple-50 p-4 text-purple-900">
+                  <div className="flex items-start gap-3">
+                    <span className="text-xl">ℹ️</span>
+                    <div className="text-xs leading-relaxed">
+                      <p className="font-bold text-sm text-purple-950">
+                        {summary.anuladasPlataforma === 1
+                          ? "1 boleta existe en la plataforma pero está anulada"
+                          : `${summary.anuladasPlataforma} boletas existen en la plataforma pero están anuladas`}
+                        {" "}(Total: {formatMonto(summary.sumAnuladasPlataforma)})
+                      </p>
+                      <p className="mt-1 text-purple-800">
+                        Estas boletas fueron dadas de baja en el sistema y cuentan con anulación en SUNAT. El SIRE aún las lista como vigentes en su propuesta preliminar: pide a tu contadora que le dé a <strong>«Actualizar Propuesta»</strong> o <strong>«Reemplazar Propuesta»</strong> en el RVIE para que no computen en tus ventas.
+                      </p>
+                    </div>
+                  </div>
+                </div>
+              )}
+
               {/* Mini stats — only non-zero */}
-              {(summary.soloSire > 0 || summary.soloPlataforma > 0 || summary.diferencias > 0 || summary.corregidas > 0) && (
+              {(summary.soloSire > 0 || summary.soloPlataforma > 0 || summary.diferencias > 0 || summary.anuladasPlataforma > 0 || summary.corregidas > 0) && (
                 <div className="mb-5 flex flex-wrap gap-2">
+                  {summary.anuladasPlataforma > 0 && (
+                    <MiniStat label="Anuladas en plataforma (actualizar en SIRE)" value={summary.anuladasPlataforma} color="purple" />
+                  )}
                   {summary.soloSire > 0 && <MiniStat label="Solo SIRE" value={summary.soloSire} color="blue" />}
                   {summary.soloPlataforma > 0 && <MiniStat label="Solo Plataforma" value={summary.soloPlataforma} color="amber" />}
                   {summary.diferencias > 0 && <MiniStat label="Diferencias" value={summary.diferencias} color="red" />}
@@ -329,6 +363,7 @@ function MiniStat({ label, value, color }: { label: string; value: number; color
     red: "bg-red-100 text-red-800",
     blue: "bg-blue-100 text-blue-800",
     violet: "bg-violet-100 text-violet-800",
+    purple: "bg-purple-100 text-purple-800",
   };
   return (
     <div className={`rounded-lg px-3 py-1.5 text-center ${c[color] || ""}`}>

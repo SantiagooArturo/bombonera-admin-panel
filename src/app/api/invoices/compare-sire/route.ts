@@ -264,23 +264,24 @@ export async function POST(request: NextRequest) {
 
     const platformByCodigo = new Map<
       number,
-      { amount: number; cliente: string; fecha: string; status: string }
+      { amount: number; cliente: string; fecha: string; status: "active" | "voided" }
     >();
 
     for (const doc of invoicesSnap.docs) {
       const d = doc.data();
       const corr = Number(d.correlativo);
       if (!Number.isFinite(corr) || corr < 1) continue;
-      if (String(d.status || "").trim().toLowerCase() === "voided") continue;
 
       // Solo incluir si está dentro del rango de correlativos del SIRE
       if (sireMin > 0 && sireMax > 0 && (corr < sireMin || corr > sireMax)) continue;
+
+      const isVoided = String(d.status || "").trim().toLowerCase() === "voided";
 
       platformByCodigo.set(corr, {
         amount: Number(d.amount || 0),
         cliente: String(d.cliente_denominacion || "").trim(),
         fecha: String(d.fecha_emision_ymd || "").trim(),
-        status: String(d.status || "").trim().toLowerCase(),
+        status: isVoided ? "voided" : "active",
       });
     }
 
@@ -293,6 +294,7 @@ export async function POST(request: NextRequest) {
     const sorted = Array.from(allCodigos).sort((a, b) => a - b);
     let sumSire = 0;
     let sumPlataforma = 0;
+    let sumAnuladasPlataforma = 0;
     let corregidasCount = 0;
 
     for (const cod of sorted) {
@@ -301,25 +303,42 @@ export async function POST(request: NextRequest) {
 
       const valorSire = sire ? sire.total : null;
       const valorPlat = plat ? plat.amount : null;
-      const diff =
+      let diff =
         valorSire != null && valorPlat != null
           ? Math.round((valorPlat - valorSire) * 100) / 100
           : null;
 
       let estado = "✅ OK";
-      if (!sire && plat) estado = "⚠️ Solo plataforma";
-      else if (sire && !plat) estado = "📋 Solo SIRE";
-      else if (diff != null && Math.abs(diff) > 0.01) estado = "❌ Diferencia";
+      if (sire && plat && plat.status === "voided") {
+        estado = "🚫 Anulada en plataforma";
+        diff = valorSire != null ? -valorSire : null;
+        sumAnuladasPlataforma += valorSire || plat.amount || 0;
+      } else if (!sire && plat) {
+        if (plat.status === "voided") {
+          continue;
+        }
+        estado = "⚠️ Solo plataforma";
+      } else if (sire && !plat) {
+        estado = "📋 Solo SIRE";
+      } else if (diff != null && Math.abs(diff) > 0.01) {
+        estado = "❌ Diferencia";
+      }
 
       if (valorSire != null) sumSire += valorSire;
-      if (valorPlat != null) sumPlataforma += valorPlat;
+      if (valorPlat != null && plat?.status !== "voided") sumPlataforma += valorPlat;
+
+      const clientePlatDisplay = plat
+        ? plat.status === "voided"
+          ? (plat.cliente ? `${plat.cliente} (Anulada)` : "(Anulada)")
+          : plat.cliente || ""
+        : "";
 
       rows.push({
         codigo: cod,
         fecha: plat?.fecha || sire?.fechaEmision || "",
         serie: APISUNAT_SERIE_BOLETA,
         clienteSire: sire?.cliente || "",
-        clientePlataforma: plat?.cliente || "",
+        clientePlataforma: clientePlatDisplay,
         valorSire,
         valorPlataforma: valorPlat,
         diferencia: diff,
@@ -346,14 +365,17 @@ export async function POST(request: NextRequest) {
     }
 
     // ── Summary ──
+    const anuladasCount = rows.filter((r) => r.estado === "🚫 Anulada en plataforma").length;
     const summary: CompareSummary = {
       periodo: periodoLabel,
       totalSire: sireVigentes.length,
-      totalPlataforma: platformByCodigo.size,
+      totalPlataforma: Array.from(platformByCodigo.values()).filter((p) => p.status === "active").length,
       coinciden: rows.filter((r) => r.estado === "✅ OK").length,
       soloSire: rows.filter((r) => r.estado === "📋 Solo SIRE").length,
       soloPlataforma: rows.filter((r) => r.estado === "⚠️ Solo plataforma").length,
       diferencias: rows.filter((r) => r.estado === "❌ Diferencia").length,
+      anuladasPlataforma: anuladasCount,
+      sumAnuladasPlataforma: Math.round(sumAnuladasPlataforma * 100) / 100,
       corregidas: corregidasCount,
       sumSire: Math.round(sumSire * 100) / 100,
       sumPlataforma: Math.round(sumPlataforma * 100) / 100,
