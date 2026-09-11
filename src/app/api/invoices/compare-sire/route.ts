@@ -1,3 +1,4 @@
+import JSZip from "jszip";
 import { NextRequest, NextResponse } from "next/server";
 import { getDb } from "@/lib/firebase-admin";
 import { getEmisorSunatFromEnv } from "@/features/boletas/pdf/emisorSunatEnv";
@@ -37,6 +38,8 @@ type CompareSummary = {
   soloSire: number;
   soloPlataforma: number;
   diferencias: number;
+  anuladasPlataforma: number;
+  sumAnuladasPlataforma: number;
   corregidas: number;
   sumSire: number;
   sumPlataforma: number;
@@ -179,7 +182,7 @@ function parseSireRows(rawData: unknown[][], header: string[]): { rows: SireRow[
       fechaEmision,
     });
   }
-  return result;
+  return { rows: result, detectedPeriodo };
 }
 
 export async function POST(request: NextRequest) {
@@ -382,6 +385,81 @@ export async function POST(request: NextRequest) {
       sumDiferencia: Math.round((sumPlataforma - sumSire) * 100) / 100,
     };
 
+        const downloadRvieZip = formData.get("download_rvie_zip") === "1";
+
+    if (downloadRvieZip) {
+      const colRuc = header.findIndex((h) => /^ruc$/i.test(String(h || "").trim()));
+      const colPeriodo = header.findIndex((h) => /periodo/i.test(String(h || "")));
+      const colNro = header.findIndex((h) => /nro\s*cp|inicial/i.test(String(h || "")));
+      const colFecha = header.findIndex((h) => /fecha.*emisi/i.test(String(h || "")));
+      const colTipoCp = header.findIndex((h) => /tipo\s*cp/i.test(String(h || "")));
+      const colTipoOp = header.findIndex((h) => /tipo\s*operaci/i.test(String(h || "")));
+      const colBi = header.findIndex((h) => /bi\s*gravada/i.test(String(h || "")));
+      const colIgv = header.findIndex((h) => /igv/i.test(String(h || "")));
+      const colTotal = header.findIndex((h) => /total\s*cp/i.test(String(h || "")));
+      const colEstado = header.findIndex((h) => /est.*comp/i.test(String(h || "")));
+
+      const ruc = String(rawAoa[1]?.[colRuc] || "20511046255").trim();
+      const rawP = String(rawAoa[1]?.[colPeriodo] || detectedPeriodo || "202608").trim();
+      const periodoClean = rawP.replace(/\D/g, "").slice(0, 6);
+
+      const txtName = `LE${ruc}${periodoClean}00140400021112.txt`;
+      const zipName = `LE${ruc}${periodoClean}00140400021112.zip`;
+
+      const txtLines: string[] = [];
+      for (let i = 1; i < rawAoa.length; i++) {
+        const row = [...(rawAoa[i] as unknown[])];
+        const corr = Number(row[colNro]);
+        const plat = platformByCodigo.get(corr);
+        const isVoided = plat?.status === "voided";
+
+        // Formato de fecha DD/MM/YYYY
+        if (plat?.fecha) {
+          const [y, m, d] = plat.fecha.split("-");
+          if (y && m && d) row[colFecha] = `${d}/${m}/${y}`;
+        } else if (row[colFecha] != null) {
+          const ymd = parseFechaToYmd(row[colFecha]);
+          if (ymd) {
+            const [y, m, d] = ymd.split("-");
+            if (y && m && d) row[colFecha] = `${d}/${m}/${y}`;
+          }
+        }
+
+        // Tipo CP a 2 dígitos (03, 01, 07)
+        if (row[colTipoCp] !== undefined && row[colTipoCp] !== "") {
+          row[colTipoCp] = String(row[colTipoCp]).trim().padStart(2, "0");
+        }
+
+        // Tipo Operación a 4 dígitos (0101)
+        if (row[colTipoOp] !== undefined && row[colTipoOp] !== "") {
+          row[colTipoOp] = String(row[colTipoOp]).trim().padStart(4, "0");
+        }
+
+        // Si está anulada en plataforma, ajustar montos a 0 y estado a 2
+        if (isVoided) {
+          if (colBi >= 0) row[colBi] = "0.00";
+          if (colIgv >= 0) row[colIgv] = "0.00";
+          if (colTotal >= 0) row[colTotal] = "0.00";
+          if (colEstado >= 0) row[colEstado] = "2";
+        }
+
+        while (row.length < 40) row.push("");
+        const line = row.slice(0, 40).map((c) => String(c ?? "").trim()).join("|") + "|";
+        txtLines.push(line);
+      }
+
+      const zip = new JSZip();
+      zip.file(txtName, txtLines.join("\r\n") + "\r\n");
+      const zipBuffer = await zip.generateAsync({ type: "uint8array", compression: "DEFLATE" });
+
+      return new NextResponse(zipBuffer as unknown as BodyInit, {
+        headers: {
+          "Content-Type": "application/zip",
+          "Content-Disposition": `attachment; filename="${zipName}"`,
+        },
+      });
+    }
+
     if (download) {
       const wsData = rows.map((r) => ({
         Código: r.codigo,
@@ -416,7 +494,7 @@ export async function POST(request: NextRequest) {
       ];
 
       const xlsx = XLSX.write(wb, { type: "buffer", bookType: "xlsx" });
-      return new NextResponse(xlsx, {
+      return new NextResponse(xlsx as unknown as BodyInit, {
         headers: {
           "Content-Type": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
           "Content-Disposition": `attachment; filename="${summary.periodo.toLowerCase().replace(/\s+/g, "-")}-sire-vs-plataforma.xlsx"`,

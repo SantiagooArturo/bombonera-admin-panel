@@ -67,6 +67,7 @@ export function SireCompareModal({
   const [summary, setSummary] = useState<CompareSummary | null>(null);
   const [rows, setRows] = useState<CompareRow[]>([]);
   const [downloading, setDownloading] = useState(false);
+  const [downloadingZip, setDownloadingZip] = useState(false);
   const [currentFile, setCurrentFile] = useState<File | null>(null);
   const fileRef = useRef<HTMLInputElement>(null);
 
@@ -97,6 +98,43 @@ export function SireCompareModal({
       setLoading(false);
     }
   }, []);
+
+    const downloadRvieZip = useCallback(async () => {
+    if (!currentFile || !summary) return;
+    setDownloadingZip(true);
+    try {
+      const formData = new FormData();
+      formData.append("file", currentFile);
+      formData.append("download_rvie_zip", "1");
+
+      const res = await fetch("/api/invoices/compare-sire", {
+        method: "POST",
+        body: formData,
+      });
+
+      if (!res.ok) throw new Error("Error al generar el ZIP de reemplazo");
+
+      const blob = await res.blob();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      const contentDisposition = res.headers.get("content-disposition");
+      let filename = `reemplazo-propuesta-sire-${summary.periodo.toLowerCase().replace(/\s+/g, "-")}.zip`;
+      if (contentDisposition) {
+        const m = contentDisposition.match(/filename="?([^"]+)"?/);
+        if (m && m[1]) filename = m[1];
+      }
+      a.download = filename;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      setTimeout(() => URL.revokeObjectURL(url), 1000);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Error al descargar ZIP");
+    } finally {
+      setDownloadingZip(false);
+    }
+  }, [currentFile, summary]);
 
   const downloadExcel = useCallback(async () => {
     if (!currentFile || !summary) return;
@@ -233,8 +271,26 @@ export function SireCompareModal({
                     Probar otro archivo
                   </button>
                   <button
+                    onClick={downloadRvieZip}
+                    disabled={downloadingZip || downloading}
+                    title="Genera el archivo ZIP oficial (Anexo 3 RVIE) para que la contadora lo suba en «Reemplazar Propuesta» del SIRE"
+                    className="flex items-center gap-1.5 rounded-lg bg-emerald-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-emerald-700 disabled:opacity-50 shadow-sm"
+                  >
+                    {downloadingZip ? (
+                      <>
+                        <ArrowPathIcon className="h-4 w-4 animate-spin" />
+                        Generando ZIP…
+                      </>
+                    ) : (
+                      <>
+                        <DocumentArrowDownIcon className="h-4 w-4" />
+                        Exportar Reemplazo SIRE (.zip)
+                      </>
+                    )}
+                  </button>
+                  <button
                     onClick={downloadExcel}
-                    disabled={downloading}
+                    disabled={downloading || downloadingZip}
                     className="flex items-center gap-1.5 rounded-lg bg-indigo-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-indigo-700 disabled:opacity-50"
                   >
                     {downloading ? (
@@ -292,7 +348,7 @@ export function SireCompareModal({
                         {" "}(Total: {formatMonto(summary.sumAnuladasPlataforma)})
                       </p>
                       <p className="mt-1 text-purple-800">
-                        Estas boletas fueron dadas de baja en el sistema y cuentan con anulación en SUNAT. El SIRE aún las lista como vigentes en su propuesta preliminar: pide a tu contadora que le dé a <strong>«Actualizar Propuesta»</strong> o <strong>«Reemplazar Propuesta»</strong> en el RVIE para que no computen en tus ventas.
+                        Estas boletas fueron dadas de baja en el sistema y cuentan con anulación en SUNAT. El SIRE aún las lista como vigentes en su propuesta preliminar: pide a tu contadora que le dé a <strong>«Actualizar Propuesta»</strong> en SUNAT, o puedes descargar directamente el botón verde <strong>«Exportar Reemplazo SIRE (.zip)»</strong> y pasárselo para que le dé a <strong>«Reemplazar Propuesta»</strong> y le quede cuadrado de inmediato.
                       </p>
                     </div>
                   </div>
